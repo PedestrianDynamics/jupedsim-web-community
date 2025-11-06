@@ -28,7 +28,7 @@ The app supports **DXF files** with a specific layer naming convention:
 
 | Layer Name | Type | Description |
 |------------|------|-------------|
-| **walkable area** | **Mandatory** | A polyline containing all other simulation elements. No overlaps allowed. |
+| **walkablearea** | **Mandatory** | A polyline containing all other simulation elements. No overlaps allowed. |
 | **obstacles** | Optional | Static obstacles within the simulation area |
 | **distributions** | **Mandatory** | Initial positions/distributions of pedestrians |
 | **exits** | **Mandatory** | Exit points for pedestrians |
