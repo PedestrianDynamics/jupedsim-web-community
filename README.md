@@ -28,12 +28,14 @@ The app supports **DXF files** with a specific layer naming convention:
 
 | Layer Name | Type | Description |
 |------------|------|-------------|
-| **walkablearea** | **Mandatory** | A polyline containing all other simulation elements. No overlaps allowed. |
-| **obstacles** | Optional | Static obstacles within the simulation area |
-| **distributions** | **Mandatory** | Initial positions/distributions of pedestrians |
-| **exits** | **Mandatory** | Exit points for pedestrians |
-| **waypoints** | Optional | Intermediate target points for pedestrian navigation |
-| **journeys** | Optional | Predefined paths or routes |
+| **jps-walkablearea** | **Mandatory** | A polyline containing all other simulation elements. No overlaps allowed. |
+| **jps-obstacles** | Optional | Static obstacles within the simulation area |
+| **jps-distributions** | **Mandatory** | Initial positions/distributions of pedestrians |
+| **jps-exits** | **Mandatory** | Exit points for pedestrians |
+| **jps-waypoints** | Optional | Intermediate target points for pedestrian navigation |
+| **jps-journeys** | Optional | Predefined paths or routes |
+
+See [template DXF-file](templates/gallery.dxf).
 
 ### Important Notes:
 - The **walkable area** layer must be a closed polyline that encompasses all other elements
