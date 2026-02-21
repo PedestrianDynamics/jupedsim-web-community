@@ -1,5 +1,3 @@
-[![CI](https://github.com/PedestrianDynamics/Web-Based-Jupedsim/actions/workflows/ci.yml/badge.svg)](https://github.com/PedestrianDynamics/Web-Based-Jupedsim/actions/workflows/ci.yml)
-
 # Web-Based JuPedSim - Issue Tracker
 
 This repository is to collect feedback and issues when working with [app.jupedsim.org](https://app.jupedsim.org).
