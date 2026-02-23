@@ -20,7 +20,8 @@ This repository is to collect feedback and issues when working with [app.jupedsi
 - **Need help?** Check existing issues or open a new one
 - **Want to discuss?** Use the [Discussions](../../discussions) tab
 
-> **Note:** This repository does not contain the application code (which is private). It's solely for tracking issues, feedback, and documentation.
+> [!NOTE]
+This repository does not contain the application code (which is private). It's solely for tracking issues, feedback, and documentation.
 
 ## Supported Geometry Formats
 
