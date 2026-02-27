@@ -1,3 +1,6 @@
+[![Watch on YouTube](https://img.youtube.com/vi/MGj0Nyumdms/0.jpg)](https://www.youtube.com/watch?v=MGj0Nyumdms)
+
+
 # Web-Based JuPedSim - Issue Tracker
 This public repo is for community issues/discussions; application source is private.
 
@@ -8,6 +11,8 @@ This public repo is for community issues/discussions; application source is priv
 - Create, upload, and download simulation scenarios
 - Run pedestrian dynamics simulations
 - Visualize results directly in the browser
+
+
 
 > [!IMPORTANT]
 > **This is still a work in progress!** We count on user feedback to enhance the app and add more features in the future.
