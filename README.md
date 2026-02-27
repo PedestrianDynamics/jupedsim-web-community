@@ -1,6 +1,5 @@
 # Web-Based JuPedSim - Issue Tracker
-
-This repository is to collect feedback and issues when working with [app.jupedsim.org](https://app.jupedsim.org).
+This public repo is for community issues/discussions; application source is private.
 
 ## About
 
