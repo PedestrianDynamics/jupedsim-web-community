@@ -20,7 +20,8 @@ This public repo is for community issues/discussions; application source is priv
 > [!TIP]
 > You can now run JuPedSim Web locally with Docker on your own machine.
 > If you need setup access or run into local-start issues, open an issue in this tracker.
-> Quick start (if you have local deployment access): `cp .env.local.example .env.local && ./deploy-local.sh`
+> Quick start (Docker): `cd docker && cp .env.example .env && docker compose --env-file .env -f docker-compose.yml up -d`
+> Full local Docker guide: [docker/README.md](docker/README.md)
 
 ## How to Use This Repository
 

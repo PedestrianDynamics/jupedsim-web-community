@@ -1,0 +1,126 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    restart: unless-stopped
+    command: mongod --auth
+    environment:
+      MONGO_INITDB_DATABASE: jupedsim-scenarios
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 }).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - jupedsim-network
+
+  node-backend:
+    image: ${DOCKERHUB_NAMESPACE:-jupedsim}/web-based-jupedsim-node-backend:${IMAGE_TAG:-local-latest}
+    restart: unless-stopped
+    ports:
+      - "${NODE_BACKEND_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongodb:27017/jupedsim-scenarios}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      SCENARIO_PROXY_SHARED_SECRET: ${SCENARIO_PROXY_SHARED_SECRET}
+      MAX_FILE_SIZE: 10485760
+      MAX_THUMBNAIL_SIZE: 5242880
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - node_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3001/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - jupedsim-network
+
+  backend:
+    image: ${DOCKERHUB_NAMESPACE:-jupedsim}/web-based-jupedsim-backend:${IMAGE_TAG:-local-latest}
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongodb:27017/jupedsim-scenarios}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      HELMHOLTZ_CLIENT_ID: ${HELMHOLTZ_CLIENT_ID:-}
+      HELMHOLTZ_CLIENT_SECRET: ${HELMHOLTZ_CLIENT_SECRET:-}
+      BLABLADOR_API_KEY: ${BLABLADOR_API_KEY:-}
+      ADMIN_USER_IDS: ${ADMIN_USER_IDS:-}
+      SCENARIO_PROXY_SHARED_SECRET: ${SCENARIO_PROXY_SHARED_SECRET}
+      NODE_BACKEND_URL: http://node-backend:3001
+      SIM_QUOTA_DB_PATH: /app/data/simulation_quota.db
+      SIM_QUOTA_DAILY_LIMIT: ${SIM_QUOTA_DAILY_LIMIT:-500}
+      SIM_QUOTA_RETENTION_DAYS: ${SIM_QUOTA_RETENTION_DAYS:-90}
+      SESSION_REVOCATION_DB_PATH: /app/data/revoked_sessions.sqlite3
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
+      UVICORN_LIMIT_CONCURRENCY: ${UVICORN_LIMIT_CONCURRENCY:-64}
+      UVICORN_TIMEOUT_KEEP_ALIVE: ${UVICORN_TIMEOUT_KEEP_ALIVE:-15}
+      SIM_MAX_TRAJECTORY_CHUNK_SIZE: ${SIM_MAX_TRAJECTORY_CHUNK_SIZE:-250}
+      SIM_MAX_TRAJECTORY_ROWS: ${SIM_MAX_TRAJECTORY_ROWS:-120000}
+      SIM_MAX_TRAJECTORY_RESPONSE_BYTES: ${SIM_MAX_TRAJECTORY_RESPONSE_BYTES:-8388608}
+      LOCAL_DOCKER_MODE: ${LOCAL_DOCKER_MODE:-true}
+      LOCAL_DOCKER_USER_SUB: ${LOCAL_DOCKER_USER_SUB:-local-user}
+      LOCAL_DOCKER_USER_NAME: ${LOCAL_DOCKER_USER_NAME:-Local User}
+      LOCAL_DOCKER_USER_EMAIL: ${LOCAL_DOCKER_USER_EMAIL:-local@localhost}
+      LOCAL_DOCKER_USER_EPPN: ${LOCAL_DOCKER_USER_EPPN:-local@localhost}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      node-backend:
+        condition: service_healthy
+    volumes:
+      - backend_data:/app/data
+      - backend_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - jupedsim-network
+
+  frontend:
+    image: ${DOCKERHUB_NAMESPACE:-jupedsim}/web-based-jupedsim-frontend:${IMAGE_TAG:-local-latest}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    environment:
+      REACT_APP_BACKEND_API: /api
+      REACT_APP_BACKEND_LIVE_API: /api
+      REACT_APP_MONGODB_URI: /api/node
+      MAINTENANCE_BANNER_ENABLED: ${MAINTENANCE_BANNER_ENABLED:-false}
+      MAINTENANCE_BANNER_TEXT: ${MAINTENANCE_BANNER_TEXT:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+      node-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - jupedsim-network
+
+volumes:
+  mongodb_data:
+  backend_data:
+  backend_logs:
+  node_uploads:
+
+networks:
+  jupedsim-network:
+    driver: bridge
