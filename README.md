@@ -36,7 +36,7 @@ The app supports **DXF files** with a specific layer naming convention:
 | **jps-waypoints** | Optional | Intermediate target points for pedestrian navigation |
 | **jps-journeys** | Optional | Predefined paths or routes |
 
-See [template DXF-file](templates/gallery.dxf).
+See [template DXF-file](test-cases/dxf/gallery.dxf).
 
 ### Important Notes:
 - The **walkable area** layer must be a closed polyline that encompasses all other elements
