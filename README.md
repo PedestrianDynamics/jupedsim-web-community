@@ -13,6 +13,10 @@ This repository is to collect feedback and issues when working with [app.jupedsi
 > [!IMPORTANT]
 > **This is still a work in progress!** We count on user feedback to enhance the app and add more features in the future.
 
+> [!TIP]
+> You can now run JuPedSim Web locally with Docker on your own machine.
+> If you need setup access or run into local-start issues, open an issue in this tracker.
+
 ## How to Use This Repository
 
 - **Found a bug?** [Open an issue](../../issues/new)
