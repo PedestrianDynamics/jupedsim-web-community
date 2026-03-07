@@ -134,17 +134,18 @@ scenario.set_agent_params(
 
 The `Scenario` object exposes internal configuration.
 
-  Property                         Description
-  -------------------------------- --------------------------------------
-  `scenario.walkable_polygon`      Shapely polygon of the walkable area
-  `scenario.walkable_area_wkt`     Geometry as WKT
-  `scenario.model_type`            Active simulation model
-  `scenario.exits`                 Exit definitions
-  `scenario.distributions`         Agent distribution regions
-  `scenario.checkpoints`           Waypoints
-  `scenario.journeys`              Journey stage sequences
-  `scenario.sim_params`            Simulation parameter dictionary
-  `scenario.max_simulation_time`   Maximum allowed simulation time
+| Property | Description |
+|---|---|
+| `scenario.walkable_polygon` | Shapely polygon of the walkable area |
+| `scenario.walkable_area_wkt` | Geometry as WKT |
+| `scenario.model_type` | Active simulation model |
+| `scenario.exits` | Exit definitions |
+| `scenario.distributions` | Agent distribution regions |
+| `scenario.stages` | Stage/waypoint definitions |
+| `scenario.zones` | Speed-reduction zones |
+| `scenario.journeys` | Journey stage sequences |
+| `scenario.sim_params` | Simulation parameter dictionary |
+| `scenario.max_simulation_time` | Maximum allowed simulation time |
 
 ------------------------------------------------------------------------
 
@@ -313,4 +314,4 @@ for model in models:
 | `jupedsim_scenario.py` | Scenario loading and simulation interface |
 | `requirements.txt` | Project dependencies |
 | `scenario_scripting.ipynb` | Example analysis notebook |
-| `scenarios/` | Example scenario JSON files |
+| `scenarios/` | Example scenario ZIPs exported from the app |
