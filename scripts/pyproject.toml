@@ -1,0 +1,15 @@
+[project]
+name = "jupedsim-scenario-scripting"
+version = "0.1.0"
+description = "Run JuPedSim scenarios locally for parameter sweeps and analysis"
+requires-python = ">=3.10"
+
+dependencies = [
+    "jupedsim",
+    "pedpy",
+    "numpy",
+    "pandas",
+    "shapely",
+    "jupyter",
+    "ipykernel",
+]
