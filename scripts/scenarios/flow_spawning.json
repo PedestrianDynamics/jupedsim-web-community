@@ -1,0 +1,70 @@
+{
+  "_description": "30 agents flow-spawned over 15s, walk to exit. Tests that flow spawning works correctly.",
+  "_expectations": {
+    "all_agents_evacuated": true,
+    "evacuation_time_range": [15, 120],
+    "min_agents_spawned": 30
+  },
+  "walkable_area_wkt": "POLYGON ((0 0, 20 0, 20 5, 0 5, 0 0))",
+  "model_type": "CollisionFreeSpeedModel",
+  "seed": 42,
+  "config": {
+    "simulation_settings": {
+      "simulationParams": {
+        "max_simulation_time": 180,
+        "model_type": "CollisionFreeSpeedModel",
+        "strength_neighbor_repulsion": 2.6,
+        "range_neighbor_repulsion": 0.1,
+        "relaxation_time": 0.5,
+        "a_v": 1,
+        "a_min": 0.2,
+        "b_min": 0.2,
+        "b_max": 0.4
+      },
+      "numberOfSimulations": 1,
+      "baseSeed": 42
+    },
+    "ui_state": {
+      "useShortestPaths": false
+    }
+  },
+  "exits": {
+    "jps-exits_0": {
+      "type": "polygon",
+      "coordinates": [[18, 0], [20, 0], [20, 5], [18, 5], [18, 0]],
+      "enable_throughput_throttling": false,
+      "max_throughput": 0
+    }
+  },
+  "distributions": {
+    "jps-distributions_0": {
+      "type": "polygon",
+      "coordinates": [[0, 0], [4, 0], [4, 5], [0, 5], [0, 0]],
+      "parameters": {
+        "number": 30,
+        "radius": 0.15,
+        "v0": 1.2,
+        "use_flow_spawning": true,
+        "flow_start_time": 0,
+        "flow_end_time": 15,
+        "distribution_mode": "by_number",
+        "radius_distribution": "constant",
+        "v0_distribution": "constant"
+      }
+    }
+  },
+  "checkpoints": {},
+  "zones": {},
+  "journeys": [
+    {
+      "id": "journey_0",
+      "stages": ["jps-distributions_0", "jps-exits_0"],
+      "transitions": [
+        {"from": "jps-distributions_0", "to": "jps-exits_0", "journey_id": "journey_0"}
+      ]
+    }
+  ],
+  "transitions": [
+    {"from": "jps-distributions_0", "to": "jps-exits_0", "journey_id": "journey_0"}
+  ]
+}
