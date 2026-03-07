@@ -45,6 +45,11 @@ _MODEL_BUILDERS = {
         strength_neighbor_repulsion=p.get("strength_neighbor_repulsion", 2.6),
         range_neighbor_repulsion=p.get("range_neighbor_repulsion", 0.1),
     ),
+      "AnticipationVelocityModel": lambda p: jps.AnticipationVelocityModel(
+        #strength_neighbor_repulsion=p.get("strength_neighbor_repulsion", 2.6),
+        #range_neighbor_repulsion=p.get("range_neighbor_repulsion", 0.1),
+        #anticipation_time=p.get("anticipation_time", 1.0)
+    ),
     "GeneralizedCentrifugalForceModel": lambda p: jps.GeneralizedCentrifugalForceModel(
         strength_neighbor_repulsion=p.get("gcfm_strength_neighbor_repulsion", 0.3),
         strength_geometry_repulsion=p.get("gcfm_strength_geometry_repulsion", 0.2),
@@ -57,6 +62,7 @@ _MODEL_BUILDERS = {
         bodyForce=p.get("agent_strength", 2000),
         friction=p.get("agent_range", 0.08),
     ),
+
 }
 
 _AGENT_PARAM_BUILDERS = {
@@ -68,6 +74,7 @@ _AGENT_PARAM_BUILDERS = {
         position=kw["position"], journey_id=kw["journey_id"], stage_id=kw["stage_id"],
     ),
     "SocialForceModel": lambda **kw: jps.SocialForceModelAgentParameters(**kw),
+    "AnticipationVelocityModel": lambda **kw: jps.AnticipationVelocityModelAgentParameters(**kw),
 }
 
 
