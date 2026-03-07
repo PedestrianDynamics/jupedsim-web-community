@@ -172,8 +172,12 @@ class Scenario:
         return self.raw.get("distributions", {})
 
     @property
-    def checkpoints(self) -> Dict[str, Any]:
+    def stages(self) -> Dict[str, Any]:
         return self.raw.get("checkpoints", {})
+
+    @property
+    def zones(self) -> Dict[str, Any]:
+        return self.raw.get("zones", {})
 
     @property
     def journeys(self) -> List[Dict[str, Any]]:
@@ -191,7 +195,8 @@ class Scenario:
             f"  Max time:      {self.max_simulation_time}s",
             f"  Exits:         {len(self.exits)}",
             f"  Distributions: {len(self.distributions)}",
-            f"  Checkpoints:   {len(self.checkpoints)}",
+            f"  Stages:        {len(self.stages)}",
+            f"  Zones:         {len(self.zones)}",
             f"  Journeys:      {len(self.journeys)}",
             f"  Agents:        ~{total_agents}",
         ]
@@ -408,7 +413,7 @@ def run_scenario(scenario: Scenario, *, seed: Optional[int] = None) -> ScenarioR
         stage_map[exit_id] = simulation.add_exit_stage(poly)
 
     # Checkpoints → waypoint stages at centroid
-    for cp_id, cp_data in scenario.checkpoints.items():
+    for cp_id, cp_data in scenario.stages.items():
         coords = cp_data.get("coordinates", [])
         if not coords:
             continue
