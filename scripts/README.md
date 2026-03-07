@@ -10,7 +10,9 @@ The web app is used for **scenario design**. Python is used for
 
     Design scenario (web app)
             ↓
-    Export scenario JSON
+    Export scenario ZIP (config.json + geometry.wkt)
+            ↓
+    load_scenario("jps_2025_03_07.zip")
             ↓
     Run simulations in Python
             ↓
@@ -55,7 +57,7 @@ Load a scenario exported from the web editor and run a simulation.
 ``` python
 from jupedsim_scenario import load_scenario, run_scenario
 
-scenario = load_scenario("scenarios/corridor_simple.json")
+scenario = load_scenario("jps_2025_03_07.zip")
 
 print(scenario.summary())
 

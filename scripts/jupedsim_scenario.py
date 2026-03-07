@@ -6,7 +6,7 @@ Usage::
 
     from jupedsim_scenario import load_scenario, run_scenario
 
-    scenario = load_scenario("config.json")
+    scenario = load_scenario("scenario.zip")
     print(scenario.summary())
 
     result = run_scenario(scenario)
@@ -326,28 +326,34 @@ class ScenarioResult:
 
 
 def load_scenario(path: str) -> Scenario:
-    """Load a scenario JSON exported from the JuPedSim web UI.
+    """Load a scenario ZIP exported from the JuPedSim web UI.
 
-    The JSON must contain ``walkable_area_wkt`` (WKT string for the geometry)
-    and the standard config/exits/distributions/journeys structure.
+    The ZIP must contain a JSON config file and a WKT geometry file,
+    as produced by the app's download/export function.
     """
+    import zipfile
+
     path = str(pathlib.Path(path).resolve())
-    with open(path) as f:
-        data = json.load(f)
 
-    walkable_wkt = data.get("walkable_area_wkt", "")
-    if not walkable_wkt:
-        raise ValueError("Scenario JSON must contain 'walkable_area_wkt'")
+    with zipfile.ZipFile(path) as zf:
+        names = zf.namelist()
 
-    model_type = data.get("model_type", "CollisionFreeSpeedModel")
-    seed = data.get("seed", 42)
-    sim_params = (
-        data.get("config", {})
-        .get("simulation_settings", {})
-        .get("simulationParams", {})
-    )
+        json_name = next((n for n in names if n.endswith(".json")), None)
+        if json_name is None:
+            raise ValueError(f"ZIP contains no JSON file. Found: {names}")
+        data = json.loads(zf.read(json_name))
+
+        wkt_name = next((n for n in names if n.endswith(".wkt")), None)
+        if wkt_name is None:
+            raise ValueError(f"ZIP contains no WKT file. Found: {names}")
+        walkable_wkt = zf.read(wkt_name).decode("utf-8").strip()
+
+    sim_settings = data.get("config", {}).get("simulation_settings", {})
+    sim_params = sim_settings.get("simulationParams", {})
+    model_type = sim_params.get("model_type", "CollisionFreeSpeedModel")
+    seed = sim_settings.get("baseSeed", 42)
+
     sim_params.setdefault("max_simulation_time", 300)
-    sim_params.setdefault("model_type", model_type)
 
     return Scenario(
         raw=data,
