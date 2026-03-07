@@ -128,7 +128,7 @@ scenario.set_agent_params(
 
 ------------------------------------------------------------------------
 
-# Inspecting Scenario Data
+## Inspecting Scenario Data
 
 The `Scenario` object exposes internal configuration.
 
@@ -146,7 +146,7 @@ The `Scenario` object exposes internal configuration.
 
 ------------------------------------------------------------------------
 
-# Simulation Results
+## Simulation Results
 
 `run_scenario()` returns a **ScenarioResult** object.
 
@@ -170,7 +170,7 @@ result = run_scenario(scenario, seed=42)
 
 ------------------------------------------------------------------------
 
-# Trajectory Data
+## Trajectory Data
 
 Trajectories are available as a **pandas dataframe**.
 
@@ -189,7 +189,7 @@ Columns:
 
 ------------------------------------------------------------------------
 
-# Analysis with PedPy
+## Analysis with PedPy
 
 The repository includes [pedpy](https://pedpy.readthedocs.io) for trajectory analysis.
 
@@ -222,7 +222,7 @@ https://pedpy.readthedocs.io
 
 ------------------------------------------------------------------------
 
-# Cleaning Up
+## Cleaning Up
 
 Each simulation creates a temporary SQLite database storing
 trajectories.
@@ -235,7 +235,7 @@ result.cleanup()
 
 ------------------------------------------------------------------------
 
-# Example: Monte Carlo Simulation
+## Example: Monte Carlo Simulation
 
 ``` python
 seeds = range(1, 101)
@@ -256,7 +256,7 @@ print(f"Max: {np.max(evac_times):.2f}s")
 
 ------------------------------------------------------------------------
 
-# Example: Parameter Sweep
+## Example: Parameter Sweep
 
 ``` python
 results = {}
@@ -275,7 +275,7 @@ for speed, t in results.items():
 
 ------------------------------------------------------------------------
 
-# Example: Model Comparison
+## Example: Model Comparison
 
 ``` python
 models = [
@@ -297,7 +297,7 @@ for model in models:
 
 ------------------------------------------------------------------------
 
-# Repository Structure
+## Repository Structure
 
     .
     ├── jupedsim_scenario.py
