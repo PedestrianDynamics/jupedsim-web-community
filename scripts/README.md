@@ -46,7 +46,7 @@ Run Jupyter directly:
 uv run jupyter notebook
 ```
 
-> ![TIP]
+> [!TIP]
 > VS Code users: select the interpreter `.venv/bin/python`
 
 ------------------------------------------------------------------------
