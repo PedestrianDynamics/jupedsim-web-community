@@ -156,17 +156,17 @@ result = run_scenario(scenario, seed=42)
 
 ### Result properties
 
-  Property             Description
-  -------------------- ----------------------------------
-  `success`            Simulation finished successfully
-  `evacuation_time`    Time until last agent exits
-  `total_agents`       Number of spawned agents
-  `agents_evacuated`   Agents that reached an exit
-  `agents_remaining`   Agents still inside simulation
-  `frame_rate`         Trajectory frame rate
-  `dt`                 Simulation timestep
-  `seed`               Random seed used
-  `walkable_polygon`   Walkable geometry
+| Property | Description |
+|------|-------------|
+|  `success`         |   Simulation finished successfully|
+|  `evacuation_time` |   Time until last agent exits|
+|  `total_agents`   |    Number of spawned agents|
+| `agents_evacuated` |  Agents that reached an exit|
+|  `agents_remaining`  | Agents still inside simulation|
+|  `frame_rate`       |  Trajectory frame rate|
+|  `dt`             |    Simulation timestep|
+|  `seed`            |   Random seed used|
+| `walkable_polygon` |  Walkable geometry|
 
 ------------------------------------------------------------------------
 
@@ -178,14 +178,14 @@ Trajectories are available as a **pandas dataframe**.
 df = result.trajectory_dataframe()
 ```
 
-Columns:
-
-    frame
-    id
-    x
-    y
-    ori_x
-    ori_y
+| Column | Description |
+|---|---|
+| `frame` | Frame number |
+| `id` | Agent identifier |
+| `x` | X coordinate |
+| `y` | Y coordinate |
+| `ori_x` | X component of orientation vector |
+| `ori_y` | Y component of orientation vector |
 
 ------------------------------------------------------------------------
 
@@ -305,9 +305,10 @@ for model in models:
     ├── scenario_scripting.ipynb
     └── scenarios/
 
-  File                         Description
-  ---------------------------- -------------------------------------------
-  `jupedsim_scenario.py`       Scenario loading and simulation interface
-  `requirements.txt`           Project dependencies
-  `scenario_scripting.ipynb`   Example analysis notebook
-  `scenarios/`                 Example scenario JSON files
+    
+| File | Description |
+|------|-------------|
+| `jupedsim_scenario.py` | Scenario loading and simulation interface |
+| `requirements.txt` | Project dependencies |
+| `scenario_scripting.ipynb` | Example analysis notebook |
+| `scenarios/` | Example scenario JSON files |
