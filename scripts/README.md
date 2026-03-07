@@ -27,27 +27,9 @@ All simulations run **locally**, without relying on the remote server.
 
 ------------------------------------------------------------------------
 
-# Who This Is For
-
-This workflow is useful for:
-
-**Engineers**\
-Evaluate evacuation strategies under varying conditions.
-
-**Crowd managers**\
-Understand how crowd size or layout affects flow.
-
-**Researchers**\
-Run reproducible simulation experiments.
-
-**Students**\
-Learn pedestrian dynamics using realistic simulation tools.
-
-------------------------------------------------------------------------
-
 ## Setup
 
-This project uses **uv** for dependency management.
+This project uses [uv](https://docs.astral.sh/uv/getting-started/installation/) for dependency management.
 
 Create venv and install dependencies:
 
@@ -66,7 +48,7 @@ VS Code user: select the interpreter `.venv/bin/python`
 
 ------------------------------------------------------------------------
 
-# Quick Start
+## Quick Start
 
 Load a scenario exported from the web editor and run a simulation.
 
@@ -85,7 +67,7 @@ print(f"All evacuated: {result.agents_remaining == 0}")
 
 ------------------------------------------------------------------------
 
-# Modifying a Scenario
+## Modifying a Scenario
 
 Before running the simulation you can adjust parameters
 programmatically.
@@ -209,7 +191,7 @@ Columns:
 
 # Analysis with PedPy
 
-The repository includes **pedpy** for trajectory analysis.
+The repository includes [pedpy](https://pedpy.readthedocs.io) for trajectory analysis.
 
 ``` python
 import pedpy
@@ -312,17 +294,6 @@ for model in models:
 
     r.cleanup()
 ```
-
-------------------------------------------------------------------------
-
-# Available Simulation Models
-
-  Model                                Description
-  ------------------------------------ ---------------------------------------
-  `CollisionFreeSpeedModel`            Fast first-order collision-free model
-  `CollisionFreeSpeedModelV2`          Improved interaction model
-  `GeneralizedCentrifugalForceModel`   Force-based pedestrian dynamics
-  `SocialForceModel`                   Classic Helbing social force model
 
 ------------------------------------------------------------------------
 
