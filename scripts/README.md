@@ -188,15 +188,6 @@ for model in models:
     r.cleanup()
 ```
 
-## Available simulation models
-
-| Model | Description |
-|---|---|
-| `CollisionFreeSpeedModel` | Fast, collision-free, first-order model |
-| `CollisionFreeSpeedModelV2` | Updated version with improved agent interactions |
-| `GeneralizedCentrifugalForceModel` | Force-based model with repulsive body forces |
-| `SocialForceModel` | Classic Helbing social force model |
-
 ## Workflow summary
 
 ```
