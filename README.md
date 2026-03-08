@@ -15,6 +15,7 @@ This public repository is the community home for JuPedSim Web. It started as an 
 With JuPedSim Web you can:
 
 - Create, upload, and download simulation scenarios
+- Import geometry from DXF and IFC files
 - Run pedestrian dynamics simulations
 - Visualize results directly in the browser
 
@@ -88,7 +89,9 @@ Start here:
 
 ## Supported Geometry Formats
 
-The app supports **DXF files** with a specific layer naming convention:
+The app supports **DXF** and **IFC** geometry inputs.
+
+For **DXF** files, use the required layer naming convention:
 
 | Layer Name | Type | Description |
 |------------|------|-------------|
@@ -99,7 +102,11 @@ The app supports **DXF files** with a specific layer naming convention:
 | **jps-waypoints** | Optional | Intermediate target points for pedestrian navigation |
 | **jps-journeys** | Optional | Predefined paths or routes |
 
-See the geometry examples under [geometries/dxf/](geometries/dxf/).
+See:
+
+- [Preparing DXF Files](https://github.com/PedestrianDynamics/jupedsim-web-community/wiki/Preparing-DXF-Files)
+- [geometries/dxf/](geometries/dxf/)
+- [geometries/ifc/](geometries/ifc/)
 
 ### Important Notes:
 - The **walkable area** layer must be a closed polyline that encompasses all other elements
