@@ -10,8 +10,25 @@ Tests are grouped by RiMEA annex sections:
   A5 — Quantitative verification (not automated)
 """
 
+import json
+import pathlib
+import sys
+import tempfile
+
+import numpy as np
 import pytest
-from vv_helpers import run_vv_scenario, agents_within_bounds, HAS_JUPEDSIM
+from vv_helpers import (
+    HAS_JUPEDSIM,
+    agents_within_bounds,
+    measure_flow_rate,
+    run_vv_scenario,
+)
+
+SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from core.scenario import load_scenario, run_scenario
 
 pytestmark = [
     pytest.mark.vv,
@@ -67,9 +84,7 @@ class TestRiMEA01SpeedCorridor:
         )
         assert metrics["agents_remaining"] == 0, "Agent did not evacuate"
         evac = metrics["evacuation_time"]
-        assert 26 <= evac <= 34, (
-            f"Travel time {evac:.2f}s outside RiMEA range [26, 34]"
-        )
+        assert 26 <= evac <= 34, f"Travel time {evac:.2f}s outside RiMEA range [26, 34]"
 
     def test_agent_stays_in_corridor(self):
         """Agent must remain within corridor bounds."""
@@ -83,7 +98,6 @@ class TestRiMEA01SpeedCorridor:
         assert not violations, "Agent left corridor:\n" + "\n".join(violations[:5])
 
 
-@pytest.mark.skip(reason="Requires stair/ramp zone modeling — placeholder")
 class TestRiMEA02SpeedUpStairs:
     """RiMEA Test 2: Maintaining the specified walking speed up stairs.
 
@@ -91,11 +105,80 @@ class TestRiMEA02SpeedUpStairs:
     Expected: Travel time consistent with defined stair speed.
     """
 
+    WALKABLE = "POLYGON ((0 0, 10 0, 10 2, 0 2, 0 0))"
+    EXIT = {
+        "jps-exits_0": {
+            "type": "polygon",
+            "coordinates": [
+                [9.9, 0.8],
+                [10.0, 0.8],
+                [10.0, 1.2],
+                [9.9, 1.2],
+                [9.9, 0.8],
+            ],
+        }
+    }
+    DIST = {
+        "jps-distributions_0": {
+            "type": "polygon",
+            "coordinates": [[0.0, 0.8], [0.3, 0.8], [0.3, 1.2], [0.0, 1.2], [0.0, 0.8]],
+            "parameters": {
+                "number": 1,
+                "radius": 0.08,
+                "v0": 1.0,
+                "use_flow_spawning": False,
+                "distribution_mode": "by_number",
+                "radius_distribution": "constant",
+                "v0_distribution": "constant",
+            },
+        }
+    }
+    ZONES = {
+        "jps-zones_0": {
+            "coordinates": [[0, 0], [10, 0], [10, 2], [0, 2], [0, 0]],
+            "speed_factor": 0.5,
+        }
+    }
+    JOURNEYS = [
+        {
+            "id": "jps-journeys_0",
+            "stages": ["jps-distributions_0", "jps-exits_0"],
+        }
+    ]
+
     def test_travel_time(self):
-        pass
+        """Zone-based stair approximation should keep the slowed 10 m run near 20 s."""
+        raw = {
+            "config": {
+                "simulation_settings": {
+                    "baseSeed": 42,
+                    "simulationParams": {
+                        "model_type": "CollisionFreeSpeedModel",
+                        "max_simulation_time": 60,
+                    },
+                }
+            },
+            "distributions": self.DIST,
+            "exits": self.EXIT,
+            "zones": self.ZONES,
+            "journeys": self.JOURNEYS,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            scenario_dir = pathlib.Path(tmpdir)
+            (scenario_dir / "config.json").write_text(json.dumps(raw), encoding="utf-8")
+            (scenario_dir / "geometry.wkt").write_text(self.WALKABLE, encoding="utf-8")
+
+            scenario = load_scenario(str(scenario_dir))
+            result = run_scenario(scenario, seed=42)
+            evac = result.evacuation_time
+            result.cleanup()
+
+        assert 18.8 <= evac <= 19.6, (
+            f"Stair-zone travel time {evac:.2f}s outside expected range [18.8, 19.6]"
+        )
 
 
-@pytest.mark.skip(reason="Requires stair/ramp zone modeling — placeholder")
 class TestRiMEA03SpeedDownStairs:
     """RiMEA Test 3: Maintaining the specified walking speed down stairs.
 
@@ -103,8 +186,78 @@ class TestRiMEA03SpeedDownStairs:
     Expected: Travel time consistent with defined stair speed.
     """
 
+    WALKABLE = "POLYGON ((0 0, 10 0, 10 2, 0 2, 0 0))"
+    EXIT = {
+        "jps-exits_0": {
+            "type": "polygon",
+            "coordinates": [
+                [9.9, 0.8],
+                [10.0, 0.8],
+                [10.0, 1.2],
+                [9.9, 1.2],
+                [9.9, 0.8],
+            ],
+        }
+    }
+    DIST = {
+        "jps-distributions_0": {
+            "type": "polygon",
+            "coordinates": [[0.0, 0.8], [0.3, 0.8], [0.3, 1.2], [0.0, 1.2], [0.0, 0.8]],
+            "parameters": {
+                "number": 1,
+                "radius": 0.08,
+                "v0": 1.0,
+                "use_flow_spawning": False,
+                "distribution_mode": "by_number",
+                "radius_distribution": "constant",
+                "v0_distribution": "constant",
+            },
+        }
+    }
+    ZONES = {
+        "jps-zones_0": {
+            "coordinates": [[0, 0], [10, 0], [10, 2], [0, 2], [0, 0]],
+            "speed_factor": 0.75,
+        }
+    }
+    JOURNEYS = [
+        {
+            "id": "jps-journeys_0",
+            "stages": ["jps-distributions_0", "jps-exits_0"],
+        }
+    ]
+
     def test_travel_time(self):
-        pass
+        """Zone-based stair approximation should keep downstairs travel near 13 s."""
+        raw = {
+            "config": {
+                "simulation_settings": {
+                    "baseSeed": 42,
+                    "simulationParams": {
+                        "model_type": "CollisionFreeSpeedModel",
+                        "max_simulation_time": 60,
+                    },
+                }
+            },
+            "distributions": self.DIST,
+            "exits": self.EXIT,
+            "zones": self.ZONES,
+            "journeys": self.JOURNEYS,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            scenario_dir = pathlib.Path(tmpdir)
+            (scenario_dir / "config.json").write_text(json.dumps(raw), encoding="utf-8")
+            (scenario_dir / "geometry.wkt").write_text(self.WALKABLE, encoding="utf-8")
+
+            scenario = load_scenario(str(scenario_dir))
+            result = run_scenario(scenario, seed=42)
+            evac = result.evacuation_time
+            result.cleanup()
+
+        assert 12.6 <= evac <= 13.1, (
+            f"Stair-zone travel time {evac:.2f}s outside expected range [12.6, 13.1]"
+        )
 
 
 @pytest.mark.skip(reason="Requires measurement areas and density sweeps — placeholder")
@@ -120,7 +273,6 @@ class TestRiMEA04FundamentalDiagram:
         pass
 
 
-@pytest.mark.skip(reason="Requires premovement delay support — placeholder")
 class TestRiMEA05PremovementTime:
     """RiMEA Test 5: Premovement time.
 
@@ -129,8 +281,95 @@ class TestRiMEA05PremovementTime:
     Expected: Each person starts moving at their assigned premovement time.
     """
 
+    WALKABLE = "POLYGON ((0 0, 8 0, 8 5, 0 5, 0 0))"
+    EXIT = {
+        "jps-exits_0": {
+            "type": "polygon",
+            "coordinates": [[0, 2], [1, 2], [1, 3], [0, 3], [0, 2]],
+        }
+    }
+    DIST = {
+        "jps-distributions_0": {
+            "type": "polygon",
+            "coordinates": [[5.5, 1.0], [7.5, 1.0], [7.5, 4.0], [5.5, 4.0], [5.5, 1.0]],
+            "parameters": {
+                "number": 10,
+                "radius": 0.15,
+                "v0": 1.2,
+                "use_flow_spawning": False,
+                "distribution_mode": "by_number",
+                "radius_distribution": "constant",
+                "v0_distribution": "constant",
+                "use_premovement": True,
+                "premovement_distribution": "uniform",
+                "premovement_param_a": 10.0,
+                "premovement_param_b": 100.0,
+                "premovement_seed": 12345,
+            },
+        }
+    }
+    JOURNEYS = [
+        {
+            "id": "jps-journeys_0",
+            "stages": ["jps-distributions_0", "jps-exits_0"],
+        }
+    ]
+
     def test_premovement_respected(self):
-        pass
+        """Agents should remain still until their sampled premovement delay expires."""
+        raw = {
+            "config": {
+                "simulation_settings": {
+                    "baseSeed": 42,
+                    "simulationParams": {
+                        "model_type": "CollisionFreeSpeedModel",
+                        "max_simulation_time": 180,
+                    },
+                }
+            },
+            "distributions": self.DIST,
+            "exits": self.EXIT,
+            "journeys": self.JOURNEYS,
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            scenario_dir = pathlib.Path(tmpdir)
+            (scenario_dir / "config.json").write_text(json.dumps(raw), encoding="utf-8")
+            (scenario_dir / "geometry.wkt").write_text(self.WALKABLE, encoding="utf-8")
+
+            scenario = load_scenario(str(scenario_dir))
+            result = run_scenario(scenario, seed=42)
+            frame_rate = result.frame_rate
+            df = result.trajectory_dataframe().sort_values(["id", "frame"]).copy()
+            result.cleanup()
+
+        expected_times = np.random.default_rng(12345).uniform(10.0, 100.0, 10)
+        agent_ids = sorted(df["id"].unique())
+        assert len(agent_ids) == 10, f"Expected 10 agents, got {len(agent_ids)}"
+
+        movement_start = {}
+        for agent_id in agent_ids:
+            agent_df = df[df["id"] == agent_id].copy()
+            start_x = float(agent_df.iloc[0]["x"])
+            start_y = float(agent_df.iloc[0]["y"])
+            displacement = np.hypot(agent_df["x"] - start_x, agent_df["y"] - start_y)
+            moved = agent_df[displacement > 0.05]
+            assert not moved.empty, f"Agent {agent_id} never started moving"
+            movement_start[agent_id] = float(moved.iloc[0]["frame"]) / frame_rate
+
+        observed = np.array([movement_start[agent_id] for agent_id in agent_ids])
+        assert np.all(observed >= 9.9), f"Observed movement before 10s: {observed}"
+        assert np.all(observed <= 101.0), (
+            f"Observed movement after expected window: {observed}"
+        )
+
+        expected_sorted = np.sort(expected_times)
+        observed_sorted = np.sort(observed)
+        deltas = np.abs(observed_sorted - expected_sorted)
+        assert np.all(deltas <= 0.5), (
+            "Observed movement start times do not match sampled premovement delays. "
+            f"Expected={expected_sorted}, observed={observed_sorted}, deltas={deltas}"
+        )
 
 
 class TestRiMEA06Corner:
@@ -294,8 +533,11 @@ class TestRiMEA09LargePublicSpace:
             distributions[dk] = {
                 "type": "polygon",
                 "coordinates": [
-                    [q[0], q[1]], [q[2], q[1]], [q[2], q[3]],
-                    [q[0], q[3]], [q[0], q[1]],
+                    [q[0], q[1]],
+                    [q[2], q[1]],
+                    [q[2], q[3]],
+                    [q[0], q[3]],
+                    [q[0], q[1]],
                 ],
                 "parameters": {
                     "number": n_per,
@@ -308,11 +550,13 @@ class TestRiMEA09LargePublicSpace:
                 },
             }
             jid = f"journey_{i}"
-            journeys.append({
-                "id": jid,
-                "stages": [dk, ek],
-                "transitions": [{"from": dk, "to": ek, "journey_id": jid}],
-            })
+            journeys.append(
+                {
+                    "id": jid,
+                    "stages": [dk, ek],
+                    "transitions": [{"from": dk, "to": ek, "journey_id": jid}],
+                }
+            )
             transitions.append({"from": dk, "to": ek, "journey_id": jid})
         return distributions, journeys, transitions
 
@@ -403,9 +647,7 @@ class TestRiMEA12aGoalPosition:
         return {
             "jps-exits_0": {
                 "type": "polygon",
-                "coordinates": [
-                    [x, 0], [x + 2, 0], [x + 2, 10], [x, 10], [x, 0]
-                ],
+                "coordinates": [[x, 0], [x + 2, 0], [x + 2, 10], [x, 10], [x, 0]],
                 "enable_throughput_throttling": False,
                 "max_throughput": 0,
             }
@@ -507,6 +749,7 @@ class TestRiMEA12cCongestionInfluence:
 
     Three rooms connected by two identical bottlenecks.
     Expected: Measure agent counts and flows over time at bottlenecks 1 and 2.
+              No congestion in bottleneck 2 should be observed.
     """
 
     def test_congestion_at_bottlenecks(self):
@@ -554,9 +797,9 @@ class TestRiMEA12dBottleneckWidthFlow:
         }
     }
 
-    def test_wider_bottleneck_faster(self):
-        """Wider bottleneck should yield shorter evacuation time."""
-        times = {}
+    def test_flow_increases_with_width(self):
+        """Wider bottlenecks should produce higher mean flow."""
+        flows = {}
         for w in [0.8, 1.0, 1.2]:
             metrics, _ = run_vv_scenario(
                 walkable_area_wkt=self._make_geometry(w),
@@ -565,10 +808,11 @@ class TestRiMEA12dBottleneckWidthFlow:
                 max_simulation_time=600.0,
             )
             assert metrics["agents_remaining"] == 0, f"w={w}: not all evacuated"
-            times[w] = metrics["evacuation_time"]
+            flows[w] = measure_flow_rate(metrics)
 
-        assert times[1.2] < times[0.8], (
-            f"1.2m ({times[1.2]:.1f}s) should be faster than 0.8m ({times[0.8]:.1f}s)"
+        assert flows[0.8] < flows[1.0] < flows[1.2], (
+            f"Expected flow to increase with width, got "
+            f"0.8m={flows[0.8]:.3f}, 1.0m={flows[1.0]:.3f}, 1.2m={flows[1.2]:.3f}"
         )
 
 
@@ -615,7 +859,9 @@ class TestRiMEA15LargeCrowdCorner:
 
     # L-shaped: horizontal 21x6 + vertical 6x35, overlapping 1m
     # Total path ~55m (20m horizontal + 35m vertical)
-    WALKABLE_CORNER = "POLYGON ((26 1, 26 -34, 20 -34, 20 0, 0 0, 0 6, 21 6, 21 1, 26 1))"
+    WALKABLE_CORNER = (
+        "POLYGON ((26 1, 26 -34, 20 -34, 20 0, 0 0, 0 6, 21 6, 21 1, 26 1))"
+    )
     EXIT_CORNER = {
         "jps-exits_0": {
             "type": "polygon",
@@ -673,7 +919,9 @@ class TestRiMEA15LargeCrowdCorner:
         )
         assert metrics_straight["agents_remaining"] == 0
         assert metrics_corner["agents_remaining"] == 0
-        assert metrics_corner["evacuation_time"] > metrics_straight["evacuation_time"], (
+        assert (
+            metrics_corner["evacuation_time"] > metrics_straight["evacuation_time"]
+        ), (
             f"Corner ({metrics_corner['evacuation_time']:.1f}s) should be slower "
             f"than straight ({metrics_straight['evacuation_time']:.1f}s)"
         )
