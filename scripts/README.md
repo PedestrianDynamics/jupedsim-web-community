@@ -53,7 +53,9 @@ uv run jupyter notebook
 
 ## Quick Start
 
-Load a scenario exported from the web editor and run a simulation.
+Load a scenario exported from the web editor and run a simulation. `load_scenario()`
+accepts either an exported ZIP file or a scenario directory containing one JSON file
+and one WKT file.
 
 ``` python
 from jupedsim_scenario import load_scenario, run_scenario
@@ -66,6 +68,12 @@ result = run_scenario(scenario)
 
 print(f"Evacuation time: {result.evacuation_time:.2f}s")
 print(f"All evacuated: {result.agents_remaining == 0}")
+```
+
+You can also load one of the repository examples directly:
+
+``` python
+scenario = load_scenario("scenarios/bottleneck-zone")
 ```
 
 ------------------------------------------------------------------------
@@ -128,6 +136,29 @@ scenario.set_agent_params(
     flow_end_time=30,
 )
 ```
+
+### Modify zones or stages safely
+
+High-level setters such as `set_agent_count()` mutate the loaded scenario in place.
+That is convenient for one-off changes, but it also means that nested edits to
+`scenario.raw`, `scenario.zones`, `scenario.stages`, or `scenario.journeys` will
+persist into later runs unless you copy the scenario data first.
+
+Use a deep copy when you want to build multiple independent variants from one base
+scenario:
+
+``` python
+from copy import deepcopy
+
+base = load_scenario("scenarios/bottleneck-zone")
+
+variant_raw = deepcopy(base.raw)
+variant_raw["zones"]["jps-zones_0"]["speed_factor"] = 0.5
+```
+
+This pattern is used in
+[`bottleneck_zone_nt_diagram.ipynb`](bottleneck_zone_nt_diagram.ipynb) so the
+baseline and modified runs do not accidentally share mutated nested dictionaries.
 
 ------------------------------------------------------------------------
 
@@ -223,6 +254,10 @@ PedPy supports:
 
 Documentation:\
 https://pedpy.readthedocs.io
+
+See also [`bottleneck_zone_nt_diagram.ipynb`](bottleneck_zone_nt_diagram.ipynb)
+for a complete example that compares two zone speed factors side by side with an
+$N$-$T$ diagram.
 
 ------------------------------------------------------------------------
 
