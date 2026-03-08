@@ -23,14 +23,40 @@ import os
 import pathlib
 import random
 import sqlite3
+import sys
 import tempfile
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 import jupedsim as jps
 import numpy as np
 from shapely import wkt
 from shapely.geometry import Polygon
+
+SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from shared.direct_steering_runtime import (
+    advance_path_target,
+    assign_agent_target,
+    checkpoint_stage_reached,
+    ensure_agent_speed_state,
+    extract_agent_xy,
+    is_inside_polygon,
+    sample_wait_time,
+    set_agent_desired_speed,
+    update_checkpoint_speed,
+)
+from shared.simulation_init import (
+    _find_nearest_exit,
+    _random_point_in_polygon,
+    build_agent_path_state,
+    create_agent_parameters,
+    initialize_simulation_from_json,
+)
 
 # ---------------------------------------------------------------------------
 # Model factory
@@ -331,27 +357,35 @@ class ScenarioResult:
 
 
 def load_scenario(path: str) -> Scenario:
-    """Load a scenario ZIP exported from the JuPedSim web UI.
-
-    The ZIP must contain a JSON config file and a WKT geometry file,
-    as produced by the app's download/export function.
-    """
+    """Load a scenario ZIP or directory exported from the JuPedSim web UI."""
     import zipfile
 
-    path = str(pathlib.Path(path).resolve())
+    resolved = pathlib.Path(path).resolve()
 
-    with zipfile.ZipFile(path) as zf:
-        names = zf.namelist()
+    if resolved.is_dir():
+        json_files = sorted(resolved.glob("*.json"))
+        wkt_files = sorted(resolved.glob("*.wkt"))
+        if not json_files or not wkt_files:
+            raise ValueError(
+                f"Scenario directory must contain one JSON and one WKT file: {resolved}"
+            )
+        data = json.loads(json_files[0].read_text(encoding="utf-8"))
+        walkable_wkt = wkt_files[0].read_text(encoding="utf-8").strip()
+        source_path = str(resolved)
+    else:
+        source_path = str(resolved)
+        with zipfile.ZipFile(source_path) as zf:
+            names = zf.namelist()
 
-        json_name = next((n for n in names if n.endswith(".json")), None)
-        if json_name is None:
-            raise ValueError(f"ZIP contains no JSON file. Found: {names}")
-        data = json.loads(zf.read(json_name))
+            json_name = next((n for n in names if n.endswith(".json")), None)
+            if json_name is None:
+                raise ValueError(f"ZIP contains no JSON file. Found: {names}")
+            data = json.loads(zf.read(json_name))
 
-        wkt_name = next((n for n in names if n.endswith(".wkt")), None)
-        if wkt_name is None:
-            raise ValueError(f"ZIP contains no WKT file. Found: {names}")
-        walkable_wkt = zf.read(wkt_name).decode("utf-8").strip()
+            wkt_name = next((n for n in names if n.endswith(".wkt")), None)
+            if wkt_name is None:
+                raise ValueError(f"ZIP contains no WKT file. Found: {names}")
+            walkable_wkt = zf.read(wkt_name).decode("utf-8").strip()
 
     sim_settings = data.get("config", {}).get("simulation_settings", {})
     sim_params = sim_settings.get("simulationParams", {})
@@ -366,32 +400,23 @@ def load_scenario(path: str) -> Scenario:
         model_type=model_type,
         seed=seed,
         sim_params=sim_params,
-        source_path=path,
+        source_path=source_path,
     )
 
 
 def run_scenario(scenario: Scenario, *, seed: Optional[int] = None) -> ScenarioResult:
-    """Run a scenario and return results with trajectory data.
-
-    Args:
-        scenario: A Scenario from :func:`load_scenario`.
-        seed: Override the scenario's seed for this run.
-
-    Returns:
-        A :class:`ScenarioResult` with metrics and trajectory access.
-    """
+    """Run a scenario with the same shared setup/runtime semantics as the web app."""
     seed = seed if seed is not None else scenario.seed
-    rng = np.random.default_rng(seed)
 
-    # --- model & simulation --------------------------------------------------
     model = _build_model(scenario.model_type, scenario.sim_params)
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
-    output_file = tmp.name
-    tmp.close()
+    sqlite_tmp = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
+    output_file = sqlite_tmp.name
+    sqlite_tmp.close()
 
     writer = jps.SqliteTrajectoryWriter(
-        output_file=pathlib.Path(output_file), every_nth_frame=10,
+        output_file=pathlib.Path(output_file),
+        every_nth_frame=10,
     )
     simulation = jps.Simulation(
         model=model,
@@ -399,224 +424,415 @@ def run_scenario(scenario: Scenario, *, seed: Optional[int] = None) -> ScenarioR
         trajectory_writer=writer,
     )
 
-    # --- stages --------------------------------------------------------------
-    stage_map: Dict[str, int] = {}  # element_id -> jps stage id
-    exit_polygons: Dict[str, Polygon] = {}
+    config_tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    try:
+        json.dump(scenario.raw, config_tmp, indent=2)
+        config_tmp.close()
 
-    # Exits
-    for exit_id, exit_data in scenario.exits.items():
-        coords = exit_data.get("coordinates", [])
-        if not coords:
-            continue
-        poly = Polygon(coords)
-        exit_polygons[exit_id] = poly
-        stage_map[exit_id] = simulation.add_exit_stage(poly)
-
-    # Checkpoints → waypoint stages at centroid
-    for cp_id, cp_data in scenario.stages.items():
-        coords = cp_data.get("coordinates", [])
-        if not coords:
-            continue
-        poly = Polygon(coords)
-        centroid = poly.centroid
-        # Distance = half the shortest side of the bounding box
-        minx, miny, maxx, maxy = poly.bounds
-        distance = min(maxx - minx, maxy - miny) / 2.0
-        stage_map[cp_id] = simulation.add_waypoint_stage(
-            (centroid.x, centroid.y), distance
+        walkable_area = SimpleNamespace(polygon=scenario.walkable_polygon)
+        global_parameters = SimpleNamespace(**scenario.sim_params)
+        _, _positions, agent_radii, spawning_info = initialize_simulation_from_json(
+            config_tmp.name,
+            simulation,
+            walkable_area,
+            seed=seed,
+            model_type=scenario.model_type,
+            global_parameters=global_parameters,
         )
 
-    # --- journeys ------------------------------------------------------------
-    journey_id_map: Dict[str, int] = {}  # journey id string -> jps journey id
+        initial_agent_count = simulation.agent_count()
+        has_flow_spawning = spawning_info.get("has_flow_spawning", False)
+        spawning_freqs_and_numbers = spawning_info.get("spawning_freqs_and_numbers", [])
+        starting_pos_per_source = spawning_info.get("starting_pos_per_source", [])
+        num_agents_per_source = spawning_info.get("num_agents_per_source", [])
+        agent_counter_per_source = spawning_info.get("agent_counter_per_source", [])
+        flow_distributions = spawning_info.get("flow_distributions", [])
+        has_premovement = spawning_info.get("has_premovement", False)
+        premovement_times = spawning_info.get("premovement_times", {})
+        direct_steering_info = spawning_info.get("direct_steering_info", {})
+        agent_wait_info = spawning_info.get("agent_wait_info", {})
+        checkpoint_throughput_tracker = {}
+        agent_speed_state: Dict[int, Dict[str, Any]] = {}
+        flow_variant_rng = random.Random(seed)
 
-    for journey_def in scenario.journeys:
-        jid = journey_def["id"]
-        stages = journey_def.get("stages", [])
-        # Filter to stages that exist in JuPedSim (skip distributions)
-        jps_stage_ids = [
-            stage_map[s]
-            for s in stages
-            if s in stage_map and stage_map[s] >= 0
-        ]
-        if not jps_stage_ids:
-            continue
-
-        jd = jps.JourneyDescription(jps_stage_ids)
-        for i in range(len(jps_stage_ids) - 1):
-            jd.set_transition_for_stage(
-                jps_stage_ids[i],
-                jps.Transition.create_fixed_transition(jps_stage_ids[i + 1]),
+        while simulation.elapsed_time() < scenario.max_simulation_time and (
+            simulation.agent_count() > 0
+            or (
+                has_flow_spawning
+                and sum(agent_counter_per_source) < sum(num_agents_per_source)
             )
-        journey_id_map[jid] = simulation.add_journey(jd)
+        ):
+            if has_flow_spawning:
+                current_time = simulation.elapsed_time()
 
-    # If no explicit journeys, create a default one: first exit
-    if not journey_id_map and exit_polygons:
-        first_exit_id = next(iter(exit_polygons))
-        jd = jps.JourneyDescription([stage_map[first_exit_id]])
-        journey_id_map["_default"] = simulation.add_journey(jd)
+                for source_id in range(len(spawning_freqs_and_numbers)):
+                    if source_id >= len(flow_distributions):
+                        continue
 
-    # --- agent placement -----------------------------------------------------
-    total_agents_placed = 0
-    flow_sources: List[Dict[str, Any]] = []
+                    flow_dist = flow_distributions[source_id]
+                    spawn_frequency = spawning_freqs_and_numbers[source_id][0]
+                    next_spawn_time = flow_dist["start_time"] + (
+                        agent_counter_per_source[source_id] * spawn_frequency
+                    )
 
-    for dist_id, dist_data in scenario.distributions.items():
-        params = dist_data.get("parameters", {})
-        coords = dist_data.get("coordinates", [])
-        if not coords:
-            continue
+                    if agent_counter_per_source[source_id] >= num_agents_per_source[source_id]:
+                        continue
+                    if current_time < flow_dist["start_time"] or current_time > flow_dist["end_time"]:
+                        continue
+                    if current_time < next_spawn_time:
+                        continue
 
-        dist_polygon = Polygon(coords)
-        # Clip to walkable area
-        clipped = dist_polygon.intersection(scenario.walkable_polygon)
-        if clipped.is_empty:
-            continue
+                    for _ in range(spawning_freqs_and_numbers[source_id][1]):
+                        spawned_this_attempt = False
+                        selected_variant = None
+                        selected_variant_info = None
 
-        n_agents = params.get("number", 10)
-        max_radius = params.get("radius", 0.2)
-        if params.get("radius_distribution") == "gaussian" and params.get("radius_std"):
-            max_radius = min(1.0, max_radius + 3 * params["radius_std"])
+                        for j in range(len(starting_pos_per_source[source_id])):
+                            pos_index = (
+                                agent_counter_per_source[source_id] + j
+                            ) % len(starting_pos_per_source[source_id])
+                            position = starting_pos_per_source[source_id][pos_index]
+                            flow_params = flow_dist["params"]
 
-        use_flow = params.get("use_flow_spawning", False)
+                            try:
+                                agent_parameters = create_agent_parameters(
+                                    model_type=spawning_info["model_type"],
+                                    position=position,
+                                    params=flow_params,
+                                    global_params=spawning_info["global_parameters"],
+                                    journey_id=None,
+                                    stage_id=None,
+                                )
 
-        # Find which journey this distribution belongs to
-        journey_jps_id = None
-        for j_def in scenario.journeys:
-            if dist_id in j_def.get("stages", []):
-                journey_jps_id = journey_id_map.get(j_def["id"])
-                break
-        if journey_jps_id is None:
-            journey_jps_id = next(iter(journey_id_map.values()), None)
-        if journey_jps_id is None:
-            continue
+                                if flow_dist.get("journey_info"):
+                                    distribution_journeys = flow_dist["journey_info"]
+                                    total_weight = sum(
+                                        variant_info["variant_data"]["percentage"]
+                                        for variant_info in distribution_journeys
+                                    )
+                                    rand_val = flow_variant_rng.random() * total_weight
+                                    cumulative_weight = 0.0
+                                    for variant_info in distribution_journeys:
+                                        cumulative_weight += variant_info["variant_data"]["percentage"]
+                                        if rand_val <= cumulative_weight:
+                                            selected_variant_info = variant_info
+                                            break
+                                    if selected_variant_info is None:
+                                        selected_variant_info = distribution_journeys[0]
 
-        # First stage of the journey for this distribution
-        first_stage_id = None
-        for j_def in scenario.journeys:
-            if j_def["id"] in journey_id_map and journey_id_map[j_def["id"]] == journey_jps_id:
-                for s in j_def.get("stages", []):
-                    if s in stage_map and stage_map[s] >= 0:
-                        first_stage_id = stage_map[s]
-                        break
-                break
-        if first_stage_id is None:
-            first_stage_id = next(iter(stage_map.values()))
+                                    selected_variant = selected_variant_info["variant_data"]
+                                    agent_parameters.journey_id = selected_variant["id"]
 
-        if use_flow:
-            # Flow spawning: generate positions, spawn over time
-            positions = jps.distribute_until_filled(
-                polygon=clipped,
-                distance_to_agents=2 * max_radius,
-                distance_to_polygon=max_radius,
-                seed=seed + hash(dist_id) % 10000,
-            )
-            shuffle_rng = random.Random(seed + hash(dist_id))
-            shuffle_rng.shuffle(positions)
+                                    selected_stage_id = None
+                                    for stage in selected_variant.get("entry_stages", []):
+                                        if (
+                                            stage in spawning_info["stage_map"]
+                                            and spawning_info["stage_map"][stage] != -1
+                                        ):
+                                            selected_stage_id = spawning_info["stage_map"][stage]
+                                            break
+                                    if selected_stage_id is None:
+                                        raise ValueError(
+                                            f"No valid entry stage for variant {selected_variant.get('variant_name', selected_variant.get('id'))}"
+                                        )
+                                    agent_parameters.stage_id = selected_stage_id
+                                    uses_direct_steering = any(
+                                        stage in direct_steering_info
+                                        for stage in selected_variant.get("actual_stages", [])
+                                    )
+                                    global_ds_journey_id = spawning_info.get("global_ds_journey_id")
+                                    global_ds_stage_id = spawning_info.get("global_ds_stage_id")
+                                    if (
+                                        uses_direct_steering
+                                        and global_ds_journey_id is not None
+                                        and global_ds_stage_id is not None
+                                    ):
+                                        agent_parameters.journey_id = global_ds_journey_id
+                                        agent_parameters.stage_id = global_ds_stage_id
+                                else:
+                                    nearest_exit_stage_id = _find_nearest_exit(
+                                        position,
+                                        stage_map=spawning_info.get("stage_map"),
+                                        exits=spawning_info.get("exits"),
+                                        exit_geometries=spawning_info.get("exit_geometries"),
+                                    )
+                                    nearest_journey_id = spawning_info.get("exit_to_journey", {}).get(
+                                        nearest_exit_stage_id
+                                    )
+                                    if nearest_journey_id is None:
+                                        raise ValueError(
+                                            f"Missing exit journey mapping for stage {nearest_exit_stage_id}"
+                                        )
+                                    agent_parameters.journey_id = nearest_journey_id
+                                    agent_parameters.stage_id = nearest_exit_stage_id
 
-            flow_start = max(0, params.get("flow_start_time", 0))
-            flow_end = max(flow_start + 0.1, params.get("flow_end_time", 10))
-            flow_duration = flow_end - flow_start
-            frequency = flow_duration / max(1, n_agents)
+                                agent_id = simulation.add_agent(agent_parameters)
+                                agent_radii[agent_id] = flow_params.get("radius", 0.2)
 
-            radii, v0s = _sample_agent_values(params, n_agents, rng)
+                                if selected_variant and agent_wait_info is not None and direct_steering_info:
+                                    path_state = build_agent_path_state(
+                                        variant_data=selected_variant,
+                                        journey_key=(
+                                            selected_variant_info.get("original_journey_id")
+                                            if selected_variant_info
+                                            else None
+                                        ),
+                                        transitions=spawning_info.get("transitions", []),
+                                        direct_steering_info=direct_steering_info,
+                                        waypoint_routing=spawning_info.get("waypoint_routing", {}),
+                                        seed=seed,
+                                        agent_id=agent_id,
+                                        initial_position=(float(position[0]), float(position[1])),
+                                        agent_radius=float(flow_params.get("radius", 0.2)),
+                                    )
+                                    if path_state:
+                                        agent_wait_info[agent_id] = path_state
+                                elif (
+                                    not selected_variant
+                                    and agent_wait_info is not None
+                                    and direct_steering_info
+                                ):
+                                    stage_id_to_exit = {
+                                        v: k for k, v in spawning_info.get("stage_map", {}).items()
+                                    }
+                                    exit_id = stage_id_to_exit.get(agent_parameters.stage_id)
+                                    if exit_id and exit_id in direct_steering_info:
+                                        exit_info = direct_steering_info[exit_id]
+                                        base_seed = seed + agent_id * 9973
+                                        target_rng = random.Random(base_seed)
+                                        target = _random_point_in_polygon(
+                                            exit_info["polygon"],
+                                            target_rng,
+                                        )
+                                        stage_configs = {}
+                                        for sk, info in direct_steering_info.items():
+                                            stage_configs[sk] = {
+                                                "polygon": info.get("polygon"),
+                                                "stage_type": info.get("stage_type", "exit"),
+                                                "waiting_time": float(info.get("waiting_time", 0.0)),
+                                                "waiting_time_distribution": info.get(
+                                                    "waiting_time_distribution",
+                                                    "constant",
+                                                ),
+                                                "waiting_time_std": float(info.get("waiting_time_std", 1.0)),
+                                                "enable_throughput_throttling": bool(
+                                                    info.get("enable_throughput_throttling", False)
+                                                ),
+                                                "max_throughput": float(info.get("max_throughput", 1.0)),
+                                                "speed_factor": float(info.get("speed_factor", 1.0)),
+                                            }
+                                        agent_wait_info[agent_id] = {
+                                            "mode": "path",
+                                            "path_choices": {},
+                                            "stage_configs": stage_configs,
+                                            "current_origin": exit_id,
+                                            "current_target_stage": exit_id,
+                                            "target": target,
+                                            "target_assigned": False,
+                                            "state": "to_target",
+                                            "wait_until": None,
+                                            "inside_since": None,
+                                            "reach_penetration": 0.25,
+                                            "reach_dwell_seconds": 0.2,
+                                            "step_index": 0,
+                                            "base_seed": base_seed,
+                                        }
 
-            flow_sources.append({
-                "positions": positions,
-                "n_agents": n_agents,
-                "start_time": flow_start,
-                "frequency": frequency,
-                "radii": radii,
-                "v0s": v0s,
-                "journey_id": journey_jps_id,
-                "stage_id": first_stage_id,
-                "spawned": 0,
-            })
-        else:
-            # Instant placement
-            max_capacity = _estimate_max_capacity(clipped, max_radius)
-            actual_n = min(n_agents, max_capacity)
+                                spawned_this_attempt = True
+                                break
+                            except Exception:
+                                continue
 
-            positions = jps.distribute_by_number(
-                polygon=clipped,
-                number_of_agents=actual_n,
-                distance_to_agents=2 * max_radius,
-                distance_to_polygon=max_radius,
-                seed=seed + hash(dist_id) % 10000,
-            )
+                        if not spawned_this_attempt:
+                            break
+                        agent_counter_per_source[source_id] += 1
 
-            radii, v0s = _sample_agent_values(params, len(positions), rng)
+            if has_premovement:
+                current_time = simulation.elapsed_time()
+                for agent in simulation.agents():
+                    agent_id = agent.id
+                    if agent_id in premovement_times and not premovement_times[agent_id]["activated"]:
+                        if current_time >= premovement_times[agent_id]["premovement_time"]:
+                            desired_speed = premovement_times[agent_id]["desired_speed"]
+                            set_agent_desired_speed(agent, desired_speed)
+                            speed_state = ensure_agent_speed_state(
+                                agent_speed_state, agent_id, agent
+                            )
+                            speed_state["original_speed"] = float(desired_speed)
+                            speed_state["active_checkpoint"] = None
+                            premovement_times[agent_id]["activated"] = True
 
-            for i, pos in enumerate(positions):
-                agent_params = _build_agent_params(
-                    scenario.model_type, float(v0s[i]), float(radii[i]),
-                    position=pos, journey_id=journey_jps_id, stage_id=first_stage_id,
-                )
-                simulation.add_agent(agent_params)
-                total_agents_placed += 1
+            if direct_steering_info:
+                live_agent_ids = set()
+                for agent in simulation.agents():
+                    agent_id = int(agent.id)
+                    live_agent_ids.add(agent_id)
+                    x, y = extract_agent_xy(agent)
+                    if x is None or y is None:
+                        continue
+                    update_checkpoint_speed(
+                        agent_speed_state,
+                        direct_steering_info,
+                        agent_id,
+                        agent,
+                        None,
+                        None,
+                        x,
+                        y,
+                    )
 
-    # --- simulation loop -----------------------------------------------------
-    max_time = scenario.max_simulation_time
-    initial_count = simulation.agent_count()
+                for tracked_agent_id in list(agent_speed_state.keys()):
+                    if tracked_agent_id not in live_agent_ids:
+                        agent_speed_state.pop(tracked_agent_id, None)
 
-    has_pending_flow = bool(flow_sources)
-    while (simulation.agent_count() > 0 or has_pending_flow) and simulation.elapsed_time() < max_time:
-        # Flow spawning
-        for src in flow_sources:
-            if src["spawned"] >= src["n_agents"]:
-                continue
-            t = simulation.elapsed_time()
-            if t < src["start_time"]:
-                continue
-            expected = min(
-                src["n_agents"],
-                int((t - src["start_time"]) / src["frequency"]) + 1,
-            )
-            while src["spawned"] < expected:
-                idx = src["spawned"]
-                pos = src["positions"][idx % len(src["positions"])]
-                agent_params = _build_agent_params(
-                    scenario.model_type,
-                    float(src["v0s"][idx]),
-                    float(src["radii"][idx]),
-                    position=pos,
-                    journey_id=src["journey_id"],
-                    stage_id=src["stage_id"],
-                )
-                try:
-                    simulation.add_agent(agent_params)
-                    total_agents_placed += 1
-                except Exception:
-                    pass  # position occupied, skip
-                src["spawned"] += 1
+            if direct_steering_info and agent_wait_info:
+                current_time = simulation.elapsed_time()
+                agents_by_id = {agent.id: agent for agent in simulation.agents()}
 
-        has_pending_flow = any(s["spawned"] < s["n_agents"] for s in flow_sources)
-        simulation.iterate()
+                for agent_id, wait_info in list(agent_wait_info.items()):
+                    if wait_info.get("mode") != "path":
+                        continue
+                    agent = agents_by_id.get(agent_id)
+                    if agent is None:
+                        continue
 
-    # --- collect results -----------------------------------------------------
-    evac_time = simulation.elapsed_time()
-    remaining = simulation.agent_count()
+                    state = wait_info.get("state", "to_target")
+                    x, y = extract_agent_xy(agent)
+                    if x is None or y is None:
+                        continue
+                    wait_info["current_position"] = (x, y)
 
-    # Close writer so SQLite is flushed
-    try:
-        writer.close()
-    except Exception:
-        pass
+                    if state == "done":
+                        update_checkpoint_speed(
+                            agent_speed_state,
+                            direct_steering_info,
+                            agent_id,
+                            agent,
+                            None,
+                            None,
+                            x,
+                            y,
+                        )
+                        continue
 
-    total_with_flow = initial_count + sum(s["spawned"] for s in flow_sources)
+                    current_target_stage = wait_info.get("current_target_stage")
+                    stage_cfg = wait_info.get("stage_configs", {}).get(current_target_stage, {})
+                    target = wait_info.get("target")
 
-    dt = 0.01  # JuPedSim default timestep
-    every_nth = 10  # matches SqliteTrajectoryWriter(every_nth_frame=10)
+                    if state == "to_target":
+                        update_checkpoint_speed(
+                            agent_speed_state,
+                            direct_steering_info,
+                            agent_id,
+                            agent,
+                            current_target_stage,
+                            stage_cfg,
+                            x,
+                            y,
+                        )
+                        if not wait_info.get("target_assigned", False):
+                            assign_agent_target(agent, target)
+                            wait_info["target_assigned"] = True
 
-    metrics = {
-        "success": remaining == 0 or evac_time >= max_time,
-        "evacuation_time": round(evac_time, 2),
-        "total_agents": total_with_flow,
-        "agents_evacuated": total_with_flow - remaining,
-        "agents_remaining": remaining,
-        "all_evacuated": remaining == 0,
-        "frame_rate": 1.0 / (dt * every_nth),
-        "dt": dt,
-        "seed": seed,
-        "walkable_polygon": scenario.walkable_polygon,
-    }
+                        stage_type = stage_cfg.get("stage_type")
+                        if stage_type == "exit":
+                            reached_target = is_inside_polygon(x, y, stage_cfg.get("polygon"))
+                            if not reached_target and target is not None:
+                                reached_target = (
+                                    math.hypot(x - float(target[0]), y - float(target[1])) <= 0.2
+                                )
+                        else:
+                            reached_target = checkpoint_stage_reached(
+                                wait_info,
+                                stage_cfg,
+                                current_time,
+                                x,
+                                y,
+                            )
+                            if not reached_target and target is not None:
+                                reached_target = (
+                                    math.hypot(x - float(target[0]), y - float(target[1])) <= 0.2
+                                )
 
-    return ScenarioResult(metrics=metrics, sqlite_file=output_file)
+                        if reached_target:
+                            enable_throttling = stage_cfg.get("enable_throughput_throttling", False)
+                            max_throughput = float(stage_cfg.get("max_throughput", 1.0))
+                            wp_key = current_target_stage
+                            if enable_throttling and wp_key and max_throughput > 0:
+                                min_interval = 1.0 / max_throughput
+                                tracker = checkpoint_throughput_tracker.get(
+                                    wp_key,
+                                    {"last_exit_time": -9999},
+                                )
+                                if current_time - tracker.get("last_exit_time", -9999) < min_interval:
+                                    continue
+                                checkpoint_throughput_tracker[wp_key] = {
+                                    "last_exit_time": current_time
+                                }
+
+                            if stage_type == "exit":
+                                try:
+                                    simulation.mark_agent_for_removal(agent_id)
+                                except Exception:
+                                    pass
+                                wait_info["state"] = "done"
+                                continue
+
+                            wait_time = sample_wait_time(
+                                stage_cfg,
+                                wait_info.get("base_seed", 0),
+                                wait_info.get("step_index", 0),
+                            )
+                            if wait_time > 0:
+                                wait_info["state"] = "waiting"
+                                wait_info["wait_until"] = current_time + wait_time
+                            else:
+                                advance_path_target(wait_info)
+                        continue
+
+                    if state == "waiting":
+                        update_checkpoint_speed(
+                            agent_speed_state,
+                            direct_steering_info,
+                            agent_id,
+                            agent,
+                            current_target_stage,
+                            stage_cfg,
+                            x,
+                            y,
+                        )
+                        if current_time >= float(wait_info.get("wait_until", current_time)):
+                            advance_path_target(wait_info)
+                        continue
+
+            simulation.iterate()
+
+        evacuation_time = simulation.elapsed_time()
+        remaining = simulation.agent_count()
+        total_agents = initial_agent_count
+        if has_flow_spawning:
+            total_agents += sum(agent_counter_per_source)
+
+        metrics = {
+            "success": remaining == 0 or evacuation_time >= scenario.max_simulation_time,
+            "evacuation_time": round(evacuation_time, 2),
+            "total_agents": total_agents,
+            "agents_evacuated": total_agents - remaining,
+            "agents_remaining": remaining,
+            "all_evacuated": remaining == 0,
+            "frame_rate": 10.0,
+            "dt": 0.01,
+            "seed": seed,
+            "walkable_polygon": scenario.walkable_polygon,
+        }
+
+        return ScenarioResult(metrics=metrics, sqlite_file=output_file)
+    finally:
+        try:
+            writer.close()
+        except Exception:
+            pass
+        try:
+            os.unlink(config_tmp.name)
+        except Exception:
+            pass

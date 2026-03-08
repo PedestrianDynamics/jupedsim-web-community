@@ -1,0 +1,40 @@
+{
+  "config": {
+    "simulation_settings": {
+      "baseSeed": 42,
+      "simulationParams": {
+        "model_type": "CollisionFreeSpeedModel",
+        "max_simulation_time": 60
+      }
+    }
+  },
+  "distributions": {
+    "jps-distributions_0": {
+      "coordinates": [[0.5, 0.4], [2.0, 0.4], [2.0, 1.6], [0.5, 1.6], [0.5, 0.4]],
+      "parameters": {
+        "number": 6,
+        "radius": 0.2,
+        "v0": 1.2,
+        "distribution_mode": "by_number"
+      }
+    }
+  },
+  "checkpoints": {
+    "jps-checkpoints_0": {
+      "coordinates": [[6.0, 0.3], [7.0, 0.3], [7.0, 1.7], [6.0, 1.7], [6.0, 0.3]],
+      "waiting_time": 5.0,
+      "waiting_time_distribution": "constant"
+    }
+  },
+  "exits": {
+    "jps-exits_0": {
+      "coordinates": [[13.5, 0.5], [14.0, 0.5], [14.0, 1.5], [13.5, 1.5], [13.5, 0.5]]
+    }
+  },
+  "journeys": [
+    {
+      "id": "jps-journeys_0",
+      "stages": ["jps-distributions_0", "jps-checkpoints_0", "jps-exits_0"]
+    }
+  ]
+}
