@@ -1133,7 +1133,6 @@ class TestRiMEA13FundamentalDiagramStairs:
         )
 
 
-@pytest.mark.skip(reason="Requires multi-story with route choice — placeholder")
 class TestRiMEA14RouteChoice:
     """RiMEA Test 14: Choice of route.
 
@@ -1142,7 +1141,66 @@ class TestRiMEA14RouteChoice:
     """
 
     def test_route_choice(self):
-        pass
+        scenario_zip = SCRIPTS_DIR / "scenarios" / "Rimea-14.zip"
+        with zipfile.ZipFile(scenario_zip) as archive:
+            raw = json.loads(archive.read("config.json"))
+            walkable_area_wkt = archive.read("geometry.wkt").decode()
+
+        # The exported scenario uses flow spawning in a small source area and may under-populate.
+        # For the route-choice check we keep the geometry/journeys but switch to a stable 30-agent batch.
+        raw["distributions"]["jps-distributions_0"]["parameters"].update(
+            {
+                "use_flow_spawning": False,
+                "distribution_mode": "by_number",
+                "number": 30,
+            }
+        )
+
+        upper_stage = Polygon(raw["checkpoints"]["jps-checkpoints_1"]["coordinates"])
+        upper_stage_2 = Polygon(raw["checkpoints"]["jps-checkpoints_2"]["coordinates"])
+
+        def run_variant(config: dict):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                scenario_dir = pathlib.Path(tmpdir)
+                (scenario_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+                (scenario_dir / "geometry.wkt").write_text(walkable_area_wkt, encoding="utf-8")
+                scenario = load_scenario(str(scenario_dir))
+                result = run_scenario(scenario, seed=42)
+                traj_df = result.trajectory_dataframe()[["id", "frame", "x", "y"]].copy()
+                result.cleanup()
+            return traj_df
+
+        staged_traj = run_variant(json.loads(json.dumps(raw)))
+
+        direct_raw = json.loads(json.dumps(raw))
+        direct_raw["journeys"] = [{"id": "journey_0", "stages": ["jps-distributions_0", "jps-exits_0"]}]
+        direct_raw["transitions"] = []
+        direct_traj = run_variant(direct_raw)
+
+        def count_agents_via_long_route(traj_df):
+            count = 0
+            for _, agent_df in traj_df.groupby("id"):
+                points = [Point(x, y) for x, y in zip(agent_df["x"], agent_df["y"])]
+                if any(upper_stage.covers(point) for point in points) and any(
+                    upper_stage_2.covers(point) for point in points
+                ):
+                    count += 1
+            return count
+
+        staged_long_route_agents = count_agents_via_long_route(staged_traj)
+        direct_long_route_agents = count_agents_via_long_route(direct_traj)
+        staged_total_agents = staged_traj["id"].nunique()
+        direct_total_agents = direct_traj["id"].nunique()
+
+        assert staged_total_agents == 30, f"Expected 30 staged agents, got {staged_total_agents}"
+        assert direct_total_agents == 30, f"Expected 30 direct agents, got {direct_total_agents}"
+        assert direct_long_route_agents == 0, (
+            f"Without stages, agents should take the short route only; got {direct_long_route_agents}"
+        )
+        assert 0 < staged_long_route_agents < staged_total_agents, (
+            f"With encoded stages the scenario should be configurable/mixed, got "
+            f"{staged_long_route_agents} long-route agents out of {staged_total_agents}"
+        )
 
 
 class TestRiMEA15LargeCrowdCorner:
