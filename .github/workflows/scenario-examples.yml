@@ -1,0 +1,25 @@
+name: Scenario Examples
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  shared-scenario-examples:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Sync environment
+        run: uv sync
+
+      - name: Run shared scenario examples
+        run: uv run --with pytest pytest test_shared_examples.py -q

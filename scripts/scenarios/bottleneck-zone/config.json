@@ -1,0 +1,39 @@
+{
+  "config": {
+    "simulation_settings": {
+      "baseSeed": 42,
+      "simulationParams": {
+        "model_type": "CollisionFreeSpeedModel",
+        "max_simulation_time": 60
+      }
+    }
+  },
+  "distributions": {
+    "jps-distributions_0": {
+      "coordinates": [[0.5, 0.4], [2.5, 0.4], [2.5, 1.6], [0.5, 1.6], [0.5, 0.4]],
+      "parameters": {
+        "number": 8,
+        "radius": 0.2,
+        "v0": 1.2,
+        "distribution_mode": "by_number"
+      }
+    }
+  },
+  "exits": {
+    "jps-exits_0": {
+      "coordinates": [[17.5, 0.7], [18.0, 0.7], [18.0, 1.3], [17.5, 1.3], [17.5, 0.7]]
+    }
+  },
+  "zones": {
+    "jps-zones_0": {
+      "coordinates": [[8.0, 0.2], [11.0, 0.2], [11.0, 1.8], [8.0, 1.8], [8.0, 0.2]],
+      "speed_factor": 0.4
+    }
+  },
+  "journeys": [
+    {
+      "id": "jps-journeys_0",
+      "stages": ["jps-distributions_0", "jps-exits_0"]
+    }
+  ]
+}
