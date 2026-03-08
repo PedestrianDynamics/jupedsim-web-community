@@ -14,9 +14,11 @@ import json
 import pathlib
 import sys
 import tempfile
+import zipfile
 
 import numpy as np
 import pytest
+from shapely.geometry import Point, Polygon
 from vv_helpers import (
     HAS_JUPEDSIM,
     agents_within_bounds,
@@ -28,6 +30,13 @@ SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from core.rimea07_demographic import AGE_GROUPS, WALKABLE_AREA_WKT, build_distribution_specs, build_raw_scenario
+from core.rimea13_stairs import (
+    STAIR_WALKABLE_AREA_WKT,
+    STAIR_ZONE_COORDINATES,
+    build_raw_scenario as build_stair_raw_scenario,
+    corbetta_envelope_bounds,
+)
 from core.scenario import load_scenario, run_scenario
 
 pytestmark = [
@@ -430,7 +439,6 @@ class TestRiMEA06Corner:
         assert not violations, "Agents left geometry:\n" + "\n".join(violations[:10])
 
 
-@pytest.mark.skip(reason="Requires age-speed distribution mapping — placeholder")
 class TestRiMEA07DemographicParams:
     """RiMEA Test 7: Allocation of demographic parameters.
 
@@ -439,7 +447,91 @@ class TestRiMEA07DemographicParams:
     """
 
     def test_speed_distribution(self):
-        pass
+        import pedpy
+
+        raw = build_raw_scenario()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            scenario_dir = pathlib.Path(tmpdir)
+            (scenario_dir / "config.json").write_text(json.dumps(raw), encoding="utf-8")
+            (scenario_dir / "geometry.wkt").write_text(WALKABLE_AREA_WKT, encoding="utf-8")
+
+            scenario = load_scenario(str(scenario_dir))
+            result = run_scenario(scenario, seed=42)
+
+            assert result.agents_remaining == 0, "All demographic agents should evacuate"
+            assert result.total_agents == 50, "RiMEA 07 requires a 50-person adult population"
+
+            traj_df = result.trajectory_dataframe()[["id", "frame", "x", "y"]].copy()
+            traj = pedpy.TrajectoryData(traj_df, frame_rate=result.frame_rate)
+            speeds = pedpy.compute_individual_speed(
+                traj_data=traj,
+                frame_step=10,
+                speed_calculation=pedpy.SpeedCalculation.BORDER_EXCLUDE,
+            )
+            result.cleanup()
+
+        first_samples = (
+            traj.data.sort_values(["frame", "id"])
+            .groupby("id", as_index=False)
+            .first()
+            .sort_values(["frame", "y", "x"])
+            .reset_index(drop=True)
+        )
+        specs = build_distribution_specs()
+        assert len(first_samples) == len(specs), "Spawn-order mapping requires one trajectory start per spec"
+
+        mapping = {
+            int(row["id"]): specs[idx]
+            for idx, row in enumerate(first_samples.to_dict("records"))
+        }
+
+        observed_by_age = {}
+        for agent_id, agent_speed in speeds.groupby("id"):
+            spec = mapping.get(int(agent_id))
+            assert spec is not None, f"Missing demographic mapping for agent {agent_id}"
+            first_frame = int(first_samples.loc[first_samples["id"] == agent_id, "frame"].iloc[0])
+            settled = agent_speed[agent_speed["frame"] >= first_frame + 20]
+            if settled.empty:
+                settled = agent_speed
+
+            observed_by_age.setdefault(spec["age_years"], []).append(
+                {
+                    "assigned_speed": float(spec["assigned_speed"]),
+                    "observed_speed": float(settled["speed"].median()),
+                }
+            )
+
+        expected_counts = {int(group["age_years"]): int(group["count"]) for group in AGE_GROUPS}
+        expected_ranges = {
+            int(group["age_years"]): (float(group["vmin"]), float(group["vmax"])) for group in AGE_GROUPS
+        }
+
+        mean_observed_speeds = []
+        for age in sorted(expected_counts):
+            rows = observed_by_age.get(age, [])
+            assert len(rows) == expected_counts[age], (
+                f"Age {age}: expected {expected_counts[age]} agents, got {len(rows)}"
+            )
+
+            assigned = [row["assigned_speed"] for row in rows]
+            observed = [row["observed_speed"] for row in rows]
+            vmin, vmax = expected_ranges[age]
+
+            assert min(assigned) >= vmin - 1e-6 and max(assigned) <= vmax + 1e-6, (
+                f"Age {age}: assigned speeds {min(assigned):.3f}-{max(assigned):.3f} "
+                f"outside reference {vmin:.3f}-{vmax:.3f}"
+            )
+            assert min(observed) >= vmin - 0.03 and max(observed) <= vmax + 0.03, (
+                f"Age {age}: observed speeds {min(observed):.3f}-{max(observed):.3f} "
+                f"outside tolerance around reference {vmin:.3f}-{vmax:.3f}"
+            )
+
+            mean_observed_speeds.append(float(np.mean(observed)))
+
+        assert all(
+            earlier >= later for earlier, later in zip(mean_observed_speeds, mean_observed_speeds[1:])
+        ), f"Observed mean speeds should decrease with age, got {mean_observed_speeds}"
 
 
 # ---------------------------------------------------------------------------
@@ -588,7 +680,6 @@ class TestRiMEA09LargePublicSpace:
         )
 
 
-@pytest.mark.skip(reason="Requires journey-based route assignment — placeholder")
 class TestRiMEA10RouteAllocation:
     """RiMEA Test 10: Allocation of escape routes.
 
@@ -596,8 +687,77 @@ class TestRiMEA10RouteAllocation:
     Expected: Agents go to their assigned exits.
     """
 
+    SCENARIO_ZIP = SCRIPTS_DIR / "scenarios" / "Rimea-10.zip"
+
+    def _load_raw(self):
+        with zipfile.ZipFile(self.SCENARIO_ZIP) as zf:
+            return json.loads(zf.read("config.json"))
+
+    def _agent_to_distribution(self, trajectory, distributions):
+        first_positions = (
+            trajectory.data.sort_values(["id", "frame"]).groupby("id").first().reset_index()
+        )
+        distribution_polygons = {
+            key: Polygon(value["coordinates"]) for key, value in distributions.items()
+        }
+        agent_to_distribution = {}
+        for row in first_positions.itertuples():
+            point = Point(row.x, row.y)
+            for distribution_id, polygon in distribution_polygons.items():
+                if polygon.covers(point):
+                    agent_to_distribution[row.id] = distribution_id
+                    break
+        return agent_to_distribution
+
+    def _agent_to_actual_exit(self, trajectory, exits):
+        last_positions = (
+            trajectory.data.sort_values(["id", "frame"]).groupby("id").last().reset_index()
+        )
+        exit_polygons = {key: Polygon(value["coordinates"]) for key, value in exits.items()}
+        agent_to_exit = {}
+        for row in last_positions.itertuples():
+            point = Point(row.x, row.y)
+            agent_to_exit[row.id] = min(
+                exit_polygons,
+                key=lambda exit_id: exit_polygons[exit_id].distance(point),
+            )
+        return agent_to_exit
+
     def test_agents_use_assigned_exits(self):
-        pass
+        import pedpy
+
+        raw = self._load_raw()
+        scenario = load_scenario(str(self.SCENARIO_ZIP))
+        result = run_scenario(scenario, seed=42)
+
+        assert result.agents_remaining == 0
+
+        trajectory = pedpy.TrajectoryData(
+            result.trajectory_dataframe()[["id", "frame", "x", "y"]].copy(),
+            frame_rate=result.frame_rate,
+        )
+
+        agent_to_distribution = self._agent_to_distribution(trajectory, raw["distributions"])
+        distribution_to_exit = {
+            journey["stages"][0]: journey["stages"][-1] for journey in raw["journeys"]
+        }
+        expected_agent_exit = {
+            agent_id: distribution_to_exit[distribution_id]
+            for agent_id, distribution_id in agent_to_distribution.items()
+        }
+        actual_agent_exit = self._agent_to_actual_exit(trajectory, raw["exits"])
+
+        assert len(expected_agent_exit) == result.total_agents
+        assert set(expected_agent_exit) == set(actual_agent_exit)
+
+        mismatches = {
+            agent_id: (expected_agent_exit[agent_id], actual_agent_exit[agent_id])
+            for agent_id in expected_agent_exit
+            if expected_agent_exit[agent_id] != actual_agent_exit[agent_id]
+        }
+        assert not mismatches, f"Agents reached wrong exits: {mismatches}"
+
+        result.cleanup()
 
 
 @pytest.mark.skip(reason="Requires route choice modeling — placeholder")
@@ -743,7 +903,6 @@ class TestRiMEA12bBottleneckLength:
         )
 
 
-@pytest.mark.skip(reason="Requires flow measurement at bottlenecks — placeholder")
 class TestRiMEA12cCongestionInfluence:
     """RiMEA Test 12c: Influence of congestion.
 
@@ -752,8 +911,90 @@ class TestRiMEA12cCongestionInfluence:
               No congestion in bottleneck 2 should be observed.
     """
 
+    WALKABLE = "POLYGON ((0 0, 10 0, 10 4.5, 10.2 4.5, 10.2 0, 20.2 0, 20.2 4.5, 20.4 4.5, 20.4 0, 25.4 0, 25.4 10, 20.4 10, 20.4 5.5, 20.2 5.5, 20.2 10, 10.2 10, 10.2 5.5, 10 5.5, 10 10, 0 10, 0 0))"
+    EXIT = {
+        "jps-exits_0": {
+            "type": "polygon",
+            "coordinates": [[25.2, 0], [25.4, 0], [25.4, 10], [25.2, 10], [25.2, 0]],
+            "enable_throughput_throttling": False,
+            "max_throughput": 0,
+        }
+    }
+    DIST = {
+        "jps-distributions_0": {
+            "type": "polygon",
+            "coordinates": [[0, 0], [5, 0], [5, 10], [0, 10], [0, 0]],
+            "parameters": {
+                "number": 150,
+                "radius": 0.15,
+                "v0": 1.2,
+                "use_flow_spawning": False,
+                "distribution_mode": "by_number",
+                "radius_distribution": "constant",
+                "v0_distribution": "constant",
+            },
+        }
+    }
+    BOTTLENECK_1_LINE = ((10.0, 4.5), (10.0, 5.5))
+    BOTTLENECK_2_LINE = ((20.2, 4.5), (20.2, 5.5))
+    QUEUE_AREA_1 = Polygon([(8.0, 3.5), (10.0, 3.5), (10.0, 6.5), (8.0, 6.5)])
+    QUEUE_AREA_2 = Polygon([(18.2, 3.5), (20.2, 3.5), (20.2, 6.5), (18.2, 6.5)])
+
+    def _count_agents_in_area_per_frame(self, trajectory, area):
+        counts = []
+        if trajectory is None:
+            return counts
+        for _, frame_data in trajectory.data.groupby("frame"):
+            count = 0
+            for row in frame_data.itertuples():
+                if area.covers(Point(row.x, row.y)):
+                    count += 1
+            counts.append(count)
+        return counts
+
     def test_congestion_at_bottlenecks(self):
-        pass
+        import pedpy
+
+        metrics, trajectory = run_vv_scenario(
+            walkable_area_wkt=self.WALKABLE,
+            exits=self.EXIT,
+            distributions=self.DIST,
+            max_simulation_time=400.0,
+        )
+
+        assert metrics["agents_remaining"] == 0
+        assert trajectory is not None, "Trajectory output required for bottleneck analysis"
+
+        line_1 = pedpy.MeasurementLine(list(self.BOTTLENECK_1_LINE))
+        line_2 = pedpy.MeasurementLine(list(self.BOTTLENECK_2_LINE))
+        nt_1, crossing_1 = pedpy.compute_n_t(traj_data=trajectory, measurement_line=line_1)
+        nt_2, crossing_2 = pedpy.compute_n_t(traj_data=trajectory, measurement_line=line_2)
+
+        assert len(crossing_1) == metrics["total_agents"]
+        assert len(crossing_2) == metrics["total_agents"]
+
+        queue_1 = self._count_agents_in_area_per_frame(trajectory, self.QUEUE_AREA_1)
+        queue_2 = self._count_agents_in_area_per_frame(trajectory, self.QUEUE_AREA_2)
+
+        peak_queue_1 = max(queue_1)
+        peak_queue_2 = max(queue_2)
+        mean_top10_queue_1 = float(np.mean(sorted(queue_1, reverse=True)[:10]))
+        mean_top10_queue_2 = float(np.mean(sorted(queue_2, reverse=True)[:10]))
+
+        assert peak_queue_1 > peak_queue_2, (
+            f"Expected stronger queue before bottleneck 1, got peaks "
+            f"b1={peak_queue_1}, b2={peak_queue_2}"
+        )
+        assert mean_top10_queue_1 > mean_top10_queue_2, (
+            f"Expected denser sustained queue before bottleneck 1, got top-10 means "
+            f"b1={mean_top10_queue_1:.2f}, b2={mean_top10_queue_2:.2f}"
+        )
+        first_crossing_1 = float(crossing_1["frame"].min() / trajectory.frame_rate)
+        first_crossing_2 = float(crossing_2["frame"].min() / trajectory.frame_rate)
+        assert first_crossing_1 < first_crossing_2, (
+            f"Expected bottleneck 2 to start later than bottleneck 1, got "
+            f"b1={first_crossing_1:.2f}s, b2={first_crossing_2:.2f}s"
+        )
 
 
 class TestRiMEA12dBottleneckWidthFlow:
@@ -816,15 +1057,80 @@ class TestRiMEA12dBottleneckWidthFlow:
         )
 
 
-@pytest.mark.skip(reason="Requires stair/ramp zone modeling — placeholder")
 class TestRiMEA13FundamentalDiagramStairs:
     """RiMEA Test 13: Fundamental diagram on stairs.
 
     Expected: Speed downstairs > speed upstairs at same density.
     """
 
+    def _run_direction(self, direction: str):
+        import pedpy
+
+        raw = build_stair_raw_scenario(direction=direction)
+        stair_zone = Polygon(STAIR_ZONE_COORDINATES)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            scenario_dir = pathlib.Path(tmpdir)
+            (scenario_dir / "config.json").write_text(json.dumps(raw), encoding="utf-8")
+            (scenario_dir / "geometry.wkt").write_text(STAIR_WALKABLE_AREA_WKT, encoding="utf-8")
+
+            scenario = load_scenario(str(scenario_dir))
+            result = run_scenario(scenario, seed=42)
+
+            assert result.agents_remaining == 0, f"RiMEA 13 {direction}: not all agents evacuated"
+
+            traj_df = result.trajectory_dataframe()[["id", "frame", "x", "y"]].copy()
+            traj = pedpy.TrajectoryData(traj_df, frame_rate=result.frame_rate)
+            speed_df = pedpy.compute_individual_speed(
+                traj_data=traj,
+                frame_step=10,
+                speed_calculation=pedpy.SpeedCalculation.BORDER_EXCLUDE,
+            )
+            merged = traj.data.merge(speed_df[["id", "frame", "speed"]], on=["id", "frame"], how="inner")
+            result.cleanup()
+
+        stair_points = merged[
+            merged.apply(lambda row: stair_zone.covers(Point(row["x"], row["y"])), axis=1)
+        ].copy()
+        frame_counts = stair_points.groupby("frame")["id"].nunique().rename("count")
+        stair_points = stair_points.merge(frame_counts, on="frame", how="left")
+        stair_points["density"] = stair_points["count"] / stair_zone.area
+        stair_points = stair_points[(stair_points["density"] >= 0.6) & (stair_points["density"] <= 1.5)]
+        stair_points["density_bin"] = np.round(stair_points["density"], 1)
+        return stair_points
+
     def test_down_faster_than_up(self):
-        pass
+        up_points = self._run_direction("up")
+        down_points = self._run_direction("down")
+
+        assert len(up_points) > 500, f"Too few upstairs stair samples: {len(up_points)}"
+        assert len(down_points) > 500, f"Too few downstairs stair samples: {len(down_points)}"
+
+        up_low, up_high = corbetta_envelope_bounds("up", up_points["density"].to_numpy())
+        down_low, down_high = corbetta_envelope_bounds("down", down_points["density"].to_numpy())
+
+        up_inside = (
+            (up_points["speed"].to_numpy() >= up_low) & (up_points["speed"].to_numpy() <= up_high)
+        ).mean()
+        down_inside = (
+            (down_points["speed"].to_numpy() >= down_low)
+            & (down_points["speed"].to_numpy() <= down_high)
+        ).mean()
+
+        assert up_inside >= 0.50, f"Upstairs points inside Corbetta band too low: {up_inside:.3f}"
+        assert down_inside >= 0.50, (
+            f"Downstairs points inside Corbetta band too low: {down_inside:.3f}"
+        )
+
+        up_binned = up_points.groupby("density_bin", observed=True)["speed"].mean()
+        down_binned = down_points.groupby("density_bin", observed=True)["speed"].mean()
+        common_bins = up_binned.index.intersection(down_binned.index)
+
+        assert len(common_bins) >= 5, f"Expected enough shared density bins, got {list(common_bins)}"
+        assert (down_binned.loc[common_bins] > up_binned.loc[common_bins]).all(), (
+            "Downstairs mean speed should exceed upstairs mean speed at shared densities, got "
+            f"up={up_binned.loc[common_bins].to_dict()}, down={down_binned.loc[common_bins].to_dict()}"
+        )
 
 
 @pytest.mark.skip(reason="Requires multi-story with route choice — placeholder")
