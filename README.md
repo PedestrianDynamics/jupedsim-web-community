@@ -57,8 +57,8 @@ See [docker/README.md](docker/README.md) for the full setup and troubleshooting 
 The [`scripts/`](scripts/) directory contains a standalone Python workflow for running exported scenarios locally, including waiting stages, zones, and example scenarios.
 
 ```bash
+uv sync --extra dev
 cd scripts
-uv sync
 uv run jupyter notebook
 ```
 

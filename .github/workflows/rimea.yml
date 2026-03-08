@@ -6,7 +6,8 @@ on:
     paths:
       - "tests/vv/test_rimea.py"
       - "tests/vv/vv_helpers.py"
-      - "requirements-vv.txt"
+      - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/rimea.yml"
   schedule:
     - cron: "0 6 * * 1"
@@ -18,17 +19,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-
     - uses: astral-sh/setup-uv@v5
 
-    - name: Install dependencies
-      run: uv pip install --system -r requirements-vv.txt
+    - name: Sync environment
+      run: uv sync --extra dev
 
     - name: Run RiMEA tests
-      run: python -m pytest tests/vv/test_rimea.py -v --junitxml=results/rimea-tests.xml
+      run: uv run --extra dev pytest tests/vv/test_rimea.py -v --junitxml=results/rimea-tests.xml
 
     - name: Upload results
       if: always()

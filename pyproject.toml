@@ -1,0 +1,24 @@
+[project]
+name = "jupedsim-web-community"
+version = "0.1.0"
+description = "Community resources, scenario scripting, and validation assets for JuPedSim Web"
+requires-python = ">=3.10"
+dependencies = [
+    "ipykernel",
+    "jupyter",
+    "jupedsim",
+    "numpy",
+    "pandas",
+    "pedpy",
+    "shapely",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "vv: verification and validation tests",
+]

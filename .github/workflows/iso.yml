@@ -6,7 +6,8 @@ on:
     paths:
       - "tests/vv/test_iso_*.py"
       - "tests/vv/vv_helpers.py"
-      - "requirements-vv.txt"
+      - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/iso.yml"
   schedule:
     - cron: "0 6 * * 1"

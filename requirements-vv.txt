@@ -1,4 +1,0 @@
-jupedsim
-pedpy
-shapely
-pytest

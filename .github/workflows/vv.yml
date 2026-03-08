@@ -13,17 +13,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-
     - uses: astral-sh/setup-uv@v5
 
-    - name: Install dependencies
-      run: uv pip install --system -r requirements-vv.txt
+    - name: Sync environment
+      run: uv sync --extra dev
 
     - name: Run V&V tests
-      run: python -m pytest tests/vv -v --junitxml=results/vv-tests.xml
+      run: uv run --extra dev pytest tests/vv -v --junitxml=results/vv-tests.xml
 
     - name: Upload V&V test results
       if: always()

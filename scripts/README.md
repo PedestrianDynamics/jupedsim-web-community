@@ -36,14 +36,15 @@ This project uses [uv](https://docs.astral.sh/uv/getting-started/installation/) 
 Create venv and install dependencies:
 
 ```bash
-uv venv
-uv sync
+cd ..
+uv sync --extra dev
+cd scripts
 ```
 
 Run Jupyter directly:
 
 ```bash
-uv run jupyter notebook
+uv run --project .. jupyter notebook
 ```
 
 > [!TIP]
@@ -340,15 +341,15 @@ for model in models:
 
     .
     ├── core/
-    ├── pyproject.toml
     ├── bottleneck_zone_nt_diagram.ipynb
-    └── scenarios/
+    ├── scenarios/
+    └── ../pyproject.toml
 
     
 | File | Description |
 |------|-------------|
 | `core/scenario.py` | Reusable scenario loading and simulation interface |
 | `core/__init__.py` | Public imports for the reusable scenario module |
-| `pyproject.toml` | Project dependencies managed with `uv` |
 | `bottleneck_zone_nt_diagram.ipynb` | Example notebook comparing bottleneck zone variants with an $N$-$T$ diagram |
 | `scenarios/` | Example scenario directories and exported inputs for local runs |
+| `../pyproject.toml` | Root Python project and shared dependency definition managed with `uv` |
