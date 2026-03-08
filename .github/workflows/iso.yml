@@ -1,0 +1,24 @@
+name: ISO Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tests/vv/test_iso_*.py"
+      - "tests/vv/vv_helpers.py"
+      - "requirements-vv.txt"
+      - ".github/workflows/iso.yml"
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  iso-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: ISO tests (coming soon)
+      run: |
+        echo "ISO 20414 / ISO 20415 tests are planned but not yet implemented."
+        echo "See: https://github.com/PedestrianDynamics/jupedsim-web-community/issues"

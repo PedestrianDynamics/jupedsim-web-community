@@ -1,3 +1,7 @@
+[![IMO Tests](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/imo.yml/badge.svg)](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/imo.yml)
+[![RiMEA Tests](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/rimea.yml/badge.svg)](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/rimea.yml)
+[![ISO Tests](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/iso.yml/badge.svg)](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/iso.yml)
+
 [![Watch on YouTube](https://img.youtube.com/vi/MGj0Nyumdms/0.jpg)](https://www.youtube.com/watch?v=MGj0Nyumdms)
 
 

@@ -1,0 +1,44 @@
+name: RiMEA Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tests/vv/test_rimea.py"
+      - "tests/vv/vv_helpers.py"
+      - "requirements-vv.txt"
+      - ".github/workflows/rimea.yml"
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  rimea-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - uses: astral-sh/setup-uv@v5
+
+    - name: Install dependencies
+      run: uv pip install --system -r requirements-vv.txt
+
+    - name: Run RiMEA tests
+      run: python -m pytest tests/vv/test_rimea.py -v --junitxml=results/rimea-tests.xml
+
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: rimea-test-results
+        path: results/rimea-tests.xml
+
+    - name: Test summary
+      if: always()
+      uses: test-summary/action@v2
+      with:
+        paths: results/rimea-tests.xml
