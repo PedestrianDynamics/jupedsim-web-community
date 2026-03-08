@@ -340,14 +340,14 @@ for model in models:
 
     .
     ├── jupedsim_scenario.py
-    ├── requirements.txt
-    ├── scenario_scripting.ipynb
+    ├── pyproject.toml
+    ├── bottleneck_zone_nt_diagram.ipynb
     └── scenarios/
 
     
 | File | Description |
 |------|-------------|
 | `jupedsim_scenario.py` | Scenario loading and simulation interface |
-| `requirements.txt` | Project dependencies |
-| `scenario_scripting.ipynb` | Example analysis notebook |
-| `scenarios/` | Example scenario ZIPs exported from the app |
+| `pyproject.toml` | Project dependencies managed with `uv` |
+| `bottleneck_zone_nt_diagram.ipynb` | Example notebook comparing bottleneck zone variants with an $N$-$T$ diagram |
+| `scenarios/` | Example scenario directories and exported inputs for local runs |
