@@ -214,6 +214,10 @@ class Scenario:
             d.get("parameters", {}).get("number", 0)
             for d in self.distributions.values()
         )
+        journey_sequence = []
+        journeys = self.raw.get("journeys", [])
+        if journeys:
+            journey_sequence = list(journeys[0].get("stages", []))
         lines = [
             f"Scenario: {self.source_path or '(in-memory)'}",
             f"  Model:         {self.model_type}",
@@ -226,6 +230,22 @@ class Scenario:
             f"  Journeys:      {len(self.journeys)}",
             f"  Agents:        ~{total_agents}",
         ]
+        if journey_sequence:
+            checkpoint_count = sum(
+                stage.startswith("jps-checkpoints_") for stage in journey_sequence
+            )
+            exit_count = sum(stage.startswith("jps-exits_") for stage in journey_sequence)
+            distribution_count = sum(
+                stage.startswith("jps-distributions_") for stage in journey_sequence
+            )
+            lines.append(f"  Journey elems: {len(journey_sequence)}")
+            lines.append(
+                "  Route:         "
+                f"{distribution_count} distribution, "
+                f"{checkpoint_count} checkpoint, "
+                f"{exit_count} exit"
+            )
+            lines.append(f"  Sequence:      {' -> '.join(journey_sequence)}")
         for dist_id, dist in self.distributions.items():
             params = dist.get("parameters", {})
             flow = params.get("use_flow_spawning", False)
