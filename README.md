@@ -59,13 +59,13 @@ The [`scripts/`](scripts/) directory contains a standalone Python workflow for r
 ```bash
 cd scripts
 uv sync
-uv run python jupedsim_scenario.py --help
+uv run jupyter notebook
 ```
 
 Start here:
 
 - [scripts/README.md](scripts/README.md)
-- [scripts/jupedsim_scenario.py](scripts/jupedsim_scenario.py)
+- [scripts/core/scenario.py](scripts/core/scenario.py)
 - [scripts/scenarios/](scripts/scenarios/)
 - [scripts/bottleneck_zone_nt_diagram.ipynb](scripts/bottleneck_zone_nt_diagram.ipynb)
 

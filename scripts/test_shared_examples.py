@@ -1,7 +1,7 @@
 import copy
 from pathlib import Path
 
-from jupedsim_scenario import Scenario, load_scenario, run_scenario
+from core.scenario import Scenario, load_scenario, run_scenario
 
 
 SCENARIOS_DIR = Path(__file__).resolve().parent / "scenarios"

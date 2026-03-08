@@ -58,7 +58,7 @@ accepts either an exported ZIP file or a scenario directory containing one JSON 
 and one WKT file.
 
 ``` python
-from jupedsim_scenario import load_scenario, run_scenario
+from core.scenario import load_scenario, run_scenario
 
 scenario = load_scenario("jps_2025_03_07.zip")
 
@@ -339,7 +339,7 @@ for model in models:
 ## Repository Structure
 
     .
-    ├── jupedsim_scenario.py
+    ├── core/
     ├── pyproject.toml
     ├── bottleneck_zone_nt_diagram.ipynb
     └── scenarios/
@@ -347,7 +347,8 @@ for model in models:
     
 | File | Description |
 |------|-------------|
-| `jupedsim_scenario.py` | Scenario loading and simulation interface |
+| `core/scenario.py` | Reusable scenario loading and simulation interface |
+| `core/__init__.py` | Public imports for the reusable scenario module |
 | `pyproject.toml` | Project dependencies managed with `uv` |
 | `bottleneck_zone_nt_diagram.ipynb` | Example notebook comparing bottleneck zone variants with an $N$-$T$ diagram |
 | `scenarios/` | Example scenario directories and exported inputs for local runs |

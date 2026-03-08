@@ -4,7 +4,7 @@ No dependency on the web backend — only JuPedSim, Shapely, and NumPy.
 
 Usage::
 
-    from jupedsim_scenario import load_scenario, run_scenario
+    from core.scenario import load_scenario, run_scenario
 
     scenario = load_scenario("scenario.zip")
     print(scenario.summary())
@@ -35,7 +35,7 @@ from shapely import wkt
 from shapely.geometry import Polygon
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
