@@ -257,7 +257,7 @@ https://pedpy.readthedocs.io
 
 See also [`bottleneck_zone_nt_diagram.ipynb`](bottleneck_zone_nt_diagram.ipynb)
 for a complete example that compares two zone speed factors side by side with an
-$N$-$T$ diagram.
+$N-T$ diagram.
 
 ------------------------------------------------------------------------
 
