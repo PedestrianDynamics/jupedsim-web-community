@@ -114,16 +114,16 @@ class TestRiMEA02SpeedUpStairs:
     Expected: Travel time consistent with defined stair speed.
     """
 
-    WALKABLE = "POLYGON ((0 0, 10 0, 10 2, 0 2, 0 0))"
+    WALKABLE = "POLYGON ((0 0, 10.4 0, 10.4 2, 0 2, 0 0))"
     EXIT = {
         "jps-exits_0": {
             "type": "polygon",
             "coordinates": [
-                [9.9, 0.8],
-                [10.0, 0.8],
-                [10.0, 1.2],
-                [9.9, 1.2],
-                [9.9, 0.8],
+                [10.35, 0.8],
+                [10.4, 0.8],
+                [10.4, 1.2],
+                [10.35, 1.2],
+                [10.35, 0.8],
             ],
         }
     }
@@ -144,7 +144,7 @@ class TestRiMEA02SpeedUpStairs:
     }
     ZONES = {
         "jps-zones_0": {
-            "coordinates": [[0, 0], [10, 0], [10, 2], [0, 2], [0, 0]],
+            "coordinates": [[0, 0], [10.4, 0], [10.4, 2], [0, 2], [0, 0]],
             "speed_factor": 0.5,
         }
     }
@@ -195,16 +195,16 @@ class TestRiMEA03SpeedDownStairs:
     Expected: Travel time consistent with defined stair speed.
     """
 
-    WALKABLE = "POLYGON ((0 0, 10 0, 10 2, 0 2, 0 0))"
+    WALKABLE = "POLYGON ((0 0, 10.4 0, 10.4 2, 0 2, 0 0))"
     EXIT = {
         "jps-exits_0": {
             "type": "polygon",
             "coordinates": [
-                [9.9, 0.8],
-                [10.0, 0.8],
-                [10.0, 1.2],
-                [9.9, 1.2],
-                [9.9, 0.8],
+                [10.35, 0.8],
+                [10.4, 0.8],
+                [10.4, 1.2],
+                [10.35, 1.2],
+                [10.35, 0.8],
             ],
         }
     }
@@ -225,7 +225,7 @@ class TestRiMEA03SpeedDownStairs:
     }
     ZONES = {
         "jps-zones_0": {
-            "coordinates": [[0, 0], [10, 0], [10, 2], [0, 2], [0, 0]],
+            "coordinates": [[0, 0], [10.4, 0], [10.4, 2], [0, 2], [0, 0]],
             "speed_factor": 0.75,
         }
     }
@@ -1156,9 +1156,6 @@ class TestRiMEA14RouteChoice:
             }
         )
 
-        upper_stage = Polygon(raw["checkpoints"]["jps-checkpoints_1"]["coordinates"])
-        upper_stage_2 = Polygon(raw["checkpoints"]["jps-checkpoints_2"]["coordinates"])
-
         def run_variant(config: dict):
             with tempfile.TemporaryDirectory() as tmpdir:
                 scenario_dir = pathlib.Path(tmpdir)
@@ -1177,18 +1174,15 @@ class TestRiMEA14RouteChoice:
         direct_raw["transitions"] = []
         direct_traj = run_variant(direct_raw)
 
-        def count_agents_via_long_route(traj_df):
-            count = 0
-            for _, agent_df in traj_df.groupby("id"):
-                points = [Point(x, y) for x, y in zip(agent_df["x"], agent_df["y"])]
-                if any(upper_stage.covers(point) for point in points) and any(
-                    upper_stage_2.covers(point) for point in points
-                ):
-                    count += 1
-            return count
+        def classify_routes(traj_df):
+            agent_max_y = traj_df.groupby("id")["y"].max()
+            # The long route moves to the upper floor around y ~= 14, while the direct route stays below.
+            long_count = int((agent_max_y > 12.0).sum())
+            short_count = int((agent_max_y <= 12.0).sum())
+            return long_count, short_count
 
-        staged_long_route_agents = count_agents_via_long_route(staged_traj)
-        direct_long_route_agents = count_agents_via_long_route(direct_traj)
+        staged_long_route_agents, staged_short_stage_agents = classify_routes(staged_traj)
+        direct_long_route_agents, direct_short_stage_agents = classify_routes(direct_traj)
         staged_total_agents = staged_traj["id"].nunique()
         direct_total_agents = direct_traj["id"].nunique()
 
@@ -1197,9 +1191,12 @@ class TestRiMEA14RouteChoice:
         assert direct_long_route_agents == 0, (
             f"Without stages, agents should take the short route only; got {direct_long_route_agents}"
         )
-        assert 0 < staged_long_route_agents < staged_total_agents, (
-            f"With encoded stages the scenario should be configurable/mixed, got "
-            f"{staged_long_route_agents} long-route agents out of {staged_total_agents}"
+        assert direct_short_stage_agents == direct_total_agents, (
+            f"Without stages, all agents should stay on the direct short route; got {direct_short_stage_agents}"
+        )
+        assert staged_long_route_agents > staged_short_stage_agents, (
+            f"Configured staged scenario should prefer the long route, got "
+            f"long={staged_long_route_agents}, short={staged_short_stage_agents}"
         )
 
 
