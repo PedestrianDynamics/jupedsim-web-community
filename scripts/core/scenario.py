@@ -42,10 +42,8 @@ if str(REPO_ROOT) not in sys.path:
 from shared.direct_steering_runtime import (
     advance_path_target,
     assign_agent_target,
-    checkpoint_stage_reached,
     ensure_agent_speed_state,
     extract_agent_xy,
-    is_inside_polygon,
     sample_wait_time,
     set_agent_desired_speed,
     update_checkpoint_speed,
@@ -755,24 +753,15 @@ def run_scenario(scenario: Scenario, *, seed: Optional[int] = None) -> ScenarioR
                             wait_info["target_assigned"] = True
 
                         stage_type = stage_cfg.get("stage_type")
-                        if stage_type == "exit":
-                            reached_target = is_inside_polygon(x, y, stage_cfg.get("polygon"))
-                            if not reached_target and target is not None:
-                                reached_target = (
-                                    math.hypot(x - float(target[0]), y - float(target[1])) <= 0.2
-                                )
-                        else:
-                            reached_target = checkpoint_stage_reached(
-                                wait_info,
-                                stage_cfg,
-                                current_time,
-                                x,
-                                y,
+                        reached_target = False
+                        reach_dist = float(
+                            wait_info.get("agent_radius", 0.2)
+                        ) + 0.5
+                        if target is not None:
+                            reached_target = (
+                                math.hypot(x - float(target[0]), y - float(target[1]))
+                                <= reach_dist
                             )
-                            if not reached_target and target is not None:
-                                reached_target = (
-                                    math.hypot(x - float(target[0]), y - float(target[1])) <= 0.2
-                                )
 
                         if reached_target:
                             enable_throttling = stage_cfg.get("enable_throughput_throttling", False)
