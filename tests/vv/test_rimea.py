@@ -10,11 +10,13 @@ Tests are grouped by RiMEA annex sections:
   A5 — Quantitative verification (not automated)
 """
 
+import io
 import json
 import pathlib
 import sys
 import tempfile
 import zipfile
+from contextlib import redirect_stdout
 
 import numpy as np
 import pytest
@@ -36,6 +38,14 @@ from core.rimea13_stairs import (
     STAIR_ZONE_COORDINATES,
     build_raw_scenario as build_stair_raw_scenario,
     corbetta_envelope_bounds,
+)
+from core.rimea16_loop import (
+    build_loop_scenario,
+    compute_density_speed_curve,
+    compute_density_speed_samples,
+    compute_lap_counts,
+    load_reference_band,
+    summarize_reference_fit,
 )
 from core.scenario import load_scenario, run_scenario
 
@@ -1288,7 +1298,6 @@ class TestRiMEA15LargeCrowdCorner:
         )
 
 
-@pytest.mark.skip(reason="Requires 1D ring/narrow corridor measurement — placeholder")
 class TestRiMEA161DFundamentalDiagram:
     """RiMEA Test 16: 1D fundamental diagram.
 
@@ -1297,4 +1306,53 @@ class TestRiMEA161DFundamentalDiagram:
     """
 
     def test_1d_fundamental_diagram(self):
-        pass
+        reference = load_reference_band()
+        runs = {}
+        for label, desired_speed in {
+            "slower": 0.9,
+            "baseline": 1.2,
+            "faster": 1.5,
+        }.items():
+            scenario, geometry = build_loop_scenario(
+                label=f"rimea16-{label}",
+                desired_speed=desired_speed,
+            )
+            with redirect_stdout(io.StringIO()):
+                result = run_scenario(scenario, seed=42)
+            trajectory_df = result.trajectory_dataframe()[["id", "frame", "x", "y"]]
+            lap_counts = compute_lap_counts(
+                trajectory_df=trajectory_df,
+                centerline=geometry.centerline,
+                track_length=geometry.track_length,
+            )
+            assert (lap_counts["completed_laps"] >= 3).all(), (
+                f"All agents should complete at least 3 laps, got "
+                f"{lap_counts['completed_laps'].tolist()}"
+            )
+            samples = compute_density_speed_samples(
+                trajectory_df=trajectory_df,
+                frame_rate=result.frame_rate,
+                centerline=geometry.centerline,
+                track_length=geometry.track_length,
+            )
+            curve = compute_density_speed_curve(samples)
+            runs[label] = summarize_reference_fit(curve, reference)
+            result.cleanup()
+
+        baseline = runs["baseline"]
+        slower = runs["slower"]
+        faster = runs["faster"]
+
+        assert baseline["inside_band"].mean() >= 0.75, (
+            f"Baseline curve should mostly lie within the reference band, got "
+            f"{baseline['inside_band'].mean():.2%} inside"
+        )
+        assert float(slower["speed_mps"].mean()) < float(baseline["speed_mps"].mean()), (
+            f"Lower desired speed should shift the curve down, got "
+            f"slower={slower['speed_mps'].mean():.3f}, "
+            f"baseline={baseline['speed_mps'].mean():.3f}"
+        )
+        assert faster["above_p90"].mean() >= 0.75, (
+            f"Higher desired speed should push the curve above the 90th percentile band, got "
+            f"{faster['above_p90'].mean():.2%} above"
+        )
