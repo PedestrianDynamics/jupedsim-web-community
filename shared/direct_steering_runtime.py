@@ -3,8 +3,6 @@ import random
 from importlib import import_module
 from typing import Any, Dict
 
-from shapely.ops import nearest_points
-
 
 def simulation_init_module():
     try:
@@ -31,46 +29,12 @@ def random_point_in_polygon(polygon, rng, min_clearance: float = 0.2):
     )
 
 
-def largest_polygon(geometry):
-    if geometry is None or geometry.is_empty:
-        return None
-    if geometry.geom_type == "Polygon":
-        return geometry
-    if geometry.geom_type == "MultiPolygon":
-        geoms = list(getattr(geometry, "geoms", []))
-        return max(geoms, key=lambda g: g.area) if geoms else None
-    if geometry.geom_type == "GeometryCollection":
-        polygons = [
-            g
-            for g in getattr(geometry, "geoms", [])
-            if getattr(g, "geom_type", "") in {"Polygon", "MultiPolygon"}
-        ]
-        if not polygons:
-            return None
-        flattened = []
-        for poly in polygons:
-            if poly.geom_type == "Polygon":
-                flattened.append(poly)
-            else:
-                flattened.extend(list(getattr(poly, "geoms", [])))
-        return max(flattened, key=lambda g: g.area) if flattened else None
-    return None
+def pick_stage_target(wait_state, next_stage_cfg):
+    """Pick a uniformly random point in the stage polygon.
 
-
-def stage_center(stage_cfg):
-    polygon = (stage_cfg or {}).get("polygon")
-    if polygon is None:
-        return None
-    try:
-        center = polygon.representative_point()
-    except Exception:
-        return None
-    return (float(center.x), float(center.y))
-
-
-def pick_stage_target(wait_state, next_stage_cfg, current_xy):
-    from shapely.geometry import Point, Polygon as ShapelyPolygon
-
+    Stage completion is handled separately by probabilistic completion
+    logic, so no heading-based targeting is needed here.
+    """
     polygon = (next_stage_cfg or {}).get("polygon")
     if polygon is None:
         return None
@@ -78,99 +42,15 @@ def pick_stage_target(wait_state, next_stage_cfg, current_xy):
     target_rng = random.Random(
         int(wait_state.get("base_seed", 0)) + int(wait_state.get("step_index", 0))
     )
-    reach_penetration = max(0.0, float(wait_state.get("reach_penetration", 0.25)))
     target_clearance = max(
         0.05,
         float(wait_state.get("agent_radius", 0.2)) * 0.8,
-        reach_penetration,
     )
-    fallback_target = random_point_in_polygon(
+    return random_point_in_polygon(
         polygon,
         target_rng,
         min_clearance=target_clearance,
     )
-    if not current_xy:
-        return fallback_target
-
-    cx, cy = float(current_xy[0]), float(current_xy[1])
-    next_center = stage_center(next_stage_cfg)
-    origin_center = stage_center(
-        wait_state.get("stage_configs", {}).get(wait_state.get("current_origin"))
-    )
-
-    if next_center and origin_center:
-        hx = float(next_center[0]) - float(origin_center[0])
-        hy = float(next_center[1]) - float(origin_center[1])
-    elif next_center:
-        hx = float(next_center[0]) - cx
-        hy = float(next_center[1]) - cy
-    else:
-        return fallback_target
-
-    heading_norm = math.hypot(hx, hy)
-    if heading_norm <= 1e-9:
-        return fallback_target
-    heading_x = hx / heading_norm
-    heading_y = hy / heading_norm
-    perp_x = -heading_y
-    perp_y = heading_x
-
-    half_width = max(0.6, float(wait_state.get("agent_radius", 0.2)) * 2.5)
-    look_length = max(1.8, half_width * 3.0)
-    look_polygon = ShapelyPolygon(
-        [
-            (cx + perp_x * half_width, cy + perp_y * half_width),
-            (cx - perp_x * half_width, cy - perp_y * half_width),
-            (
-                cx - perp_x * half_width + heading_x * look_length,
-                cy - perp_y * half_width + heading_y * look_length,
-            ),
-            (
-                cx + perp_x * half_width + heading_x * look_length,
-                cy + perp_y * half_width + heading_y * look_length,
-            ),
-        ]
-    )
-    overlap = largest_polygon(polygon.intersection(look_polygon))
-    if overlap is None:
-        near_radius = max(1.2, look_length * 0.75)
-        overlap = largest_polygon(polygon.intersection(Point(cx, cy).buffer(near_radius)))
-
-    if overlap is not None:
-        candidate_polygon = overlap
-        min_alignment_cos = 0.5
-        best_candidate = fallback_target
-        best_alignment = -1.0
-        for _ in range(24):
-            candidate = random_point_in_polygon(
-                candidate_polygon,
-                target_rng,
-                min_clearance=target_clearance,
-            )
-            vx = float(candidate[0]) - cx
-            vy = float(candidate[1]) - cy
-            vnorm = math.hypot(vx, vy)
-            if vnorm <= 1e-9:
-                return candidate
-            alignment = (vx * heading_x + vy * heading_y) / vnorm
-            if alignment > best_alignment:
-                best_alignment = alignment
-                best_candidate = candidate
-            if alignment >= min_alignment_cos:
-                return candidate
-        return best_candidate
-
-    nearest_on_polygon = nearest_points(polygon, Point(cx, cy))[0]
-    local_region = largest_polygon(
-        polygon.intersection(
-            nearest_on_polygon.buffer(max(0.35, target_clearance * 2.0))
-        )
-    )
-    if local_region is not None:
-        return random_point_in_polygon(
-            local_region, target_rng, min_clearance=target_clearance
-        )
-    return (float(nearest_on_polygon.x), float(nearest_on_polygon.y))
 
 
 def extract_agent_xy(agent):
@@ -211,49 +91,6 @@ def is_inside_polygon(x, y, polygon):
     except Exception:
         return False
 
-
-def is_inside_with_penetration(polygon, x: float, y: float, penetration: float) -> bool:
-    from shapely.geometry import Point
-
-    if polygon is None:
-        return False
-    point = Point(float(x), float(y))
-    covers_fn = getattr(polygon, "covers", None)
-    contains_fn = getattr(polygon, "contains", None)
-    touches_fn = getattr(polygon, "touches", None)
-    if callable(covers_fn):
-        inside = bool(covers_fn(point))
-    elif callable(contains_fn):
-        inside = bool(contains_fn(point))
-        if not inside and callable(touches_fn):
-            inside = bool(touches_fn(point))
-    else:
-        return False
-
-    if not inside:
-        return False
-    if penetration <= 0.0:
-        return True
-    boundary = getattr(polygon, "boundary", None)
-    if boundary is None or not hasattr(boundary, "distance"):
-        return True
-    return float(boundary.distance(point)) >= float(penetration)
-
-
-def checkpoint_stage_reached(wait_info, stage_cfg, current_time: float, x: float, y: float):
-    polygon = stage_cfg.get("polygon")
-    if polygon is None:
-        return False
-    penetration = float(wait_info.get("reach_penetration", 0.25))
-    dwell_seconds = float(wait_info.get("reach_dwell_seconds", 0.2))
-    if not is_inside_with_penetration(polygon, x, y, penetration):
-        wait_info["inside_since"] = None
-        return False
-    inside_since = wait_info.get("inside_since")
-    if inside_since is None:
-        wait_info["inside_since"] = float(current_time)
-        return False
-    return float(current_time) - float(inside_since) >= dwell_seconds
 
 
 def sample_wait_time(stage_cfg, base_seed, step_index):
@@ -403,5 +240,4 @@ def advance_path_target(wait_info):
     wait_info["target"] = pick_stage_target(
         wait_info,
         stage_configs[next_stage],
-        wait_info.get("current_position"),
     )
