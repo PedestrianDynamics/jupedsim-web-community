@@ -1,0 +1,38 @@
+{
+  "project_version": "2.0",
+  "config": {
+    "simulation_settings": {
+      "baseSeed": 42,
+      "simulationParams": {
+        "model_type": "CollisionFreeSpeedModel",
+        "max_simulation_time": 1000
+      }
+    }
+  },
+  "distributions": {
+    "jps-distributions_0": {
+      "type": "polygon",
+      "coordinates": [[-7.5, -6.5], [-1.5, -6.5], [-1.5, 6.5], [-7.5, 6.5], [-7.5, -6.5]],
+      "parameters": {
+        "number": 30,
+        "radius": 0.15,
+        "v0": 1.2,
+        "distribution_mode": "by_number",
+        "radius_distribution": "constant",
+        "v0_distribution": "constant"
+      }
+    }
+  },
+  "exits": {
+    "jps-exits_0": {
+      "type": "polygon",
+      "coordinates": [[11.7, -1.5], [12.0, -1.5], [12.0, 1.5], [11.7, 1.5], [11.7, -1.5]]
+    }
+  },
+  "journeys": [
+    {
+      "id": "jps-journeys_0",
+      "stages": ["jps-distributions_0", "jps-exits_0"]
+    }
+  ]
+}
