@@ -178,6 +178,7 @@ class Scenario:
 
     def __post_init__(self):
         self._walkable_polygon = wkt.loads(self.walkable_area_wkt)
+        self._sync_runtime_to_raw()
 
     @property
     def walkable_polygon(self):
@@ -206,6 +207,21 @@ class Scenario:
     @property
     def journeys(self) -> List[Dict[str, Any]]:
         return self.raw.get("journeys", [])
+
+    def _simulation_settings(self) -> Dict[str, Any]:
+        config = self.raw.setdefault("config", {})
+        return config.setdefault("simulation_settings", {})
+
+    def _simulation_params(self) -> Dict[str, Any]:
+        settings = self._simulation_settings()
+        return settings.setdefault("simulationParams", {})
+
+    def _sync_runtime_to_raw(self) -> None:
+        settings = self._simulation_settings()
+        settings["baseSeed"] = self.seed
+        params = self._simulation_params()
+        params.update(self.sim_params)
+        params["model_type"] = self.model_type
 
     def summary(self) -> str:
         total_agents = sum(
@@ -456,17 +472,20 @@ class Scenario:
         if not isinstance(seed, int) or seed < 0:
             raise ValueError(f"seed must be a non-negative integer, got {seed!r}")
         self.seed = seed
+        self._simulation_settings()["baseSeed"] = seed
 
     def set_max_time(self, seconds: float):
         if not isinstance(seconds, (int, float)) or seconds <= 0:
             raise ValueError(f"seconds must be a positive number, got {seconds!r}")
         self.sim_params["max_simulation_time"] = seconds
+        self._simulation_params()["max_simulation_time"] = seconds
 
     def set_model_type(self, model_type: str):
         if model_type not in _MODEL_BUILDERS:
             raise ValueError(f"Unknown model: {model_type}. Available: {list(_MODEL_BUILDERS)}")
         self.model_type = model_type
         self.sim_params["model_type"] = model_type
+        self._simulation_params()["model_type"] = model_type
 
     def set_model_params(self, **kwargs):
         """Set model-specific parameters (e.g. strength_neighbor_repulsion, range_neighbor_repulsion)."""
@@ -474,6 +493,7 @@ class Scenario:
             if isinstance(value, (int, float)) and value < 0:
                 raise ValueError(f"Numeric parameter '{key}' must be non-negative, got {value}")
         self.sim_params.update(kwargs)
+        self._simulation_params().update(kwargs)
 
     def set_agent_params(self, distribution_id: int | str, **kwargs):
         """Set agent parameters for a distribution.
@@ -484,20 +504,43 @@ class Scenario:
         flow_end_time, distribution_mode, number.
         """
         distribution_id = self._resolve_distribution_id(distribution_id)
+        speed_value = kwargs.get("desired_speed", kwargs.get("v0"))
+        speed_std_value = kwargs.get("desired_speed_std", kwargs.get("v0_std"))
+        speed_dist_value = kwargs.get(
+            "desired_speed_distribution",
+            kwargs.get("v0_distribution"),
+        )
         if "radius" in kwargs:
             r = kwargs["radius"]
             if not isinstance(r, (int, float)) or r <= 0 or r > 1.0:
                 raise ValueError(f"radius must be in (0, 1.0], got {r!r}")
-        if "desired_speed" in kwargs:
-            v = kwargs["desired_speed"]
-            if not isinstance(v, (int, float)) or v <= 0 or v > 5.0:
-                raise ValueError(f"desired_speed must be in (0, 5.0], got {v!r}")
+        if speed_value is not None:
+            if not isinstance(speed_value, (int, float)) or speed_value <= 0 or speed_value > 5.0:
+                raise ValueError(f"desired_speed/v0 must be in (0, 5.0], got {speed_value!r}")
+        if speed_std_value is not None:
+            if not isinstance(speed_std_value, (int, float)) or speed_std_value < 0:
+                raise ValueError(f"desired_speed_std/v0_std must be non-negative, got {speed_std_value!r}")
+        if speed_dist_value is not None:
+            if speed_dist_value not in {"constant", "gaussian"}:
+                raise ValueError(
+                    f"desired_speed_distribution/v0_distribution must be 'constant' or 'gaussian', got {speed_dist_value!r}"
+                )
         if "number" in kwargs:
             n = kwargs["number"]
             if not isinstance(n, int) or n <= 0:
                 raise ValueError(f"number must be a positive integer, got {n!r}")
         dist = self.distributions[distribution_id]
-        dist.setdefault("parameters", {}).update(kwargs)
+        params = dist.setdefault("parameters", {})
+        params.update(kwargs)
+        if speed_value is not None:
+            params["desired_speed"] = speed_value
+            params["v0"] = speed_value
+        if speed_std_value is not None:
+            params["desired_speed_std"] = speed_std_value
+            params["v0_std"] = speed_std_value
+        if speed_dist_value is not None:
+            params["desired_speed_distribution"] = speed_dist_value
+            params["v0_distribution"] = speed_dist_value
 
     def set_zone_speed_factor(self, zone_id: int | str, factor: float):
         """Set the speed factor for a zone."""
