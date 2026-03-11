@@ -10,7 +10,28 @@
   },
   "distributions": {
     "jps-distributions_0": {
-      "coordinates": [[0.5, 0.5], [4.5, 0.5], [4.5, 9.5], [0.5, 9.5], [0.5, 0.5]],
+      "coordinates": [
+        [
+          0.5,
+          0.5
+        ],
+        [
+          4.5,
+          0.5
+        ],
+        [
+          4.5,
+          9.5
+        ],
+        [
+          0.5,
+          9.5
+        ],
+        [
+          0.5,
+          0.5
+        ]
+      ],
       "parameters": {
         "number": 50,
         "radius": 0.15,
@@ -18,24 +39,72 @@
         "distribution_mode": "by_number",
         "radius_distribution": "constant",
         "v0_distribution": "constant"
-      }
+      },
+      "type": "polygon"
     }
   },
   "exits": {
     "jps-exits_0": {
-      "coordinates": [[23.0, 0.0], [25.0, 0.0], [25.0, 10.0], [23.0, 10.0], [23.0, 0.0]]
+      "coordinates": [
+        [
+          23.0,
+          0.0
+        ],
+        [
+          25.0,
+          0.0
+        ],
+        [
+          25.0,
+          10.0
+        ],
+        [
+          23.0,
+          10.0
+        ],
+        [
+          23.0,
+          0.0
+        ]
+      ],
+      "type": "polygon"
     }
   },
   "zones": {
     "jps-zones_0": {
-      "coordinates": [[10.0, 4.5], [15.0, 4.5], [15.0, 5.5], [10.0, 5.5], [10.0, 4.5]],
-      "speed_factor": 0.4
+      "coordinates": [
+        [
+          10.0,
+          4.5
+        ],
+        [
+          15.0,
+          4.5
+        ],
+        [
+          15.0,
+          5.5
+        ],
+        [
+          10.0,
+          5.5
+        ],
+        [
+          10.0,
+          4.5
+        ]
+      ],
+      "speed_factor": 0.4,
+      "type": "polygon"
     }
   },
   "journeys": [
     {
       "id": "jps-journeys_0",
-      "stages": ["jps-distributions_0", "jps-exits_0"]
+      "stages": [
+        "jps-distributions_0",
+        "jps-exits_0"
+      ]
     }
   ]
 }
