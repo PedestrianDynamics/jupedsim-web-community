@@ -178,6 +178,7 @@ class Scenario:
 
     def __post_init__(self):
         self._walkable_polygon = wkt.loads(self.walkable_area_wkt)
+        self._sync_runtime_to_raw()
 
     @property
     def walkable_polygon(self):
@@ -206,6 +207,21 @@ class Scenario:
     @property
     def journeys(self) -> List[Dict[str, Any]]:
         return self.raw.get("journeys", [])
+
+    def _simulation_settings(self) -> Dict[str, Any]:
+        config = self.raw.setdefault("config", {})
+        return config.setdefault("simulation_settings", {})
+
+    def _simulation_params(self) -> Dict[str, Any]:
+        settings = self._simulation_settings()
+        return settings.setdefault("simulationParams", {})
+
+    def _sync_runtime_to_raw(self) -> None:
+        settings = self._simulation_settings()
+        settings["baseSeed"] = self.seed
+        params = self._simulation_params()
+        params.update(self.sim_params)
+        params["model_type"] = self.model_type
 
     def summary(self) -> str:
         total_agents = sum(
@@ -252,33 +268,234 @@ class Scenario:
             lines.append(f"    {dist_id}: {n} agents{tag}")
         return "\n".join(lines)
 
-    def set_agent_count(self, distribution_id: str, count: int):
-        dist = self.distributions.get(distribution_id)
-        if dist is None:
+    def plot(self, ax=None):
+        """Plot the scenario geometry with labeled distributions, exits, zones, and checkpoints.
+
+        Returns the matplotlib Axes so callers can further customise the figure.
+        """
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Polygon as MplPolygon
+
+        if ax is None:
+            _, ax = plt.subplots(figsize=(12, 7), constrained_layout=True)
+
+        # Walkable area (exterior + interior holes as walls)
+        from matplotlib.path import Path as MplPath
+        from matplotlib.patches import PathPatch
+
+        exterior_coords = list(self.walkable_polygon.exterior.coords)
+        codes = [MplPath.MOVETO] + [MplPath.LINETO] * (len(exterior_coords) - 2) + [MplPath.CLOSEPOLY]
+        verts = list(exterior_coords)
+
+        for interior in self.walkable_polygon.interiors:
+            hole_coords = list(interior.coords)
+            codes += [MplPath.MOVETO] + [MplPath.LINETO] * (len(hole_coords) - 2) + [MplPath.CLOSEPOLY]
+            verts += list(hole_coords)
+
+        path = MplPath(verts, codes)
+        patch = PathPatch(path, facecolor="#f0f0ec", edgecolor="#3a3a3a",
+                          linewidth=1.5, alpha=0.5, zorder=0)
+        ax.add_patch(patch)
+
+        # Draw wall outlines explicitly
+        wx, wy = self.walkable_polygon.exterior.xy
+        ax.plot(wx, wy, color="#3a3a3a", linewidth=1.5, zorder=1)
+        for interior in self.walkable_polygon.interiors:
+            ix, iy = interior.xy
+            ax.plot(ix, iy, color="#3a3a3a", linewidth=1.5, zorder=1)
+
+        palette = {
+            "distribution": "#2563EB",
+            "exit": "#DC2626",
+            "zone": "#059669",
+            "checkpoint": "#D97706",
+        }
+
+        def _plot_element(coords, color, label, alpha=0.35):
+            poly = MplPolygon(coords[:-1], closed=True, facecolor=color,
+                              edgecolor=color, alpha=alpha, linewidth=1.5, zorder=2)
+            ax.add_patch(poly)
+            cx = sum(c[0] for c in coords[:-1]) / max(len(coords) - 1, 1)
+            cy = sum(c[1] for c in coords[:-1]) / max(len(coords) - 1, 1)
+            ax.text(cx, cy, label, ha="center", va="center",
+                    fontsize=8, fontweight="bold", color=color, zorder=3)
+
+        for i, (did, d) in enumerate(self.distributions.items()):
+            n = d.get("parameters", {}).get("number", "?")
+            _plot_element(d["coordinates"], palette["distribution"],
+                          f"D{i}\n({n} ag)")
+
+        for i, (eid, e) in enumerate(self.exits.items()):
+            _plot_element(e["coordinates"], palette["exit"], f"E{i}", alpha=0.5)
+
+        for i, (zid, z) in enumerate(self.zones.items()):
+            sf = z.get("speed_factor", 1.0)
+            _plot_element(z["coordinates"], palette["zone"],
+                          f"Z{i}\n(sf={sf})", alpha=0.25)
+
+        for i, (sid, s) in enumerate(self.stages.items()):
+            wt = s.get("waiting_time", 0.0)
+            _plot_element(s["coordinates"], palette["checkpoint"],
+                          f"C{i}\n(w={wt}s)", alpha=0.3)
+
+        # Legend
+        from matplotlib.patches import Patch
+        handles = []
+        if self.distributions:
+            handles.append(Patch(facecolor=palette["distribution"], alpha=0.35, label="Distribution"))
+        if self.exits:
+            handles.append(Patch(facecolor=palette["exit"], alpha=0.5, label="Exit"))
+        if self.zones:
+            handles.append(Patch(facecolor=palette["zone"], alpha=0.25, label="Zone"))
+        if self.stages:
+            handles.append(Patch(facecolor=palette["checkpoint"], alpha=0.3, label="Checkpoint"))
+        if handles:
+            ax.legend(handles=handles, loc="best", frameon=False, fontsize=9)
+
+        ax.set_aspect("equal")
+        ax.set_xlabel("x [m]")
+        ax.set_ylabel("y [m]")
+        ax.set_title(f"Scenario: {self.source_path or '(in-memory)'}", pad=10)
+        ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.3)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        return ax
+
+    # -- resolver helpers (private) -----------------------------------------
+
+    def _resolve_distribution_id(self, id: int | str) -> str:
+        """Accept an int index or string key for a distribution."""
+        if isinstance(id, int):
+            keys = list(self.distributions.keys())
+            if id < 0 or id >= len(keys):
+                raise IndexError(
+                    f"Distribution index {id} out of range. "
+                    f"Available indices: 0..{len(keys) - 1}"
+                )
+            return keys[id]
+        if id not in self.distributions:
             raise KeyError(
-                f"Distribution '{distribution_id}' not found. "
+                f"Distribution '{id}' not found. "
                 f"Available: {list(self.distributions.keys())}"
             )
+        return id
+
+    def _resolve_zone_id(self, id: int | str) -> str:
+        """Accept an int index or string key for a zone."""
+        if isinstance(id, int):
+            keys = list(self.zones.keys())
+            if id < 0 or id >= len(keys):
+                raise IndexError(
+                    f"Zone index {id} out of range. "
+                    f"Available indices: 0..{len(keys) - 1}"
+                )
+            return keys[id]
+        if id not in self.zones:
+            raise KeyError(
+                f"Zone '{id}' not found. "
+                f"Available: {list(self.zones.keys())}"
+            )
+        return id
+
+    def _resolve_stage_id(self, id: int | str) -> str:
+        """Accept an int index or string key for a stage/checkpoint."""
+        if isinstance(id, int):
+            keys = list(self.stages.keys())
+            if id < 0 or id >= len(keys):
+                raise IndexError(
+                    f"Stage index {id} out of range. "
+                    f"Available indices: 0..{len(keys) - 1}"
+                )
+            return keys[id]
+        if id not in self.stages:
+            raise KeyError(
+                f"Stage '{id}' not found. "
+                f"Available: {list(self.stages.keys())}"
+            )
+        return id
+
+    # -- discovery methods ---------------------------------------------------
+
+    def list_distributions(self) -> list[dict]:
+        """Return a list of ``{"index", "id", "agents", "flow"}`` dicts."""
+        result = []
+        for i, (did, d) in enumerate(self.distributions.items()):
+            params = d.get("parameters", {})
+            result.append({
+                "index": i,
+                "id": did,
+                "agents": params.get("number", 0),
+                "flow": params.get("use_flow_spawning", False),
+            })
+        return result
+
+    def list_zones(self) -> list[dict]:
+        """Return a list of ``{"index", "id", "speed_factor"}`` dicts."""
+        result = []
+        for i, (zid, z) in enumerate(self.zones.items()):
+            result.append({
+                "index": i,
+                "id": zid,
+                "speed_factor": z.get("speed_factor", 1.0),
+            })
+        return result
+
+    def list_stages(self) -> list[dict]:
+        """Return a list of ``{"index", "id", "waiting_time"}`` dicts."""
+        result = []
+        for i, (sid, s) in enumerate(self.stages.items()):
+            result.append({
+                "index": i,
+                "id": sid,
+                "waiting_time": s.get("waiting_time", 0.0),
+            })
+        return result
+
+    # -- copy ----------------------------------------------------------------
+
+    def copy(self) -> "Scenario":
+        """Return an independent deep copy of this scenario."""
+        import copy
+        return copy.deepcopy(self)
+
+    # -- setters -------------------------------------------------------------
+
+    def set_agent_count(self, distribution_id: int | str, count: int):
+        distribution_id = self._resolve_distribution_id(distribution_id)
+        if not isinstance(count, int) or count <= 0:
+            raise ValueError(f"count must be a positive integer, got {count!r}")
+        dist = self.distributions[distribution_id]
         dist.setdefault("parameters", {})["number"] = count
         dist["parameters"]["distribution_mode"] = "by_number"
 
     def set_seed(self, seed: int):
+        if not isinstance(seed, int) or seed < 0:
+            raise ValueError(f"seed must be a non-negative integer, got {seed!r}")
         self.seed = seed
+        self._simulation_settings()["baseSeed"] = seed
 
     def set_max_time(self, seconds: float):
+        if not isinstance(seconds, (int, float)) or seconds <= 0:
+            raise ValueError(f"seconds must be a positive number, got {seconds!r}")
         self.sim_params["max_simulation_time"] = seconds
+        self._simulation_params()["max_simulation_time"] = seconds
 
     def set_model_type(self, model_type: str):
         if model_type not in _MODEL_BUILDERS:
             raise ValueError(f"Unknown model: {model_type}. Available: {list(_MODEL_BUILDERS)}")
         self.model_type = model_type
         self.sim_params["model_type"] = model_type
+        self._simulation_params()["model_type"] = model_type
 
     def set_model_params(self, **kwargs):
         """Set model-specific parameters (e.g. strength_neighbor_repulsion, range_neighbor_repulsion)."""
+        for key, value in kwargs.items():
+            if isinstance(value, (int, float)) and value < 0:
+                raise ValueError(f"Numeric parameter '{key}' must be non-negative, got {value}")
         self.sim_params.update(kwargs)
+        self._simulation_params().update(kwargs)
 
-    def set_agent_params(self, distribution_id: str, **kwargs):
+    def set_agent_params(self, distribution_id: int | str, **kwargs):
         """Set agent parameters for a distribution.
 
         Supported keys: radius, desired_speed (or v0), radius_distribution,
@@ -286,13 +503,58 @@ class Scenario:
         desired_speed_std (or v0_std), use_flow_spawning, flow_start_time,
         flow_end_time, distribution_mode, number.
         """
-        dist = self.distributions.get(distribution_id)
-        if dist is None:
-            raise KeyError(
-                f"Distribution '{distribution_id}' not found. "
-                f"Available: {list(self.distributions.keys())}"
-            )
-        dist.setdefault("parameters", {}).update(kwargs)
+        distribution_id = self._resolve_distribution_id(distribution_id)
+        speed_value = kwargs.get("desired_speed", kwargs.get("v0"))
+        speed_std_value = kwargs.get("desired_speed_std", kwargs.get("v0_std"))
+        speed_dist_value = kwargs.get(
+            "desired_speed_distribution",
+            kwargs.get("v0_distribution"),
+        )
+        if "radius" in kwargs:
+            r = kwargs["radius"]
+            if not isinstance(r, (int, float)) or r <= 0 or r > 1.0:
+                raise ValueError(f"radius must be in (0, 1.0], got {r!r}")
+        if speed_value is not None:
+            if not isinstance(speed_value, (int, float)) or speed_value <= 0 or speed_value > 5.0:
+                raise ValueError(f"desired_speed/v0 must be in (0, 5.0], got {speed_value!r}")
+        if speed_std_value is not None:
+            if not isinstance(speed_std_value, (int, float)) or speed_std_value < 0:
+                raise ValueError(f"desired_speed_std/v0_std must be non-negative, got {speed_std_value!r}")
+        if speed_dist_value is not None:
+            if speed_dist_value not in {"constant", "gaussian"}:
+                raise ValueError(
+                    f"desired_speed_distribution/v0_distribution must be 'constant' or 'gaussian', got {speed_dist_value!r}"
+                )
+        if "number" in kwargs:
+            n = kwargs["number"]
+            if not isinstance(n, int) or n <= 0:
+                raise ValueError(f"number must be a positive integer, got {n!r}")
+        dist = self.distributions[distribution_id]
+        params = dist.setdefault("parameters", {})
+        params.update(kwargs)
+        if speed_value is not None:
+            params["desired_speed"] = speed_value
+            params["v0"] = speed_value
+        if speed_std_value is not None:
+            params["desired_speed_std"] = speed_std_value
+            params["v0_std"] = speed_std_value
+        if speed_dist_value is not None:
+            params["desired_speed_distribution"] = speed_dist_value
+            params["v0_distribution"] = speed_dist_value
+
+    def set_zone_speed_factor(self, zone_id: int | str, factor: float):
+        """Set the speed factor for a zone."""
+        zone_id = self._resolve_zone_id(zone_id)
+        if not isinstance(factor, (int, float)) or factor < 0:
+            raise ValueError(f"factor must be non-negative, got {factor!r}")
+        self.zones[zone_id]["speed_factor"] = factor
+
+    def set_checkpoint_waiting_time(self, checkpoint_id: int | str, waiting_time: float):
+        """Set the waiting time for a checkpoint/stage."""
+        checkpoint_id = self._resolve_stage_id(checkpoint_id)
+        if not isinstance(waiting_time, (int, float)) or waiting_time < 0:
+            raise ValueError(f"waiting_time must be non-negative, got {waiting_time!r}")
+        self.stages[checkpoint_id]["waiting_time"] = waiting_time
 
 
 @dataclass
