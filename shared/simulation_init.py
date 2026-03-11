@@ -348,7 +348,7 @@ def _pick_initial_stage_target(
         return _random_point_in_polygon(
             local_region, rng, min_clearance=target_clearance
         )
-    return (float(nearest_on_polygon.x), float(nearest_on_polygon.y))
+    return _random_point_in_polygon(polygon, rng, min_clearance=0.0)
 
 
 def build_agent_path_state(
