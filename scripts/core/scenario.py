@@ -453,10 +453,19 @@ class Scenario:
 
     # -- copy ----------------------------------------------------------------
 
-    def copy(self) -> "Scenario":
-        """Return an independent deep copy of this scenario."""
+    def copy(self, **overrides) -> "Scenario":
+        """Return an independent deep copy of this scenario, with optional field overrides."""
         import copy
-        return copy.deepcopy(self)
+
+        clone = copy.deepcopy(self)
+        for key, value in overrides.items():
+            if not hasattr(clone, key):
+                raise AttributeError(f"Scenario has no attribute '{key}'")
+            setattr(clone, key, value)
+        if "walkable_area_wkt" in overrides:
+            clone._walkable_polygon = wkt.loads(clone.walkable_area_wkt)
+        clone._sync_runtime_to_raw()
+        return clone
 
     # -- setters -------------------------------------------------------------
 

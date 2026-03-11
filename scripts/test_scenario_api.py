@@ -63,6 +63,22 @@ def test_index_based_zone_and_stage_mutators_hit_expected_objects():
     assert waiting_scenario.raw["distributions"]["jps-distributions_0"]["parameters"]["number"] == 17
 
 
+def test_copy_supports_safe_overrides_without_mutating_original():
+    scenario = load_scenario(str(SCENARIOS_DIR / "bottleneck-zone"))
+
+    variant = scenario.copy(
+        source_path="variant",
+        walkable_area_wkt="POLYGON((0 0, 2 0, 2 1, 0 1, 0 0))",
+    )
+    variant.set_seed(77)
+
+    assert scenario.source_path != "variant"
+    assert scenario.seed != 77
+    assert variant.source_path == "variant"
+    assert variant.seed == 77
+    assert variant.walkable_polygon.bounds == pytest.approx((0.0, 0.0, 2.0, 1.0))
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
