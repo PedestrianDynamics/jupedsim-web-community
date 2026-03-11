@@ -1,0 +1,138 @@
+{
+  "config": {
+    "simulation_settings": {
+      "baseSeed": 42,
+      "simulationParams": {
+        "model_type": "CollisionFreeSpeedModel",
+        "max_simulation_time": 80
+      }
+    }
+  },
+  "distributions": {
+    "jps-distributions_0": {
+      "coordinates": [
+        [
+          3.2,
+          -0.9
+        ],
+        [
+          4.8,
+          -0.9
+        ],
+        [
+          4.8,
+          0.9
+        ],
+        [
+          3.2,
+          0.9
+        ],
+        [
+          3.2,
+          -0.9
+        ]
+      ],
+      "parameters": {
+        "number": 10,
+        "radius": 0.18,
+        "v0": 1.2,
+        "distribution_mode": "by_number"
+      },
+      "type": "polygon"
+    }
+  },
+  "checkpoints": {
+    "jps-checkpoints_0": {
+      "coordinates": [
+        [
+          -0.55,
+          3.45
+        ],
+        [
+          0.55,
+          3.45
+        ],
+        [
+          0.55,
+          4.55
+        ],
+        [
+          -0.55,
+          4.55
+        ],
+        [
+          -0.55,
+          3.45
+        ]
+      ],
+      "waiting_time": 5.0,
+      "waiting_time_distribution": "constant",
+      "type": "polygon"
+    },
+    "jps-checkpoints_1": {
+      "coordinates": [
+        [
+          -0.55,
+          -4.55
+        ],
+        [
+          0.55,
+          -4.55
+        ],
+        [
+          0.55,
+          -3.45
+        ],
+        [
+          -0.55,
+          -3.45
+        ],
+        [
+          -0.55,
+          -4.55
+        ]
+      ],
+      "waiting_time": 0.0,
+      "waiting_time_distribution": "constant",
+      "type": "polygon"
+    }
+  },
+  "exits": {
+    "jps-exits_0": {
+      "coordinates": [
+        [
+          -4.35,
+          -0.85
+        ],
+        [
+          -3.65,
+          -0.85
+        ],
+        [
+          -3.65,
+          0.85
+        ],
+        [
+          -4.35,
+          0.85
+        ],
+        [
+          -4.35,
+          -0.85
+        ]
+      ],
+      "type": "polygon"
+    }
+  },
+  "journeys": [
+    {
+      "id": "jps-journeys_0",
+      "stages": [
+        "jps-distributions_0",
+        "jps-checkpoints_0",
+        "jps-checkpoints_1",
+        "jps-exits_0"
+      ]
+    }
+  ]
+}
