@@ -1,9 +1,9 @@
 import json
 import math
 import random
+import zlib
 import pedpy
 from shapely.geometry import Point, Polygon
-from shapely.ops import nearest_points
 from typing import Any, Dict, List, Tuple
 import jupedsim as jps
 import shapely
@@ -319,36 +319,13 @@ def _pick_initial_stage_target(
     agent_radius: float,
     reach_penetration: float = 0.25,
 ):
-    """Pick a nearby in-stage target for initial direct-steering assignment."""
+    """Pick a random point inside the stage polygon with interior clearance."""
     polygon = (stage_cfg or {}).get("polygon")
     if polygon is None:
         return None
 
     target_clearance = max(0.05, float(agent_radius) * 0.8, float(reach_penetration))
-    if current_position is None:
-        return _random_point_in_polygon(polygon, rng, min_clearance=target_clearance)
-
-    cx, cy = float(current_position[0]), float(current_position[1])
-    near_radius = max(1.2, float(agent_radius) * 8.0)
-    near_region = _largest_polygon(
-        polygon.intersection(Point(cx, cy).buffer(near_radius))
-    )
-    if near_region is not None:
-        return _random_point_in_polygon(
-            near_region, rng, min_clearance=target_clearance
-        )
-
-    nearest_on_polygon = nearest_points(polygon, Point(cx, cy))[0]
-    local_region = _largest_polygon(
-        polygon.intersection(
-            nearest_on_polygon.buffer(max(0.35, target_clearance * 2.0))
-        )
-    )
-    if local_region is not None:
-        return _random_point_in_polygon(
-            local_region, rng, min_clearance=target_clearance
-        )
-    return _random_point_in_polygon(polygon, rng, min_clearance=0.0)
+    return _random_point_in_polygon(polygon, rng, min_clearance=target_clearance)
 
 
 def build_agent_path_state(
@@ -373,6 +350,21 @@ def build_agent_path_state(
         if target not in targets:
             targets.append(target)
 
+    # Build outgoing edges from the variant's resolved stages first.
+    full_stages = variant_data.get("stages", []) or variant_data.get(
+        "actual_stages", []
+    )
+    variant_edges: set = set()
+    for idx in range(len(full_stages) - 1):
+        from_stage = full_stages[idx]
+        to_stage = full_stages[idx + 1]
+        if isinstance(from_stage, str) and isinstance(to_stage, str):
+            _append_edge(from_stage, to_stage)
+            variant_edges.add(from_stage)
+
+    # Add journey transitions only for stages NOT already covered by the variant.
+    # This preserves cyclic edges and continuity while preventing re-randomization
+    # at routing split points where the variant has already resolved the choice.
     if journey_key:
         for transition in transitions:
             if transition.get("journey_id") != journey_key:
@@ -380,16 +372,8 @@ def build_agent_path_state(
             from_stage = transition.get("from")
             to_stage = transition.get("to")
             if isinstance(from_stage, str) and isinstance(to_stage, str):
-                _append_edge(from_stage, to_stage)
-
-    full_stages = variant_data.get("stages", []) or variant_data.get(
-        "actual_stages", []
-    )
-    for idx in range(len(full_stages) - 1):
-        from_stage = full_stages[idx]
-        to_stage = full_stages[idx + 1]
-        if isinstance(from_stage, str) and isinstance(to_stage, str):
-            _append_edge(from_stage, to_stage)
+                if from_stage not in variant_edges:
+                    _append_edge(from_stage, to_stage)
 
     if not outgoing:
         return None
@@ -699,13 +683,8 @@ def _initialize_with_fallback(
                     exit_data.get("enable_throughput_throttling", False)
                 )
                 ds_stage = simulation.add_direct_steering_stage()
-                if enable_throttling:
-                    stage_map[exit_id] = ds_stage
-                    exit_geometries[ds_stage] = exit_polygon
-                else:
-                    exit_stage_id = simulation.add_exit_stage(exit_polygon)
-                    stage_map[exit_id] = exit_stage_id
-                    exit_geometries[exit_stage_id] = exit_polygon
+                stage_map[exit_id] = ds_stage
+                exit_geometries[exit_id] = exit_polygon
 
                 direct_steering_info[exit_id] = {
                     "polygon": exit_polygon,
@@ -848,17 +827,10 @@ def _initialize_with_fallback(
         ]
         total_agents = default_n_agents
 
-    # Step 3: Create default journeys (one per exit)
-    journey_ids = {}
-    exit_to_journey = {}
-    stage_id_to_exit_id = {}
-
-    for exit_id, exit_stage_id in stage_map.items():
-        journey_desc = jps.JourneyDescription([exit_stage_id])
-        journey_id = simulation.add_journey(journey_desc)
-        journey_ids[f"journey_to_{exit_id}"] = journey_id
-        exit_to_journey[exit_stage_id] = journey_id
-        stage_id_to_exit_id[exit_stage_id] = exit_id
+    # Step 3: Create a single global DS journey for all fallback agents
+    global_ds_stage_id = simulation.add_direct_steering_stage()
+    global_ds_journey = jps.JourneyDescription([global_ds_stage_id])
+    global_ds_journey_id = simulation.add_journey(global_ds_journey)
 
     # Step 4: Handle obstacles (holes in walkable area)
     holes = [Polygon(interior) for interior in walkable_area.polygon.interiors]
@@ -1081,13 +1053,9 @@ def _initialize_with_fallback(
                     ),
                 }
 
-        # Add agents with nearest exit assignment
+        # Add agents with nearest exit assignment — all on global DS journey
         for idx, pos in enumerate(positions):
-            nearest_exit_stage_id = _find_nearest_exit(
-                pos, exit_geometries=exit_geometries
-            )
-            nearest_journey_id = exit_to_journey[nearest_exit_stage_id]
-            nearest_exit_id = stage_id_to_exit_id[nearest_exit_stage_id]
+            nearest_exit_id = _find_nearest_exit(pos, exit_geometries=exit_geometries)
 
             agent_radius = float(sampled_radii[idx])
             agent_v0 = float(sampled_v0s[idx])
@@ -1103,36 +1071,35 @@ def _initialize_with_fallback(
                 position=pos,
                 params=agent_params_dict,
                 global_params=global_parameters,
-                journey_id=nearest_journey_id,
-                stage_id=nearest_exit_stage_id,
+                journey_id=global_ds_journey_id,
+                stage_id=global_ds_stage_id,
             )
 
             agent_id = simulation.add_agent(agent_params)
             all_positions.append(pos)
             agent_radii[agent_id] = agent_radius
 
-            # Build DS wait info only for agents going to throttled exits
-            if nearest_exit_id in direct_steering_info:
-                base_seed = seed + agent_id * 9973
-                target_rng = np.random.RandomState(base_seed)
-                exit_polygon = direct_steering_info[nearest_exit_id]["polygon"]
-                target = _random_point_in_polygon(exit_polygon, target_rng)
-                fallback_agent_wait_info[agent_id] = {
-                    "mode": "path",
-                    "path_choices": {},
-                    "stage_configs": stage_configs,
-                    "current_origin": nearest_exit_id,
-                    "current_target_stage": nearest_exit_id,
-                    "target": target,
-                    "target_assigned": False,
-                    "state": "to_target",
-                    "wait_until": None,
-                    "inside_since": None,
-                    "reach_penetration": 0.25,
-                    "reach_dwell_seconds": 0.2,
-                    "step_index": 0,
-                    "base_seed": base_seed,
-                }
+            # Build DS wait info for ALL agents to navigate to nearest exit
+            base_seed = seed + idx * 9973
+            target_rng = np.random.RandomState(base_seed)
+            exit_polygon = direct_steering_info[nearest_exit_id]["polygon"]
+            target = _random_point_in_polygon(exit_polygon, target_rng)
+            fallback_agent_wait_info[agent_id] = {
+                "mode": "path",
+                "path_choices": {},
+                "stage_configs": stage_configs,
+                "current_origin": nearest_exit_id,
+                "current_target_stage": nearest_exit_id,
+                "target": target,
+                "target_assigned": False,
+                "state": "to_target",
+                "wait_until": None,
+                "inside_since": None,
+                "reach_penetration": 0.25,
+                "reach_dwell_seconds": 0.2,
+                "step_index": 0,
+                "base_seed": base_seed,
+            }
 
             # Store premovement time and desired speed for this agent
             if use_premovement and agent_premovement_times is not None:
@@ -1158,15 +1125,14 @@ def _initialize_with_fallback(
         "model_type": model_type,
         "global_parameters": global_parameters,
         "stage_map": stage_map,
-        "exit_to_journey": exit_to_journey,
         "exit_geometries": exit_geometries,
         "exits": exits,
         "has_premovement": has_premovement,
         "premovement_times": premovement_times,
         "agent_wait_info": fallback_agent_wait_info,
         "direct_steering_info": direct_steering_info,
-        "global_ds_journey_id": None,
-        "global_ds_stage_id": None,
+        "global_ds_journey_id": global_ds_journey_id,
+        "global_ds_stage_id": global_ds_stage_id,
     }
 
     print(
@@ -1176,7 +1142,7 @@ def _initialize_with_fallback(
     return (
         {
             "stage_map": stage_map,
-            "journey_ids": journey_ids,
+            "journey_ids": {},
         },
         all_positions,
         agent_radii,
@@ -1189,9 +1155,8 @@ def _find_nearest_exit(
     stage_map: dict | None = None,
     exits: list | None = None,
     exit_geometries: dict | None = None,
-) -> int:
-    """Find the stage ID of the nearest exit to the given position."""
-    from shapely.geometry import Point
+):
+    """Find the key of the nearest exit to the given position."""
 
     point = Point(position)
     min_distance = float("inf")
@@ -1239,7 +1204,6 @@ def _find_nearest_exit(
 
 def _random_point_in_polygon(polygon, rng, min_clearance: float = 0.2):
     """Generate a random point inside a polygon, preferring interior clearance."""
-    from shapely.geometry import Point
 
     candidate_polygon = polygon
     if min_clearance > 0:
@@ -1344,12 +1308,8 @@ def _add_stages(
             exit_data.get("enable_throughput_throttling", False)
         )
 
-        if enable_throttling:
-            ds_stage = simulation.add_direct_steering_stage()
-            stage_map[exit_id] = ds_stage
-        else:
-            ds_stage = simulation.add_direct_steering_stage()
-            stage_map[exit_id] = simulation.add_exit_stage(exit_polygon)
+        ds_stage = simulation.add_direct_steering_stage()
+        stage_map[exit_id] = ds_stage
 
         # Always include exits in direct_steering_info so DS-routed agents
         # (e.g. coming from a checkpoint) can navigate to and be removed at exits.
@@ -1847,7 +1807,6 @@ def _add_agents(
     global_ds_stage_id=None,
 ) -> Tuple[List[Tuple[float, float]], Dict[int, float], Dict[str, Any]]:
     """Add agents to the simulation based on distributions and journeys."""
-    journey_ids = journey_data["journey_ids"]
     journeys_per_distribution = journey_data["journeys_per_distribution"]
 
     np.random.seed(seed)
@@ -1856,63 +1815,11 @@ def _add_agents(
     current_agent_id = 0
     agent_wait_info = {}
 
-    # Create individual journeys for each exit (for agents without predefined journeys)
-    exit_to_journey = {}
+    # Build exit_geometries keyed by exit_id for nearest-exit lookup
     exit_geometries = {}
-
-    # First, create a journey for each exit that doesn't already have one
     for exit_id, exit_data in data.get("exits", {}).items():
-        if exit_id in stage_map:
-            stage_id = stage_map[exit_id]
-
-            # Create geometry for distance calculation
-            if "coordinates" in exit_data:
-                exit_geometries[stage_id] = Polygon(exit_data["coordinates"])
-
-            # Check if this exit already has a journey from the existing journeys
-            exit_has_journey = False
-            for journey_def in data.get("journeys", []):
-                if journey_def["id"] in journey_ids:
-                    if exit_id in journey_def.get("stages", []):
-                        exit_has_journey = True
-                        exit_to_journey[stage_id] = journey_ids[journey_def["id"]]
-                        break
-
-            # If no existing journey goes to this exit, create one
-            if not exit_has_journey:
-                journey_desc = jps.JourneyDescription([stage_id])
-                new_journey_id = simulation.add_journey(journey_desc)
-                exit_to_journey[stage_id] = new_journey_id
-                print(f"Created new journey {new_journey_id} for exit {exit_id}")
-
-    def find_nearest_exit_journey(agent_position):
-        """Find the nearest exit and return its journey_id and stage_id"""
-        if not exit_geometries:
-            # Fallback to first available journey
-            if exit_to_journey:
-                stage_id = list(exit_to_journey.keys())[0]
-                return exit_to_journey[stage_id], stage_id
-            else:
-                raise ValueError("No exits available for agent assignment")
-
-        from shapely.geometry import Point
-
-        agent_point = Point(agent_position)
-        min_distance = float("inf")
-        nearest_stage_id = None
-
-        for stage_id, exit_geometry in exit_geometries.items():
-            distance = agent_point.distance(exit_geometry)
-            if distance < min_distance:
-                min_distance = distance
-                nearest_stage_id = stage_id
-
-        if nearest_stage_id is not None and nearest_stage_id in exit_to_journey:
-            return exit_to_journey[nearest_stage_id], nearest_stage_id
-        else:
-            # Fallback
-            stage_id = list(exit_to_journey.keys())[0]
-            return exit_to_journey[stage_id], stage_id
+        if "coordinates" in exit_data:
+            exit_geometries[exit_id] = Polygon(exit_data["coordinates"])
 
     spawning_freqs_and_numbers = []
     starting_pos_per_source = []
@@ -2000,7 +1907,7 @@ def _add_agents(
                     distance_to_polygon=max_radius,
                     seed=seed + len(starting_pos_per_source),
                 )
-                shuffle_rng = random.Random(seed + hash(dist_key))
+                shuffle_rng = random.Random(seed + zlib.crc32(dist_key.encode()))
                 shuffle_rng.shuffle(positions)
                 starting_pos_per_source.append(positions)
 
@@ -2108,7 +2015,7 @@ def _add_agents(
                 )
 
             # Sample per-agent radius and v0
-            rng = np.random.RandomState(seed + hash(dist_key) % (2**31))
+            rng = np.random.RandomState(seed + zlib.crc32(dist_key.encode()) % (2**31))
             sampled_radii, sampled_v0s = _sample_agent_values(
                 params, len(positions), rng
             )
@@ -2225,6 +2132,8 @@ def _add_agents(
                                     }
 
                                 # Record path-based direct steering state.
+                                # Use agent_index (not JuPedSim agent_id) for seeding
+                                # to ensure determinism across runs in the same process.
                                 if direct_steering_info:
                                     path_state = build_agent_path_state(
                                         variant_data=variant_data,
@@ -2235,7 +2144,7 @@ def _add_agents(
                                             "waypoint_routing", {}
                                         ),
                                         seed=seed,
-                                        agent_id=agent_id,
+                                        agent_id=agent_index,
                                         initial_position=(float(pos[0]), float(pos[1])),
                                         agent_radius=agent_radius,
                                     )
@@ -2245,14 +2154,34 @@ def _add_agents(
                                 agent_index += 1
                                 current_agent_id += 1
             else:
-                # No journey variants, use existing fallback logic
+                # No journey variants — spawn on global DS journey, build DS wait info
                 print(
-                    f"Distribution {dist_key} has no journey variants - using nearest exit assignment"
+                    f"Distribution {dist_key} has no journey variants - using DS nearest exit"
                 )
 
+                # Build stage configs for DS navigation
+                ds_info = direct_steering_info or {}
+                stage_configs = {}
+                for sk, info in ds_info.items():
+                    sf = float(info.get("speed_factor", 1.0))
+                    stage_configs[sk] = {
+                        "polygon": info.get("polygon"),
+                        "stage_type": info.get("stage_type", "exit"),
+                        "waiting_time": float(info.get("waiting_time", 0.0)),
+                        "waiting_time_distribution": info.get(
+                            "waiting_time_distribution", "constant"
+                        ),
+                        "waiting_time_std": float(info.get("waiting_time_std", 1.0)),
+                        "enable_throughput_throttling": bool(
+                            info.get("enable_throughput_throttling", False)
+                        ),
+                        "max_throughput": float(info.get("max_throughput", 1.0)),
+                        "speed_factor": max(0.0, min(sf, 1.0)),
+                    }
+
                 for idx, pos in enumerate(positions):
-                    nearest_journey_id, nearest_stage_id = find_nearest_exit_journey(
-                        pos
+                    nearest_exit_id = _find_nearest_exit(
+                        pos, exit_geometries=exit_geometries
                     )
 
                     agent_radius = float(sampled_radii[idx])
@@ -2268,12 +2197,34 @@ def _add_agents(
                         position=pos,
                         params=agent_params_dict,
                         global_params=global_parameters,
-                        journey_id=nearest_journey_id,
-                        stage_id=nearest_stage_id,
+                        journey_id=global_ds_journey_id,
+                        stage_id=global_ds_stage_id,
                     )
 
                     agent_id = simulation.add_agent(agent_params)
                     agent_radii[agent_id] = agent_radius
+
+                    # Build DS wait info for exit navigation
+                    base_seed = seed + current_agent_id * 9973
+                    target_rng = np.random.RandomState(base_seed)
+                    exit_polygon = ds_info[nearest_exit_id]["polygon"]
+                    target = _random_point_in_polygon(exit_polygon, target_rng)
+                    agent_wait_info[agent_id] = {
+                        "mode": "path",
+                        "path_choices": {},
+                        "stage_configs": stage_configs,
+                        "current_origin": nearest_exit_id,
+                        "current_target_stage": nearest_exit_id,
+                        "target": target,
+                        "target_assigned": False,
+                        "state": "to_target",
+                        "wait_until": None,
+                        "inside_since": None,
+                        "reach_penetration": 0.25,
+                        "reach_dwell_seconds": 0.2,
+                        "step_index": 0,
+                        "base_seed": base_seed,
+                    }
 
                     # Store premovement time if enabled
                     if use_premovement and agent_premovement_times is not None:
@@ -2305,7 +2256,6 @@ def _add_agents(
         "model_type": model_type,
         "global_parameters": global_parameters,
         "stage_map": stage_map,
-        "exit_to_journey": exit_to_journey,
         "exit_geometries": exit_geometries,
         "has_premovement": has_premovement,
         "premovement_times": premovement_times,
