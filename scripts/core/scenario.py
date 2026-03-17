@@ -158,6 +158,53 @@ def _sample_agent_values(
     return radii, v0s
 
 
+def _normalize_flow_schedule_entry(entry: dict) -> dict:
+    start_time = entry.get("flow_start_time", entry.get("start_time_s"))
+    end_time = entry.get("flow_end_time", entry.get("end_time_s"))
+    number = entry.get("number", entry.get("sim_count"))
+
+    if start_time is None or end_time is None or number is None:
+        raise ValueError(
+            "Each flow schedule entry must define start/end time and number. "
+            "Accepted keys: flow_start_time|start_time_s, flow_end_time|end_time_s, number|sim_count."
+        )
+
+    start_time = float(start_time)
+    end_time = float(end_time)
+    number = int(number)
+
+    if start_time < 0 or end_time <= start_time:
+        raise ValueError(
+            f"Invalid flow window [{start_time}, {end_time}] - end_time must be greater than start_time."
+        )
+    if number <= 0:
+        raise ValueError(f"Flow schedule numbers must be positive integers, got {number!r}")
+
+    return {
+        "flow_start_time": start_time,
+        "flow_end_time": end_time,
+        "number": number,
+    }
+
+
+def _normalized_flow_schedule(params: dict) -> list[dict]:
+    raw_schedule = params.get("flow_schedule", [])
+    if not raw_schedule:
+        return []
+    normalized = [_normalize_flow_schedule_entry(entry) for entry in raw_schedule]
+    normalized.sort(key=lambda entry: (entry["flow_start_time"], entry["flow_end_time"]))
+    return normalized
+
+
+def _distribution_agent_budget(dist: dict) -> int:
+    params = dist.get("parameters", {})
+    schedule = _normalized_flow_schedule(params)
+    if schedule:
+        initial_number = int(params.get("initial_number", 0) or 0)
+        return initial_number + sum(entry["number"] for entry in schedule)
+    return int(params.get("number", 0) or 0)
+
+
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -225,7 +272,7 @@ class Scenario:
 
     def summary(self) -> str:
         total_agents = sum(
-            d.get("parameters", {}).get("number", 0)
+            _distribution_agent_budget(d)
             for d in self.distributions.values()
         )
         journey_sequence = []
@@ -321,7 +368,7 @@ class Scenario:
                     fontsize=8, fontweight="bold", color=color, zorder=3)
 
         for i, (did, d) in enumerate(self.distributions.items()):
-            n = d.get("parameters", {}).get("number", "?")
+            n = _distribution_agent_budget(d)
             _plot_element(d["coordinates"], palette["distribution"],
                           f"D{i}\n({n} ag)")
 
@@ -424,8 +471,8 @@ class Scenario:
             result.append({
                 "index": i,
                 "id": did,
-                "agents": params.get("number", 0),
-                "flow": params.get("use_flow_spawning", False),
+                "agents": _distribution_agent_budget(d),
+                "flow": params.get("use_flow_spawning", False) or bool(params.get("flow_schedule")),
             })
         return result
 
@@ -550,6 +597,36 @@ class Scenario:
         if speed_dist_value is not None:
             params["desired_speed_distribution"] = speed_dist_value
             params["v0_distribution"] = speed_dist_value
+
+    def set_flow_schedule(
+        self,
+        distribution_id: int | str,
+        schedule: list[dict],
+        *,
+        keep_initial_agents: bool = False,
+    ):
+        """Attach a time-windowed inflow schedule to one source distribution."""
+        distribution_id = self._resolve_distribution_id(distribution_id)
+        if not isinstance(schedule, list) or not schedule:
+            raise ValueError("schedule must be a non-empty list of flow schedule entries")
+
+        normalized_schedule = [_normalize_flow_schedule_entry(entry) for entry in schedule]
+        normalized_schedule.sort(key=lambda entry: (entry["flow_start_time"], entry["flow_end_time"]))
+
+        dist = self.distributions[distribution_id]
+        params = dist.setdefault("parameters", {})
+
+        if keep_initial_agents:
+            params["initial_number"] = int(params.get("number", 0) or 0)
+        else:
+            params.pop("initial_number", None)
+
+        params["flow_schedule"] = normalized_schedule
+        params["use_flow_spawning"] = True
+        params["distribution_mode"] = "by_number"
+        params["number"] = sum(entry["number"] for entry in normalized_schedule)
+        params["flow_start_time"] = normalized_schedule[0]["flow_start_time"]
+        params["flow_end_time"] = normalized_schedule[-1]["flow_end_time"]
 
     def set_zone_speed_factor(self, zone_id: int | str, factor: float):
         """Set the speed factor for a zone."""

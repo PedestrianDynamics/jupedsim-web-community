@@ -191,6 +191,43 @@ def _get_distribution_percentage(params):
     return max(1, min(100, percentage))
 
 
+def _normalize_flow_schedule_entries(params):
+    """Return validated scheduled flow windows for a distribution."""
+    raw_schedule = params.get("flow_schedule", [])
+    if not raw_schedule:
+        return []
+
+    normalized = []
+    for entry in raw_schedule:
+        start_time = entry.get("flow_start_time", entry.get("start_time_s"))
+        end_time = entry.get("flow_end_time", entry.get("end_time_s"))
+        number = entry.get("number", entry.get("sim_count"))
+        if start_time is None or end_time is None or number is None:
+            raise ValueError(
+                "flow_schedule entries must define start/end time and number"
+            )
+
+        start_time = max(0.0, float(start_time))
+        end_time = float(end_time)
+        number = int(number)
+        if end_time <= start_time:
+            raise ValueError(
+                f"Invalid flow_schedule window [{start_time}, {end_time}]"
+            )
+        if number <= 0:
+            continue
+        normalized.append(
+            {
+                "flow_start_time": start_time,
+                "flow_end_time": end_time,
+                "number": number,
+            }
+        )
+
+    normalized.sort(key=lambda entry: (entry["flow_start_time"], entry["flow_end_time"]))
+    return normalized
+
+
 def _sample_agent_values(params, n_agents, rng):
     """Sample per-agent radius and v0 values based on distribution settings."""
     mean_radius = params.get("radius", 0.2)
@@ -858,8 +895,16 @@ def _initialize_with_fallback(
     ):
         use_flow_spawning = dist_params.get("use_flow_spawning", False)
         dist_mode, requested_n_agents = _get_distribution_mode_and_count(dist_params)
+        flow_schedule = _normalize_flow_schedule_entries(dist_params)
+        initial_n_agents = int(
+            dist_params.get(
+                "initial_number",
+                0 if flow_schedule else requested_n_agents,
+            )
+            or 0
+        )
 
-        if dist_mode == "by_number" and requested_n_agents <= 0:
+        if dist_mode == "by_number" and requested_n_agents <= 0 and initial_n_agents <= 0 and not flow_schedule:
             continue
 
         # Remove obstacles from distribution area
@@ -875,7 +920,72 @@ def _initialize_with_fallback(
             print(f"Warning: Distribution area {i} is outside walkable area")
             continue
 
-        if use_flow_spawning:
+        if flow_schedule:
+            has_flow_spawning = True
+
+            for schedule_entry in flow_schedule:
+                max_radius = _get_max_agent_radius(dist_params)
+                max_capacity = _estimate_max_capacity(clean_dist_area, max_radius)
+                n_agents = schedule_entry["number"]
+                flow_start_time = schedule_entry["flow_start_time"]
+                flow_end_time = max(
+                    flow_start_time + 0.1, schedule_entry["flow_end_time"]
+                )
+                flow_duration = flow_end_time - flow_start_time
+                flow_rate = n_agents / flow_duration
+                if flow_rate > max_capacity:
+                    raise ValueError(
+                        f"Distribution {i}: flow rate of {flow_rate:.1f} agents/s "
+                        f"exceeds area capacity of {max_capacity} agents. "
+                        f"Reduce the number of agents ({n_agents}) or increase "
+                        f"the flow duration ({flow_duration:.1f}s)."
+                    )
+
+                flow_params = dict(dist_params)
+                flow_params["number"] = n_agents
+                flow_params["use_flow_spawning"] = True
+                flow_params["flow_start_time"] = flow_start_time
+                flow_params["flow_end_time"] = flow_end_time
+
+                frequency = flow_duration / n_agents
+                agents_per_spawn = 1
+
+                spawning_freqs_and_numbers.append([frequency, agents_per_spawn])
+                num_agents_per_source.append(n_agents)
+
+                positions = jps.distribute_until_filled(
+                    polygon=clean_dist_area,
+                    distance_to_agents=2 * max_radius,
+                    distance_to_polygon=max_radius,
+                    seed=seed + i,
+                )
+                shuffle_rng = random.Random(seed + i)
+                shuffle_rng.shuffle(positions)
+                starting_pos_per_source.append(positions)
+
+                flow_distributions.append(
+                    {
+                        "dist_index": i,
+                        "params": flow_params,
+                        "start_time": flow_start_time,
+                        "end_time": flow_end_time,
+                        "area": clean_dist_area,
+                    }
+                )
+
+            if initial_n_agents > 0:
+                immediate_params = dict(dist_params)
+                immediate_params["number"] = initial_n_agents
+                immediate_params["use_flow_spawning"] = False
+                immediate_spawn_distributions.append(
+                    {"area": clean_dist_area, "params": immediate_params, "index": i}
+                )
+
+            print(
+                f"Flow spawning: Distribution {i} - {sum(entry['number'] for entry in flow_schedule)} scheduled agents"
+            )
+
+        elif use_flow_spawning:
             has_flow_spawning = True
 
             max_radius = _get_max_agent_radius(dist_params)
@@ -1308,8 +1418,12 @@ def _add_stages(
             exit_data.get("enable_throughput_throttling", False)
         )
 
-        ds_stage = simulation.add_direct_steering_stage()
-        stage_map[exit_id] = ds_stage
+        if enable_throttling:
+            ds_stage = simulation.add_direct_steering_stage()
+            stage_map[exit_id] = ds_stage
+        else:
+            ds_stage = simulation.add_direct_steering_stage()
+            stage_map[exit_id] = simulation.add_exit_stage(exit_polygon)
 
         # Always include exits in direct_steering_info so DS-routed agents
         # (e.g. coming from a checkpoint) can navigate to and be removed at exits.
@@ -1807,6 +1921,7 @@ def _add_agents(
     global_ds_stage_id=None,
 ) -> Tuple[List[Tuple[float, float]], Dict[int, float], Dict[str, Any]]:
     """Add agents to the simulation based on distributions and journeys."""
+    journey_ids = journey_data["journey_ids"]
     journeys_per_distribution = journey_data["journeys_per_distribution"]
 
     np.random.seed(seed)
@@ -1815,11 +1930,55 @@ def _add_agents(
     current_agent_id = 0
     agent_wait_info = {}
 
-    # Build exit_geometries keyed by exit_id for nearest-exit lookup
+    # Create individual journeys for each exit for agents without explicit journeys.
+    exit_to_journey = {}
     exit_geometries = {}
     for exit_id, exit_data in data.get("exits", {}).items():
-        if "coordinates" in exit_data:
-            exit_geometries[exit_id] = Polygon(exit_data["coordinates"])
+        if exit_id in stage_map:
+            stage_id = stage_map[exit_id]
+
+            if "coordinates" in exit_data:
+                exit_geometries[stage_id] = Polygon(exit_data["coordinates"])
+
+            exit_has_journey = False
+            for journey_def in data.get("journeys", []):
+                if journey_def["id"] in journey_ids:
+                    if exit_id in journey_def.get("stages", []):
+                        exit_has_journey = True
+                        exit_to_journey[stage_id] = journey_ids[journey_def["id"]]
+                        break
+
+            if not exit_has_journey:
+                journey_desc = jps.JourneyDescription([stage_id])
+                new_journey_id = simulation.add_journey(journey_desc)
+                exit_to_journey[stage_id] = new_journey_id
+                print(f"Created new journey {new_journey_id} for exit {exit_id}")
+
+    def find_nearest_exit_journey(agent_position):
+        """Find the nearest exit and return its journey_id and stage_id."""
+        if not exit_geometries:
+            if exit_to_journey:
+                stage_id = list(exit_to_journey.keys())[0]
+                return exit_to_journey[stage_id], stage_id
+            raise ValueError("No exits available for agent assignment")
+
+        from shapely.geometry import Point
+
+        agent_point = Point(agent_position)
+        min_distance = float("inf")
+        nearest_stage_id = None
+
+        for stage_id, exit_geometry in exit_geometries.items():
+            distance = agent_point.distance(exit_geometry)
+            if distance < min_distance:
+                min_distance = distance
+                nearest_stage_id = stage_id
+
+        if nearest_stage_id is not None and nearest_stage_id in exit_to_journey:
+            return exit_to_journey[nearest_stage_id], nearest_stage_id
+
+        stage_id = list(exit_to_journey.keys())[0]
+        return exit_to_journey[stage_id], stage_id
 
     spawning_freqs_and_numbers = []
     starting_pos_per_source = []
@@ -1840,8 +1999,16 @@ def _add_agents(
         params = dist_params[dist_key]
         dist_mode, requested_n_agents = _get_distribution_mode_and_count(params)
         use_flow_spawning = params.get("use_flow_spawning", False)
+        flow_schedule = _normalize_flow_schedule_entries(params)
+        initial_n_agents = int(
+            params.get(
+                "initial_number",
+                0 if flow_schedule else requested_n_agents,
+            )
+            or 0
+        )
 
-        if dist_mode == "by_number" and requested_n_agents <= 0:
+        if dist_mode == "by_number" and requested_n_agents <= 0 and initial_n_agents <= 0 and not flow_schedule:
             continue
 
         try:
@@ -1858,7 +2025,75 @@ def _add_agents(
                 f"DEBUG: dist_key = '{dist_key}', found {len(distribution_journeys)} distribution_journeys"
             )
 
-            if use_flow_spawning:
+            if flow_schedule:
+                has_flow_spawning = True
+
+                max_radius = _get_max_agent_radius(params)
+                max_capacity = _estimate_max_capacity(dist_area, max_radius)
+
+                positions = jps.distribute_until_filled(
+                    polygon=dist_area,
+                    distance_to_agents=2 * max_radius,
+                    distance_to_polygon=max_radius,
+                    seed=seed + len(starting_pos_per_source),
+                )
+                shuffle_rng = random.Random(seed + hash(dist_key))
+                shuffle_rng.shuffle(positions)
+
+                for schedule_entry in flow_schedule:
+                    n_agents = schedule_entry["number"]
+                    flow_start_time = schedule_entry["flow_start_time"]
+                    flow_end_time = max(
+                        flow_start_time + 0.1, schedule_entry["flow_end_time"]
+                    )
+                    flow_duration = flow_end_time - flow_start_time
+                    flow_rate = n_agents / flow_duration
+                    if flow_rate > max_capacity:
+                        raise ValueError(
+                            f"Distribution '{dist_key}': flow rate of {flow_rate:.1f} agents/s "
+                            f"exceeds area capacity of {max_capacity} agents. "
+                            f"Reduce the number of agents ({n_agents}) or increase "
+                            f"the flow duration ({flow_duration:.1f}s)."
+                        )
+
+                    flow_params = dict(params)
+                    flow_params["number"] = n_agents
+                    flow_params["use_flow_spawning"] = True
+                    flow_params["flow_start_time"] = flow_start_time
+                    flow_params["flow_end_time"] = flow_end_time
+
+                    frequency = flow_duration / n_agents
+                    agents_per_spawn = 1
+
+                    spawning_freqs_and_numbers.append([frequency, agents_per_spawn])
+                    num_agents_per_source.append(n_agents)
+                    starting_pos_per_source.append(list(positions))
+
+                    flow_distributions.append(
+                        {
+                            "dist_key": dist_key,
+                            "source_id": len(flow_distributions),
+                            "params": flow_params,
+                            "start_time": flow_start_time,
+                            "end_time": flow_end_time,
+                            "journey_info": distribution_journeys,
+                        }
+                    )
+
+                if initial_n_agents > 0:
+                    immediate_params = dict(params)
+                    immediate_params["number"] = initial_n_agents
+                    immediate_params["use_flow_spawning"] = False
+                    immediate_spawn_distributions[dist_key] = {
+                        "area": dist_area,
+                        "params": immediate_params,
+                    }
+
+                print(
+                    f"Flow spawning: {dist_key} - {sum(entry['number'] for entry in flow_schedule)} scheduled agents"
+                )
+
+            elif use_flow_spawning:
                 has_flow_spawning = True
 
                 max_radius = _get_max_agent_radius(params)
@@ -2154,34 +2389,13 @@ def _add_agents(
                                 agent_index += 1
                                 current_agent_id += 1
             else:
-                # No journey variants — spawn on global DS journey, build DS wait info
                 print(
-                    f"Distribution {dist_key} has no journey variants - using DS nearest exit"
+                    f"Distribution {dist_key} has no journey variants - using nearest exit assignment"
                 )
 
-                # Build stage configs for DS navigation
-                ds_info = direct_steering_info or {}
-                stage_configs = {}
-                for sk, info in ds_info.items():
-                    sf = float(info.get("speed_factor", 1.0))
-                    stage_configs[sk] = {
-                        "polygon": info.get("polygon"),
-                        "stage_type": info.get("stage_type", "exit"),
-                        "waiting_time": float(info.get("waiting_time", 0.0)),
-                        "waiting_time_distribution": info.get(
-                            "waiting_time_distribution", "constant"
-                        ),
-                        "waiting_time_std": float(info.get("waiting_time_std", 1.0)),
-                        "enable_throughput_throttling": bool(
-                            info.get("enable_throughput_throttling", False)
-                        ),
-                        "max_throughput": float(info.get("max_throughput", 1.0)),
-                        "speed_factor": max(0.0, min(sf, 1.0)),
-                    }
-
                 for idx, pos in enumerate(positions):
-                    nearest_exit_id = _find_nearest_exit(
-                        pos, exit_geometries=exit_geometries
+                    nearest_journey_id, nearest_stage_id = find_nearest_exit_journey(
+                        pos
                     )
 
                     agent_radius = float(sampled_radii[idx])
@@ -2197,36 +2411,13 @@ def _add_agents(
                         position=pos,
                         params=agent_params_dict,
                         global_params=global_parameters,
-                        journey_id=global_ds_journey_id,
-                        stage_id=global_ds_stage_id,
+                        journey_id=nearest_journey_id,
+                        stage_id=nearest_stage_id,
                     )
 
                     agent_id = simulation.add_agent(agent_params)
                     agent_radii[agent_id] = agent_radius
 
-                    # Build DS wait info for exit navigation
-                    base_seed = seed + current_agent_id * 9973
-                    target_rng = np.random.RandomState(base_seed)
-                    exit_polygon = ds_info[nearest_exit_id]["polygon"]
-                    target = _random_point_in_polygon(exit_polygon, target_rng)
-                    agent_wait_info[agent_id] = {
-                        "mode": "path",
-                        "path_choices": {},
-                        "stage_configs": stage_configs,
-                        "current_origin": nearest_exit_id,
-                        "current_target_stage": nearest_exit_id,
-                        "target": target,
-                        "target_assigned": False,
-                        "state": "to_target",
-                        "wait_until": None,
-                        "inside_since": None,
-                        "reach_penetration": 0.25,
-                        "reach_dwell_seconds": 0.2,
-                        "step_index": 0,
-                        "base_seed": base_seed,
-                    }
-
-                    # Store premovement time if enabled
                     if use_premovement and agent_premovement_times is not None:
                         premovement_times[agent_id] = {
                             "premovement_time": float(agent_premovement_times[idx]),
@@ -2256,6 +2447,7 @@ def _add_agents(
         "model_type": model_type,
         "global_parameters": global_parameters,
         "stage_map": stage_map,
+        "exit_to_journey": exit_to_journey,
         "exit_geometries": exit_geometries,
         "has_premovement": has_premovement,
         "premovement_times": premovement_times,
