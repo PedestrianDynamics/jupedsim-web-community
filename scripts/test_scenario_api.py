@@ -79,6 +79,30 @@ def test_copy_supports_safe_overrides_without_mutating_original():
     assert variant.walkable_polygon.bounds == pytest.approx((0.0, 0.0, 2.0, 1.0))
 
 
+def test_flow_schedule_can_be_attached_to_existing_distribution():
+    scenario = load_scenario(str(SCENARIOS_DIR / "bottleneck-zone"))
+
+    scenario.set_agent_count(0, 9)
+    scenario.set_flow_schedule(
+        0,
+        [
+            {"start_time_s": 0, "end_time_s": 5, "sim_count": 3},
+            {"start_time_s": 5, "end_time_s": 10, "sim_count": 4},
+        ],
+        keep_initial_agents=True,
+    )
+
+    params = scenario.distributions["jps-distributions_0"]["parameters"]
+    assert params["initial_number"] == 9
+    assert params["number"] == 7
+    assert params["use_flow_spawning"] is True
+    assert params["flow_schedule"] == [
+        {"flow_start_time": 0.0, "flow_end_time": 5.0, "number": 3},
+        {"flow_start_time": 5.0, "flow_end_time": 10.0, "number": 4},
+    ]
+    assert scenario.list_distributions()[0]["agents"] == 16
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
@@ -92,3 +116,10 @@ def test_invalid_agent_param_aliases_raise_clear_errors(kwargs, message):
 
     with pytest.raises(ValueError, match=message):
         scenario.set_agent_params(0, **kwargs)
+
+
+def test_invalid_flow_schedule_entries_raise_clear_errors():
+    scenario = load_scenario(str(SCENARIOS_DIR / "bottleneck-zone"))
+
+    with pytest.raises(ValueError, match="start/end time and number"):
+        scenario.set_flow_schedule(0, [{"start_time_s": 0, "end_time_s": 5}])
