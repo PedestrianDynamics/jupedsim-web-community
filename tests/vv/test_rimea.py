@@ -32,14 +32,19 @@ SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from core.rimea07_demographic import AGE_GROUPS, WALKABLE_AREA_WKT, build_distribution_specs, build_raw_scenario
-from core.rimea13_stairs import (
+from scenario_builders.rimea07_demographic import (
+    AGE_GROUPS,
+    WALKABLE_AREA_WKT,
+    build_distribution_specs,
+    build_raw_scenario,
+)
+from scenario_builders.rimea13_stairs import (
     STAIR_WALKABLE_AREA_WKT,
     STAIR_ZONE_COORDINATES,
     build_raw_scenario as build_stair_raw_scenario,
     corbetta_envelope_bounds,
 )
-from core.rimea16_loop import (
+from scenario_builders.rimea16_loop import (
     build_loop_scenario,
     compute_density_speed_curve,
     compute_density_speed_samples,
