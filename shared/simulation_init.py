@@ -2049,7 +2049,8 @@ def _add_agents(
                 number_of_agents=requested_count,
                 distance_to_agents=2 * max_radius,
                 distance_to_polygon=max_radius,
-                seed=seed + zlib.crc32(dist_key.encode()),
+                # Preserve legacy deterministic placement for single-region start areas.
+                seed=seed,
             )
 
             all_positions.extend(positions)
