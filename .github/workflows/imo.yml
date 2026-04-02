@@ -25,7 +25,7 @@ jobs:
       run: uv sync --extra dev
 
     - name: Run IMO tests
-      run: uv run --extra dev pytest tests/vv/test_imo_*.py -v --junitxml=results/imo-tests.xml
+      run: uv run --extra dev python -m pytest tests/vv/test_imo_*.py -v --junitxml=results/imo-tests.xml
 
     - name: Upload results
       if: always()

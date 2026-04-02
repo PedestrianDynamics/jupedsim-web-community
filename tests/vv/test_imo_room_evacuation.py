@@ -7,11 +7,13 @@ RE-04: Counterflow (IMO 8)
 """
 
 import pytest
-from vv_helpers import run_vv_scenario, measure_flow_rate, HAS_JUPEDSIM
+from vv_helpers import run_vv_scenario, measure_flow_rate, HAS_VV_DEPS
 
 pytestmark = [
     pytest.mark.vv,
-    pytest.mark.skipif(not HAS_JUPEDSIM, reason="JuPedSim not installed"),
+    pytest.mark.skipif(
+        not HAS_VV_DEPS, reason="V&V runtime dependencies not installed"
+    ),
 ]
 
 

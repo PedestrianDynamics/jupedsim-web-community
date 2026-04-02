@@ -19,7 +19,7 @@ jobs:
       run: uv sync --extra dev
 
     - name: Run V&V tests
-      run: uv run --extra dev pytest tests/vv -v --junitxml=results/vv-tests.xml
+      run: uv run --extra dev python -m pytest tests/vv -v --junitxml=results/vv-tests.xml
 
     - name: Upload V&V test results
       if: always()
