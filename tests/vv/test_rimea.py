@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Point, Polygon
 from vv_helpers import (
-    HAS_JUPEDSIM,
+    HAS_VV_DEPS,
     agents_within_bounds,
     measure_flow_rate,
     run_vv_scenario,
@@ -56,7 +56,9 @@ from core.scenario import load_scenario, run_scenario
 
 pytestmark = [
     pytest.mark.vv,
-    pytest.mark.skipif(not HAS_JUPEDSIM, reason="JuPedSim not installed"),
+    pytest.mark.skipif(
+        not HAS_VV_DEPS, reason="V&V runtime dependencies not installed"
+    ),
 ]
 
 

@@ -13,9 +13,12 @@ try:
     import pedpy
     from core.scenario import load_scenario, run_scenario
 
-    HAS_JUPEDSIM = True
+    HAS_VV_DEPS = True
 except ImportError:
-    HAS_JUPEDSIM = False
+    HAS_VV_DEPS = False
+
+# Backward-compatible alias for older imports.
+HAS_JUPEDSIM = HAS_VV_DEPS
 
 
 def run_vv_scenario(
@@ -31,10 +34,12 @@ def run_vv_scenario(
     model_params: dict | None = None,
 ) -> tuple[dict, "pedpy.TrajectoryData"]:
     """Run a V&V scenario and return (metrics, trajectory)."""
-    if not HAS_JUPEDSIM:
-        pytest.skip("JuPedSim not installed")
+    if not HAS_VV_DEPS:
+        pytest.skip("V&V runtime dependencies not installed")
 
     if journeys is None and transitions is None:
+        if not exits:
+            raise ValueError("At least one exit is required to build default journeys")
         dist_keys = list(distributions.keys())
         exit_keys = list(exits.keys())
         journeys = []
@@ -46,7 +51,6 @@ def run_vv_scenario(
                 {
                     "id": journey_id,
                     "stages": [dk, ek],
-                    "transitions": [{"from": dk, "to": ek, "journey_id": journey_id}],
                 }
             )
             transitions.append({"from": dk, "to": ek, "journey_id": journey_id})
