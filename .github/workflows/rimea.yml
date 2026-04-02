@@ -25,7 +25,7 @@ jobs:
       run: uv sync --extra dev
 
     - name: Run RiMEA tests
-      run: uv run --extra dev pytest tests/vv/test_rimea.py -v --junitxml=results/rimea-tests.xml
+      run: uv run --extra dev python -m pytest tests/vv/test_rimea.py -v --junitxml=results/rimea-tests.xml
 
     - name: Upload results
       if: always()
