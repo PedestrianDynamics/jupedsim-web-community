@@ -1,0 +1,133 @@
+{
+  "project_version": "2.0",
+  "config": {
+    "simulation_settings": {
+      "simulationParams": {
+        "max_simulation_time": 300,
+        "model_type": "CollisionFreeSpeedModel",
+        "strength_neighbor_repulsion": 2.6,
+        "range_neighbor_repulsion": 0.1,
+        "gcfm_strength_neighbor_repulsion": 0.3,
+        "gcfm_strength_geometry_repulsion": 0.2,
+        "gcfm_max_neighbor_interaction_distance": 2,
+        "gcfm_max_geometry_interaction_distance": 2,
+        "gcfm_max_neighbor_repulsion_force": 9,
+        "gcfm_max_geometry_repulsion_force": 3,
+        "mass": 80,
+        "tau": 0.5,
+        "a_v": 1,
+        "a_min": 0.2,
+        "b_min": 0.2,
+        "b_max": 0.4,
+        "relaxation_time": 0.5,
+        "agent_strength": 2000,
+        "agent_range": 0.08,
+        "T": 1,
+        "s0": 0.5
+      },
+      "numberOfSimulations": 1,
+      "baseSeed": 420
+    },
+    "ui_state": {
+      "useShortestPaths": false
+    }
+  },
+  "exits": {
+    "jps-exits_0": {
+      "type": "polygon",
+      "coordinates": [
+        [
+          30.0,
+          -1.0
+        ],
+        [
+          31.0,
+          -1.0
+        ],
+        [
+          31.0,
+          1.0
+        ],
+        [
+          30.0,
+          1.0
+        ],
+        [
+          30.0,
+          -1.0
+        ]
+      ],
+      "enable_throughput_throttling": false,
+      "max_throughput": 0
+    }
+  },
+  "distributions": {
+    "jps-distributions_0": {
+      "type": "polygon",
+      "coordinates": [
+        [
+          -30.0,
+          -1.0
+        ],
+        [
+          30.0,
+          -1.0
+        ],
+        [
+          30.0,
+          1.0
+        ],
+        [
+          -30.0,
+          1.0
+        ],
+        [
+          -30.0,
+          -1.0
+        ]
+      ],
+      "parameters": {
+        "number": 60,
+        "radius": 0.2,
+        "v0": 1,
+        "distribution_mode": "by_number",
+        "percentage": null,
+        "use_flow_spawning": false,
+        "flow_start_time": 0,
+        "flow_end_time": 10,
+        "use_premovement": false,
+        "premovement_distribution": "gamma",
+        "premovement_param_a": null,
+        "premovement_param_b": null,
+        "premovement_seed": null,
+        "radius_distribution": "constant",
+        "v0_distribution": "constant"
+      }
+    }
+  },
+  "checkpoints": {},
+  "zones": {},
+  "journeys": [
+    {
+      "id": "journey_0",
+      "stages": [
+        "jps-distributions_0",
+        "jps-exits_0"
+      ],
+      "transitions": [
+        {
+          "from": "jps-distributions_0",
+          "to": "jps-exits_0",
+          "journey_id": "journey_0"
+        }
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "from": "jps-distributions_0",
+      "to": "jps-exits_0",
+      "journey_id": "journey_0"
+    }
+  ]
+}
