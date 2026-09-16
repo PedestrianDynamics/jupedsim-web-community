@@ -30,8 +30,9 @@ The button only needs two things the stock image doesn't give it:
 2. permission to load that script and `fetch()` the bridge — the proxy drops
    `Content-Security-Policy` so both are allowed.
 
-The bridge already sends `Access-Control-Allow-Origin: *`, so the cross-origin
-call from `:8081` to `:8090` works without further changes.
+The bridge answers `Access-Control-Allow-Origin` for `http://localhost` and
+`http://127.0.0.1` origins on any port, so the cross-origin call from `:8081`
+to `:8090` works without further changes.
 
 Verified end-to-end against `jupedsim/jupedsim-web:latest`: button injected,
 scenario published through the bridge, and rendered in the viewer.

@@ -29,3 +29,6 @@ The `/data` volume holds MongoDB, scenario uploads, and the backend's SQLite sta
 
 **Licensing note**: the all-in-one image bundles MongoDB Community, which is distributed under the Server Side Public License (SSPL) v1. See the license text at https://www.mongodb.com/licensing/server-side-public-license and review its requirements for your intended use and deployment model.
 
+## Drive the viewer over HTTP (optional)
+
+[`llm-bridge/`](llm-bridge/) adds a small local HTTP API so a script or an LLM agent can validate and publish scenarios, run simulations, and read results back. See [llm-bridge/README.md](llm-bridge/README.md).

@@ -43,6 +43,8 @@ services:
     volumes:
       - ../:/app:ro                 # mounts bridge_server.py (stdlib only)
       - bridge-runtime:/runtime     # writable scratch for results/state
+    # 0.0.0.0 binds inside the container only, which Docker port-forwarding
+    # requires; the host publish below stays loopback-only.
     command: ["python", "bridge_server.py", "--host", "0.0.0.0", "--port", "8090"]
     ports:
       - "127.0.0.1:8090:8090"       # host-only, matches the button's default

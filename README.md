@@ -69,6 +69,7 @@ Start here:
 ## Repository Layout
 
 - [`docker/`](docker/) contains the public local deployment setup for JuPedSim Web.
+- [`docker/llm-bridge/`](docker/llm-bridge/) is an experimental HTTP bridge that lets a human or an LLM agent drive the local viewer.
 - [`standards/`](standards/) contains the local Python runner, notebooks, and example scenarios.
 - [`tests/vv/`](tests/vv/) contains verification and validation assets and workflows.
 - [`geometries/`](geometries/) contains public geometry examples and format references.

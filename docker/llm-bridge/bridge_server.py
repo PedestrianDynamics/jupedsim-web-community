@@ -1,7 +1,7 @@
 """Local HTTP bridge for validating and opening JuPedSim Web scenario files.
 
 Run:
-    py -3.13 bridge_server.py --port 8090
+    python3 bridge_server.py --port 8090
 
 Validate, publish, and open a pair of files in a connected viewer:
     curl -X POST http://127.0.0.1:8090/api/validate \
@@ -1418,7 +1418,7 @@ def read_scenario_files(content_type: str, body: bytes) -> tuple[str | None, str
     if config_text is None:
         errors.append(issue("config.json", "$", "missing_file", "Send config.json as the 'config' field."))
     if geometry_text is None:
-        errors.append(issue("geometry.wkt", "$", "missing_file", "Send geometry.wkt as the 'geometry' field."))
+        errors.append(issue("geometry.wkt", "$", "missing_file", "Send geometry.wkt as the 'geometry' file field or the 'geometry_wkt' JSON field."))
     return config_text, geometry_text, errors
 
 
