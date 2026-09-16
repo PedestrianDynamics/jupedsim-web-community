@@ -23,6 +23,7 @@ session reliably; it does not support rapid re-parametrisation in one session
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import sys
@@ -111,18 +112,26 @@ def run_bottleneck(n_agents: int) -> pathlib.Path:
     run = _post("/api/simulations/run")
     if not run.get("ok"):
         sys.exit(f"run rejected: {run.get('error')}\n{STALE_HELP}")
+    run_id = run["simulation"]["id"]
     final = _wait(lambda: _get("/api/simulations/latest"),
-                  lambda v: v["simulation"]["status"] in
+                  lambda v: (v.get("simulation") or {}).get("id") == run_id
+                  and v["simulation"]["status"] in
                   ("completed", "failed", "rejected"))
     status = final["simulation"]["status"]
     if status != "completed":
         sys.exit(f"simulation {status}: {final['simulation'].get('detail')}. "
                  "Reload the viewer tab and retry (one run per fresh session).")
 
+    # The archive store keeps the previous run's files until the new archive
+    # lands, so wait for one tagged with this run and verify the bytes.
     listing = _wait(lambda: _get("/api/results/latest/sqlite"),
-                    lambda v: bool(v.get("sqlite_files")), tries=30)
+                    lambda v: v.get("simulation_id") == run_id
+                    and bool(v.get("sqlite_files")), tries=60)
     sqlite_file = listing["sqlite_files"][0]
     raw = _get_bytes(f"/api/results/latest/files/{sqlite_file['index']}")
+    if hashlib.sha256(raw).hexdigest() != sqlite_file["sha256"]:
+        sys.exit("downloaded result file does not match the published archive; "
+                 "the archive changed mid-download. Retry.")
     out = pathlib.Path(tempfile.gettempdir()) / f"bottleneck_{n_agents}.sqlite"
     out.write_bytes(raw)
     return out

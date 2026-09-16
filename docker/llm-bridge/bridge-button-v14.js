@@ -801,6 +801,10 @@
     }
 
     simulationCommandPollInProgress = true;
+    // Remember the id we polled with so a failed status publish can hand the
+    // command back to the next poll instead of silently dropping it.
+    const previousCommandId = lastSimulationCommandId;
+    let claimedCommandId = null;
     try {
       const after = lastSimulationCommandId
         ? `?after=${encodeURIComponent(lastSimulationCommandId)}`
@@ -820,8 +824,23 @@
 
       const simulation = latest.simulation;
       lastSimulationCommandId = simulation.id;
+      claimedCommandId = simulation.id;
       if (simulation.status === "running") {
         document.documentElement.dataset.jupedsimBridgeSimulation = "running";
+        monitorSimulationCompletion(button, baseUrl, simulation.id, isAnalyticsAvailable());
+        return;
+      }
+      if (simulation.status === "accepted") {
+        // Run Simulation was already clicked (this session or before a
+        // reload) but the "running" update never reached the bridge. Resume
+        // monitoring without clicking again.
+        document.documentElement.dataset.jupedsimBridgeSimulation = "running";
+        await publishSimulationStatus(
+          baseUrl,
+          simulation.id,
+          "running",
+          "The viewer resumed monitoring an accepted run request.",
+        );
         monitorSimulationCompletion(button, baseUrl, simulation.id, isAnalyticsAvailable());
         return;
       }
@@ -859,6 +878,9 @@
       updateButton(button, activePort, "simulation running");
       monitorSimulationCompletion(button, baseUrl, simulation.id, analyticsWasAvailable);
     } catch (error) {
+      if (claimedCommandId !== null) {
+        lastSimulationCommandId = previousCommandId;
+      }
       console.debug("JuPedSim simulation command could not be handled.", error);
     } finally {
       simulationCommandPollInProgress = false;

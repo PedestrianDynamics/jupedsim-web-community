@@ -1452,6 +1452,10 @@ def validate_request(
     )
 
 
+LOCAL_ORIGIN_RE = re.compile(r"http://(?:localhost|127\.0\.0\.1)(?::\d+)?")
+LOCAL_HOST_RE = re.compile(r"(?:localhost|127\.0\.0\.1)(?::\d+)?")
+
+
 class BridgeHandler(BaseHTTPRequestHandler):
     server_version = "JuPedSimHttpBridge/0.4"
 
@@ -1463,6 +1467,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
+        if not self._reject_non_local_request():
+            return
         url = urlsplit(self.path)
         path = url.path
         if path in ("/", "/api/health"):
@@ -1642,6 +1648,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Not found."})
 
     def do_POST(self) -> None:
+        if not self._reject_non_local_request():
+            return
         url = urlsplit(self.path)
         path = url.path
         if path == "/api/simulations/run":
@@ -2002,8 +2010,26 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _send_cors_header(self) -> None:
         origin = self.headers.get("Origin")
-        if origin is None or re.fullmatch(r"http://(?:localhost|127\.0\.0\.1)(?::\d+)?", origin):
+        if origin is None or LOCAL_ORIGIN_RE.fullmatch(origin):
             self.send_header("Access-Control-Allow-Origin", origin or "*")
+
+    def _reject_non_local_request(self) -> bool:
+        """Refuse requests from foreign origins or hosts.
+
+        Browsers send Origin on every cross-origin POST, including plain form
+        posts that skip the CORS preflight, so an unrelated page could
+        otherwise queue viewer commands. The Host check blocks DNS rebinding.
+        Returns True when the request may be served.
+        """
+        origin = self.headers.get("Origin")
+        host = self.headers.get("Host")
+        if origin is not None and not LOCAL_ORIGIN_RE.fullmatch(origin):
+            self.send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Origin is not allowed."})
+            return False
+        if host is not None and not LOCAL_HOST_RE.fullmatch(host):
+            self.send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Host is not allowed."})
+            return False
+        return True
 
 
 def main() -> None:

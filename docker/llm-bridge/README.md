@@ -91,4 +91,6 @@ docker/llm-bridge/
 
 The bridge is for **local use only**. Keep it bound to `127.0.0.1` and do not
 expose it publicly — it issues commands to a viewer running on the same machine
-and performs no authentication.
+and performs no authentication. Requests whose `Origin` or `Host` header is not
+`localhost` / `127.0.0.1` are refused with `403`, so a web page from another
+site cannot queue commands and DNS rebinding does not reach the bridge.
