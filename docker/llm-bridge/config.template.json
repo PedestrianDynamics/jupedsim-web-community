@@ -1,0 +1,224 @@
+{
+  "project_version": "2.0",
+  "config": {
+    "simulation_settings": {
+      "simulationParams": {
+        "max_simulation_time": 300,
+        "dt": 0.01,
+        "model_type": "CollisionFreeSpeedModel",
+        "strength_neighbor_repulsion": 2.6,
+        "range_neighbor_repulsion": 0.1,
+        "gcfm_strength_neighbor_repulsion": 0.3,
+        "gcfm_strength_geometry_repulsion": 0.2,
+        "gcfm_max_neighbor_interaction_distance": 2,
+        "gcfm_max_geometry_interaction_distance": 2,
+        "gcfm_max_neighbor_repulsion_force": 9,
+        "gcfm_max_geometry_repulsion_force": 3,
+        "mass": 80,
+        "tau": 0.5,
+        "a_v": 1,
+        "a_min": 0.2,
+        "b_min": 0.2,
+        "b_max": 0.4,
+        "relaxation_time": 0.5,
+        "agent_strength": 2000,
+        "agent_range": 0.08,
+        "sfm_obstacle_scale": 2000,
+        "sfm_body_force": 120000,
+        "sfm_friction": 240000,
+        "T": 1,
+        "s0": 0.5
+      },
+      "numberOfSimulations": 1,
+      "baseSeed": 42
+    },
+    "ui_state": {
+      "useShortestPaths": false,
+      "boundaries": [
+        {
+          "mode": "manual"
+        }
+      ]
+    }
+  },
+  "exits": {
+    "jps-exits_0": {
+      "type": "polygon",
+      "coordinates": [
+        [
+          23,
+          0
+        ],
+        [
+          25,
+          0
+        ],
+        [
+          25,
+          10
+        ],
+        [
+          23,
+          10
+        ],
+        [
+          23,
+          0
+        ]
+      ],
+      "enable_throughput_throttling": false,
+      "max_throughput": 0
+    }
+  },
+  "distributions": {
+    "jps-distributions_0": {
+      "type": "polygon",
+      "coordinates": [
+        [
+          0.5,
+          0.5
+        ],
+        [
+          4.5,
+          0.5
+        ],
+        [
+          4.5,
+          9.5
+        ],
+        [
+          0.5,
+          9.5
+        ],
+        [
+          0.5,
+          0.5
+        ]
+      ],
+      "parameters": {
+        "number": 50,
+        "radius": 0.15,
+        "v0": 1.2,
+        "distribution_mode": "by_number",
+        "radius_distribution": "constant",
+        "radius_std": null,
+        "v0_distribution": "constant",
+        "v0_std": null,
+        "percentage": null,
+        "use_flow_spawning": false,
+        "initial_number": null,
+        "flow_start_time": 0,
+        "flow_end_time": 10,
+        "flow_schedule": [],
+        "use_premovement": false,
+        "premovement_distribution": "gamma",
+        "premovement_param_a": null,
+        "premovement_param_b": null,
+        "premovement_seed": null
+      },
+      "journey_weights": [
+        {
+          "journey_id": "jps-journeys_0",
+          "weight": 100
+        }
+      ]
+    }
+  },
+  "checkpoints": {
+    "jps-checkpoints_0": {
+      "type": "polygon",
+      "coordinates": [
+        [
+          17.5,
+          4
+        ],
+        [
+          19,
+          4
+        ],
+        [
+          19,
+          6
+        ],
+        [
+          17.5,
+          6
+        ],
+        [
+          17.5,
+          4
+        ]
+      ],
+      "waiting_time": 5,
+      "waiting_time_distribution": "constant"
+    }
+  },
+  "zones": {
+    "jps-zones_0": {
+      "type": "polygon",
+      "coordinates": [
+        [
+          10,
+          4.5
+        ],
+        [
+          15,
+          4.5
+        ],
+        [
+          15,
+          5.5
+        ],
+        [
+          10,
+          5.5
+        ],
+        [
+          10,
+          4.5
+        ]
+      ],
+      "speed_factor": 0.4
+    }
+  },
+  "obstacles": {
+    "jps-obstacles_0": {
+      "type": "polygon",
+      "coordinates": [
+        [
+          6,
+          1
+        ],
+        [
+          8,
+          1
+        ],
+        [
+          8,
+          3
+        ],
+        [
+          6,
+          3
+        ],
+        [
+          6,
+          1
+        ]
+      ]
+    }
+  },
+  "journeys_v2": [
+    {
+      "id": "jps-journeys_0",
+      "name": "Main route",
+      "color": "#10b981",
+      "sequence": [
+        "jps-checkpoints_0",
+        "jps-exits_0"
+      ]
+    }
+  ],
+  "journeys": [],
+  "transitions": []
+}

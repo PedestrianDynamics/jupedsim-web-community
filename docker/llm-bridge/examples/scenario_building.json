@@ -1,0 +1,228 @@
+{
+  "config": {
+    "project_version": "2.0",
+    "config": {
+      "simulation_settings": {
+        "simulationParams": {
+          "max_simulation_time": 300,
+          "dt": 0.01,
+          "model_type": "CollisionFreeSpeedModel",
+          "strength_neighbor_repulsion": 2.6,
+          "range_neighbor_repulsion": 0.1,
+          "relaxation_time": 0.5,
+          "s0": 0.5,
+          "T": 1
+        },
+        "numberOfSimulations": 1,
+        "baseSeed": 42
+      },
+      "ui_state": {
+        "useShortestPaths": false,
+        "boundaries": [{"mode": "manual"}]
+      }
+    },
+    "exits": {
+      "exit-main": {
+        "type": "polygon",
+        "coordinates": [
+          [12.5, 3.7],
+          [13, 3.7],
+          [13, 4.8],
+          [12.5, 4.8],
+          [12.5, 3.7]
+        ],
+        "enable_throughput_throttling": false,
+        "max_throughput": 0
+      }
+    },
+    "distributions": {
+      "dist-office-1": {
+        "type": "polygon",
+        "coordinates": [
+          [0.3, 0.3],
+          [5.55, 0.3],
+          [5.55, 3.05],
+          [0.3, 3.05],
+          [0.3, 0.3]
+        ],
+        "parameters": {
+          "number": 8,
+          "radius": 0.15,
+          "v0": 1.2,
+          "distribution_mode": "by_number",
+          "radius_distribution": "constant",
+          "radius_std": null,
+          "v0_distribution": "normal",
+          "v0_std": 0.15,
+          "percentage": null,
+          "use_flow_spawning": false,
+          "initial_number": null,
+          "flow_start_time": 0,
+          "flow_end_time": 10,
+          "flow_schedule": [],
+          "use_premovement": true,
+          "premovement_distribution": "uniform",
+          "premovement_param_a": 2,
+          "premovement_param_b": 5,
+          "premovement_seed": null
+        },
+        "journey_weights": [
+          {"journey_id": "journey-exit", "weight": 100}
+        ]
+      },
+      "dist-office-2": {
+        "type": "polygon",
+        "coordinates": [
+          [6.45, 0.3],
+          [11.7, 0.3],
+          [11.7, 3.05],
+          [6.45, 3.05],
+          [6.45, 0.3]
+        ],
+        "parameters": {
+          "number": 8,
+          "radius": 0.15,
+          "v0": 1.2,
+          "distribution_mode": "by_number",
+          "radius_distribution": "constant",
+          "radius_std": null,
+          "v0_distribution": "normal",
+          "v0_std": 0.15,
+          "percentage": null,
+          "use_flow_spawning": false,
+          "initial_number": null,
+          "flow_start_time": 0,
+          "flow_end_time": 10,
+          "flow_schedule": [],
+          "use_premovement": true,
+          "premovement_distribution": "uniform",
+          "premovement_param_a": 2,
+          "premovement_param_b": 5,
+          "premovement_seed": null
+        },
+        "journey_weights": [
+          {"journey_id": "journey-exit", "weight": 100}
+        ]
+      },
+      "dist-meeting": {
+        "type": "polygon",
+        "coordinates": [
+          [0.3, 5.45],
+          [11.7, 5.45],
+          [11.7, 7.7],
+          [0.3, 7.7],
+          [0.3, 5.45]
+        ],
+        "parameters": {
+          "number": 14,
+          "radius": 0.15,
+          "v0": 1.2,
+          "distribution_mode": "by_number",
+          "radius_distribution": "constant",
+          "radius_std": null,
+          "v0_distribution": "normal",
+          "v0_std": 0.15,
+          "percentage": null,
+          "use_flow_spawning": false,
+          "initial_number": null,
+          "flow_start_time": 0,
+          "flow_end_time": 10,
+          "flow_schedule": [],
+          "use_premovement": true,
+          "premovement_distribution": "uniform",
+          "premovement_param_a": 2,
+          "premovement_param_b": 5,
+          "premovement_seed": null
+        },
+        "journey_weights": [
+          {"journey_id": "journey-exit", "weight": 100}
+        ]
+      }
+    },
+    "checkpoints": {},
+    "zones": {},
+    "obstacles": {
+      "wall-office-divider": {
+        "type": "polygon",
+        "coordinates": [
+          [5.85, 0],
+          [6.15, 0],
+          [6.15, 3.5],
+          [5.85, 3.5],
+          [5.85, 0]
+        ]
+      },
+      "wall-office1-north-left": {
+        "type": "polygon",
+        "coordinates": [
+          [0, 3.35],
+          [2, 3.35],
+          [2, 3.65],
+          [0, 3.65],
+          [0, 3.35]
+        ]
+      },
+      "wall-office1-north-right": {
+        "type": "polygon",
+        "coordinates": [
+          [3, 3.35],
+          [5.85, 3.35],
+          [5.85, 3.65],
+          [3, 3.65],
+          [3, 3.35]
+        ]
+      },
+      "wall-office2-north-left": {
+        "type": "polygon",
+        "coordinates": [
+          [6.15, 3.35],
+          [9, 3.35],
+          [9, 3.65],
+          [6.15, 3.65],
+          [6.15, 3.35]
+        ]
+      },
+      "wall-office2-north-right": {
+        "type": "polygon",
+        "coordinates": [
+          [10, 3.35],
+          [12, 3.35],
+          [12, 3.65],
+          [10, 3.65],
+          [10, 3.35]
+        ]
+      },
+      "wall-meeting-south-left": {
+        "type": "polygon",
+        "coordinates": [
+          [0, 4.85],
+          [5, 4.85],
+          [5, 5.15],
+          [0, 5.15],
+          [0, 4.85]
+        ]
+      },
+      "wall-meeting-south-right": {
+        "type": "polygon",
+        "coordinates": [
+          [7, 4.85],
+          [12, 4.85],
+          [12, 5.15],
+          [7, 5.15],
+          [7, 4.85]
+        ]
+      }
+    },
+    "journeys_v2": [
+      {
+        "id": "journey-exit",
+        "name": "Evacuate to main exit",
+        "color": "#10b981",
+        "sequence": ["exit-main"]
+      }
+    ],
+    "journeys": [],
+    "transitions": []
+  },
+  "geometry_wkt": "POLYGON ((0 0, 12 0, 12 3.5, 13 3.5, 13 5, 12 5, 12 8, 0 8, 0 0))"
+}
