@@ -87,6 +87,43 @@ docker/llm-bridge/
 - **Scenario JSON format:** [`CONFIG_JSON_TEMPLATE.md`](CONFIG_JSON_TEMPLATE.md)
 - **Agent skill (optional):** [`skills/jupedsim-web-bridge/`](skills/jupedsim-web-bridge/) — a portable skill definition for an LLM agent to operate the bridge.
 
+## Testing
+
+Automated (bridge-only, no Docker needed):
+
+```bash
+uv run --extra dev pytest tests/test_llm_bridge_origin.py -v
+```
+
+Against the running stack (`nobuild` compose up, viewer open at
+`http://localhost:8081/draw`):
+
+1. **Local-only guard.** The first request must return `403`, the second `202`:
+
+   ```bash
+   curl -i -X POST -H "Origin: https://evil.example" http://127.0.0.1:8090/api/scenarios/clear
+   curl -i -X POST http://127.0.0.1:8090/api/scenarios/clear
+   ```
+
+   Click **Bridge** in the viewer and confirm it still reports connected; the
+   page on `:8081` must still be allowed to talk to `:8090`.
+
+2. **End-to-end run.** Freshly reload the viewer tab, then:
+
+   ```bash
+   cd examples/analysis && python bottleneck_flow.py --run --agents 100
+   ```
+
+   Expect a plot, a CSV and a steady-state flow close to the value in
+   [`examples/analysis/README.md`](examples/analysis/README.md). Reload the tab
+   and run again with `--agents 20`: the script must wait for the archive tagged
+   with the new run and pass its agent-count check.
+
+3. **Command recovery.** Queue a run, then in the browser DevTools set the tab
+   offline for a few seconds so a status update to the bridge fails, and go
+   back online. `GET /api/simulations/latest` must still reach `completed`, and
+   a later `POST /api/simulations/run` must return `202`, not `409`.
+
 ## Security
 
 The bridge is for **local use only**. Keep it bound to `127.0.0.1` and do not
