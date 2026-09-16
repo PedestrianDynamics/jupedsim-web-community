@@ -23,6 +23,23 @@ docker stop --timeout 60 jupedsim
 
 The `/data` volume holds MongoDB, scenario uploads, and the backend's SQLite state, so your scenarios survive `docker restart` and `docker rm`. Allow ~60 s on first start.
 
+## Update to a newer image
+
+Containers are bound to the image they were started from, so an update replaces the container. The `jupedsim-data` volume is reused, so your scenarios are kept:
+
+```bash
+docker pull jupedsim/jupedsim-web:latest
+docker stop --timeout 60 jupedsim && docker rm jupedsim
+docker run -d \
+  --name jupedsim \
+  -p 8080:8080 \
+  -v jupedsim-data:/data \
+  --memory 4g \
+  jupedsim/jupedsim-web:latest
+```
+
+Pin a release tag (for example `jupedsim/jupedsim-web:v1.13.0`) instead of `latest` if you want explicit upgrades and easy rollback. Add the same `-e MONGODB_URI=...` flag on re-run if you use an external MongoDB.
+
 ## Use your own MongoDB (optional)
 
 Point `MONGODB_URI` at a managed/external MongoDB and the bundled `mongod` is not started:
