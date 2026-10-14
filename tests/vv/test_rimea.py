@@ -25,6 +25,7 @@ import pytest
 from shapely import wkt
 from shapely.geometry import Point, Polygon
 from vv_helpers import (
+    DEFAULT_SEED,
     HAS_VV_DEPS,
     agents_within_bounds,
     measure_flow_rate,
@@ -37,6 +38,7 @@ if str(STANDARDS_DIR / "rimea") not in sys.path:
 if str(STANDARDS_DIR) not in sys.path:
     sys.path.insert(0, str(STANDARDS_DIR))
 
+from jupedsim_scenarios import load_scenario, run_scenario
 from scenario_builders.rimea07_demographic import (
     AGE_GROUPS,
     WALKABLE_AREA_WKT,
@@ -53,8 +55,10 @@ from scenario_builders.rimea08_parameter import (
 from scenario_builders.rimea13_stairs import (
     STAIR_WALKABLE_AREA_WKT,
     STAIR_ZONE_COORDINATES,
-    build_raw_scenario as build_stair_raw_scenario,
     corbetta_envelope_bounds,
+)
+from scenario_builders.rimea13_stairs import (
+    build_raw_scenario as build_stair_raw_scenario,
 )
 from scenario_builders.rimea16_loop import (
     build_loop_scenario,
@@ -64,7 +68,25 @@ from scenario_builders.rimea16_loop import (
     load_reference_band,
     summarize_reference_fit,
 )
-from jupedsim_scenarios import load_scenario, run_scenario
+
+# Bounds and seeds shared by the asserts and the results rows (vv_row).
+RIMEA01_LOWER, RIMEA01_UPPER = 26, 34  # travel time, s
+RIMEA02_LOWER, RIMEA02_UPPER = 19.5, 20.5  # stair-zone travel time, s
+RIMEA03_LOWER, RIMEA03_UPPER = 13.0, 13.7  # stair-zone travel time, s
+RIMEA05_LOWER, RIMEA05_UPPER = 9.9, 101.0  # premovement window, s
+RIMEA05_DELTA_TOL = 0.5  # max |observed - sampled premovement|, s
+RIMEA05_PREMOVEMENT_SEED = 12345
+RIMEA07_AGENTS = 50
+RIMEA07_ASSIGNED_TOL = 1e-6
+RIMEA07_OBSERVED_TOL = 0.03  # m/s
+RIMEA13_CORBETTA_FLOOR = 0.25
+RIMEA13_DOWN_WINS_MIN = 0.7
+RIMEA13_MIN_SAMPLES = 500
+RIMEA13_MIN_COMMON_BINS = 5
+RIMEA14_AGENTS = 30
+RIMEA16_MIN_LAPS = 3
+RIMEA16_BASELINE_MIN_INSIDE = 0.75
+RIMEA16_FASTER_MIN_ABOVE_P90 = 0.75
 
 pytestmark = [
     pytest.mark.vv,
@@ -72,6 +94,12 @@ pytestmark = [
         not HAS_VV_DEPS, reason="V&V runtime dependencies not installed"
     ),
 ]
+
+
+@pytest.fixture(autouse=True)
+def _rimea_results_row(vv_row):
+    """Every RiMEA test writes a results row (fields it does not set stay null)."""
+    yield
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +140,7 @@ class TestRiMEA01SpeedCorridor:
         }
     }
 
-    def test_travel_time(self):
+    def test_travel_time(self, vv_row):
         """Travel time at 1.33 m/s should be in [26, 34] seconds."""
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
@@ -122,17 +150,31 @@ class TestRiMEA01SpeedCorridor:
         )
         assert metrics["agents_remaining"] == 0, "Agent did not evacuate"
         evac = metrics["evacuation_time"]
-        assert 26 <= evac <= 34, f"Travel time {evac:.2f}s outside RiMEA range [26, 34]"
+        vv_row.set(
+            quantity="travel_time", unit="s", lower=RIMEA01_LOWER, upper=RIMEA01_UPPER,
+            measured=evac, n=metrics["total_agents"], seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule=f"bound: {RIMEA01_LOWER} <= measured <= {RIMEA01_UPPER}",
+        )
+        assert RIMEA01_LOWER <= evac <= RIMEA01_UPPER, (
+            f"Travel time {evac:.2f}s outside RiMEA range [{RIMEA01_LOWER}, {RIMEA01_UPPER}]"
+        )
 
-    def test_agent_stays_in_corridor(self):
+    def test_agent_stays_in_corridor(self, vv_row):
         """Agent must remain within corridor bounds."""
-        _, trajectory = run_vv_scenario(
+        metrics, trajectory = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
         violations = agents_within_bounds(trajectory, 0, 0, 40, 2)
+        vv_row.set(
+            quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
+            measured=len(violations), n=metrics["total_agents"], seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule="bound: 0 <= measured <= 0 (samples outside the corridor box)",
+        )
         assert not violations, "Agent left corridor:\n" + "\n".join(violations[:5])
 
 
@@ -190,12 +232,12 @@ class TestRiMEA02SpeedUpStairs:
         }
     ]
 
-    def test_travel_time(self):
+    def test_travel_time(self, vv_row):
         """Zone-based stair approximation should keep the slowed 10 m run near 20 s."""
         raw = {
             "config": {
                 "simulation_settings": {
-                    "baseSeed": 42,
+                    "baseSeed": DEFAULT_SEED,
                     "simulationParams": {
                         "model_type": "CollisionFreeSpeedModel",
                         "max_simulation_time": 60,
@@ -214,13 +256,21 @@ class TestRiMEA02SpeedUpStairs:
             (scenario_dir / "geometry.wkt").write_text(self.WALKABLE, encoding="utf-8")
 
             scenario = load_scenario(str(scenario_dir))
-            result = run_scenario(scenario, seed=42)
+            result = run_scenario(scenario, seed=DEFAULT_SEED)
             evac = result.evacuation_time
+            total_agents = result.total_agents
             result.cleanup()
 
+        vv_row.set(
+            quantity="travel_time", unit="s", lower=RIMEA02_LOWER, upper=RIMEA02_UPPER,
+            measured=evac, n=total_agents, seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule=f"bound: {RIMEA02_LOWER} <= measured <= {RIMEA02_UPPER}",
+        )
         # ~10 m corridor at v0 * speed_factor = 0.5 m/s -> ~20 s.
-        assert 19.5 <= evac <= 20.5, (
-            f"Stair-zone travel time {evac:.2f}s outside expected range [19.5, 20.5]"
+        assert RIMEA02_LOWER <= evac <= RIMEA02_UPPER, (
+            f"Stair-zone travel time {evac:.2f}s outside expected range "
+            f"[{RIMEA02_LOWER}, {RIMEA02_UPPER}]"
         )
 
 
@@ -278,12 +328,12 @@ class TestRiMEA03SpeedDownStairs:
         }
     ]
 
-    def test_travel_time(self):
+    def test_travel_time(self, vv_row):
         """Zone-based stair approximation should keep downstairs travel near 13 s."""
         raw = {
             "config": {
                 "simulation_settings": {
-                    "baseSeed": 42,
+                    "baseSeed": DEFAULT_SEED,
                     "simulationParams": {
                         "model_type": "CollisionFreeSpeedModel",
                         "max_simulation_time": 60,
@@ -302,13 +352,21 @@ class TestRiMEA03SpeedDownStairs:
             (scenario_dir / "geometry.wkt").write_text(self.WALKABLE, encoding="utf-8")
 
             scenario = load_scenario(str(scenario_dir))
-            result = run_scenario(scenario, seed=42)
+            result = run_scenario(scenario, seed=DEFAULT_SEED)
             evac = result.evacuation_time
+            total_agents = result.total_agents
             result.cleanup()
 
+        vv_row.set(
+            quantity="travel_time", unit="s", lower=RIMEA03_LOWER, upper=RIMEA03_UPPER,
+            measured=evac, n=total_agents, seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule=f"bound: {RIMEA03_LOWER} <= measured <= {RIMEA03_UPPER}",
+        )
         # ~10 m corridor at v0 * speed_factor = 0.75 m/s -> ~13.3 s.
-        assert 13.0 <= evac <= 13.7, (
-            f"Stair-zone travel time {evac:.2f}s outside expected range [13.0, 13.7]"
+        assert RIMEA03_LOWER <= evac <= RIMEA03_UPPER, (
+            f"Stair-zone travel time {evac:.2f}s outside expected range "
+            f"[{RIMEA03_LOWER}, {RIMEA03_UPPER}]"
         )
 
 
@@ -491,7 +549,7 @@ class TestRiMEA05PremovementTime:
                 "premovement_distribution": "uniform",
                 "premovement_param_a": 10.0,
                 "premovement_param_b": 100.0,
-                "premovement_seed": 12345,
+                "premovement_seed": RIMEA05_PREMOVEMENT_SEED,
             },
             "journey_weights": [{"journey_id": "jps-journeys_0", "weight": 100}],
         }
@@ -505,12 +563,12 @@ class TestRiMEA05PremovementTime:
         }
     ]
 
-    def test_premovement_respected(self):
+    def test_premovement_respected(self, vv_row):
         """Agents should remain still until their sampled premovement delay expires."""
         raw = {
             "config": {
                 "simulation_settings": {
-                    "baseSeed": 42,
+                    "baseSeed": DEFAULT_SEED,
                     "simulationParams": {
                         "model_type": "CollisionFreeSpeedModel",
                         "max_simulation_time": 180,
@@ -528,12 +586,12 @@ class TestRiMEA05PremovementTime:
             (scenario_dir / "geometry.wkt").write_text(self.WALKABLE, encoding="utf-8")
 
             scenario = load_scenario(str(scenario_dir))
-            result = run_scenario(scenario, seed=42)
+            result = run_scenario(scenario, seed=DEFAULT_SEED)
             frame_rate = result.frame_rate
             df = result.trajectory_dataframe().sort_values(["id", "frame"]).copy()
             result.cleanup()
 
-        expected_times = np.random.default_rng(12345).uniform(10.0, 100.0, 10)
+        expected_times = np.random.default_rng(RIMEA05_PREMOVEMENT_SEED).uniform(10.0, 100.0, 10)
         agent_ids = sorted(df["id"].unique())
         assert len(agent_ids) == 10, f"Expected 10 agents, got {len(agent_ids)}"
 
@@ -548,15 +606,26 @@ class TestRiMEA05PremovementTime:
             movement_start[agent_id] = float(moved.iloc[0]["frame"]) / frame_rate
 
         observed = np.array([movement_start[agent_id] for agent_id in agent_ids])
-        assert np.all(observed >= 9.9), f"Observed movement before 10s: {observed}"
-        assert np.all(observed <= 101.0), (
+        vv_row.set(
+            quantity="movement_start_time", unit="s", lower=RIMEA05_LOWER,
+            upper=RIMEA05_UPPER, measured=observed.tolist(), n=len(agent_ids),
+            seed=DEFAULT_SEED, premovement_seed=RIMEA05_PREMOVEMENT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                f"bound: {RIMEA05_LOWER} <= measured <= {RIMEA05_UPPER}; comparison: "
+                f"sorted measured vs sorted premovement samples (premovement_seed), "
+                f"max abs delta <= {RIMEA05_DELTA_TOL} s"
+            ),
+        )
+        assert np.all(observed >= RIMEA05_LOWER), f"Observed movement before 10s: {observed}"
+        assert np.all(observed <= RIMEA05_UPPER), (
             f"Observed movement after expected window: {observed}"
         )
 
         expected_sorted = np.sort(expected_times)
         observed_sorted = np.sort(observed)
         deltas = np.abs(observed_sorted - expected_sorted)
-        assert np.all(deltas <= 0.5), (
+        assert np.all(deltas <= RIMEA05_DELTA_TOL), (
             "Observed movement start times do not match sampled premovement delays. "
             f"Expected={expected_sorted}, observed={observed_sorted}, deltas={deltas}"
         )
@@ -596,7 +665,7 @@ class TestRiMEA06Corner:
         }
     }
 
-    def test_all_evacuate(self):
+    def test_all_evacuate(self, vv_row):
         """All 20 agents navigate corner and evacuate."""
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
@@ -604,19 +673,31 @@ class TestRiMEA06Corner:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
+        vv_row.set(
+            quantity="agents_remaining", unit="count", lower=0, upper=0,
+            measured=metrics["agents_remaining"], n=metrics["total_agents"],
+            seed=DEFAULT_SEED, model="CollisionFreeSpeedModel",
+            rule="bound: 0 <= measured <= 0",
+        )
         assert metrics["agents_remaining"] == 0, (
             f"{metrics['agents_remaining']} agents stuck at corner"
         )
 
-    def test_agents_stay_in_geometry(self):
+    def test_agents_stay_in_geometry(self, vv_row):
         """No agent passes through walls."""
-        _, trajectory = run_vv_scenario(
+        metrics, trajectory = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
         violations = agents_within_bounds(trajectory, 0, -2, 12, 10)
+        vv_row.set(
+            quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
+            measured=len(violations), n=metrics["total_agents"], seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule="bound: 0 <= measured <= 0 (samples outside the geometry box)",
+        )
         assert not violations, "Agents left geometry:\n" + "\n".join(violations[:10])
 
 
@@ -627,7 +708,7 @@ class TestRiMEA07DemographicParams:
     Expected: Simulated speed distribution matches tabulated values.
     """
 
-    def test_speed_distribution(self):
+    def test_speed_distribution(self, vv_row):
         import pedpy
 
         raw = build_raw_scenario()
@@ -638,10 +719,10 @@ class TestRiMEA07DemographicParams:
             (scenario_dir / "geometry.wkt").write_text(WALKABLE_AREA_WKT, encoding="utf-8")
 
             scenario = load_scenario(str(scenario_dir))
-            result = run_scenario(scenario, seed=42)
+            result = run_scenario(scenario, seed=DEFAULT_SEED)
 
             assert result.agents_remaining == 0, "All demographic agents should evacuate"
-            assert result.total_agents == 50, "RiMEA 07 requires a 50-person adult population"
+            assert result.total_agents == RIMEA07_AGENTS, "RiMEA 07 requires a 50-person adult population"
 
             traj_df = result.trajectory_dataframe()[["id", "frame", "x", "y"]].copy()
             traj = pedpy.TrajectoryData(traj_df, frame_rate=result.frame_rate)
@@ -699,17 +780,29 @@ class TestRiMEA07DemographicParams:
             observed = [row["observed_speed"] for row in rows]
             vmin, vmax = expected_ranges[age]
 
-            assert min(assigned) >= vmin - 1e-6 and max(assigned) <= vmax + 1e-6, (
+            assert min(assigned) >= vmin - RIMEA07_ASSIGNED_TOL and max(assigned) <= vmax + RIMEA07_ASSIGNED_TOL, (
                 f"Age {age}: assigned speeds {min(assigned):.3f}-{max(assigned):.3f} "
                 f"outside reference {vmin:.3f}-{vmax:.3f}"
             )
-            assert min(observed) >= vmin - 0.03 and max(observed) <= vmax + 0.03, (
+            assert min(observed) >= vmin - RIMEA07_OBSERVED_TOL and max(observed) <= vmax + RIMEA07_OBSERVED_TOL, (
                 f"Age {age}: observed speeds {min(observed):.3f}-{max(observed):.3f} "
                 f"outside tolerance around reference {vmin:.3f}-{vmax:.3f}"
             )
 
             mean_observed_speeds.append(float(np.mean(observed)))
 
+        vv_row.set(
+            quantity="observed_speed_by_age", unit="m/s",
+            measured=mean_observed_speeds, n=RIMEA07_AGENTS, seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            scenario_file="standards/rimea/scenario_builders/rimea07_demographic.py",
+            rule=(
+                f"bound per age group: assigned speed in reference range (tol "
+                f"{RIMEA07_ASSIGNED_TOL}); observed median speed in reference range "
+                f"+/- {RIMEA07_OBSERVED_TOL} m/s; comparison: mean observed speed "
+                f"non-increasing with age"
+            ),
+        )
         assert all(
             earlier >= later for earlier, later in zip(mean_observed_speeds, mean_observed_speeds[1:])
         ), f"Observed mean speeds should decrease with age, got {mean_observed_speeds}"
@@ -916,7 +1009,7 @@ class TestRiMEA09LargePublicSpace:
             )
         return distributions, journeys_v2
 
-    def test_closing_exits_increases_time(self):
+    def test_closing_exits_increases_time(self, vv_row):
         """Closing 2 of 4 exits should increase evacuation time."""
         dist_4, j_4 = self._make_dist_and_journeys(self.EXITS_4)
         metrics_4, _ = run_vv_scenario(
@@ -933,6 +1026,16 @@ class TestRiMEA09LargePublicSpace:
             distributions=dist_2,
             journeys_v2=j_2,
             max_simulation_time=600.0,
+        )
+        vv_row.set(
+            quantity="evacuation_time_4_exits_vs_2_exits", unit="s",
+            measured=[metrics_4["evacuation_time"], metrics_2["evacuation_time"]],
+            n=metrics_4["total_agents"], seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: agents_remaining = 0 in both runs; comparison: "
+                "evacuation_time(2 exits) > evacuation_time(4 exits)"
+            ),
         )
         assert metrics_4["agents_remaining"] == 0, "4-exit: not all evacuated"
         assert metrics_2["agents_remaining"] == 0, "2-exit: not all evacuated"
@@ -985,12 +1088,12 @@ class TestRiMEA10RouteAllocation:
             )
         return agent_to_exit
 
-    def test_agents_use_assigned_exits(self):
+    def test_agents_use_assigned_exits(self, vv_row):
         import pedpy
 
         raw = self._load_raw()
         scenario = load_scenario(str(self.SCENARIO_ZIP))
-        result = run_scenario(scenario, seed=42)
+        result = run_scenario(scenario, seed=DEFAULT_SEED)
 
         assert result.agents_remaining == 0
 
@@ -1023,6 +1126,13 @@ class TestRiMEA10RouteAllocation:
             for agent_id in expected_agent_exit
             if expected_agent_exit[agent_id] != actual_agent_exit[agent_id]
         }
+        vv_row.set(
+            quantity="agents_at_wrong_exit", unit="count", lower=0, upper=0,
+            measured=len(mismatches), n=result.total_agents, seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            scenario_file="standards/rimea/scenario_files/Rimea-10.zip",
+            rule="bound: 0 <= measured <= 0 (agents at a non-assigned exit)",
+        )
         assert not mismatches, f"Agents reached wrong exits: {mismatches}"
 
         result.cleanup()
@@ -1190,7 +1300,7 @@ class TestRiMEA12aGoalPosition:
             }
         }
 
-    def test_closer_goal_faster(self):
+    def test_closer_goal_faster(self, vv_row):
         """Goal near bottleneck should yield shorter evacuation than far goal."""
         metrics_near, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE_TEMPLATE,
@@ -1203,6 +1313,16 @@ class TestRiMEA12aGoalPosition:
             exits=self._make_exit(8),
             distributions=self.DIST,
             max_simulation_time=300.0,
+        )
+        vv_row.set(
+            quantity="evacuation_time_near_vs_far_goal", unit="s",
+            measured=[metrics_near["evacuation_time"], metrics_far["evacuation_time"]],
+            n=metrics_near["total_agents"], seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: agents_remaining = 0 in both runs; comparison: "
+                "evacuation_time(near goal) <= evacuation_time(far goal)"
+            ),
         )
         assert metrics_near["agents_remaining"] == 0
         assert metrics_far["agents_remaining"] == 0
@@ -1258,7 +1378,7 @@ class TestRiMEA12bBottleneckLength:
         }
     }
 
-    def test_longer_bottleneck_slower(self):
+    def test_longer_bottleneck_slower(self, vv_row):
         """Longer bottleneck should increase evacuation time."""
         metrics_short, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE_SHORT,
@@ -1271,6 +1391,16 @@ class TestRiMEA12bBottleneckLength:
             exits=self.EXIT_LONG,
             distributions=self.DIST,
             max_simulation_time=600.0,
+        )
+        vv_row.set(
+            quantity="evacuation_time_short_vs_long_bottleneck", unit="s",
+            measured=[metrics_short["evacuation_time"], metrics_long["evacuation_time"]],
+            n=metrics_long["total_agents"], seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: agents_remaining = 0 in both runs; comparison: "
+                "evacuation_time(long bottleneck) > evacuation_time(short bottleneck)"
+            ),
         )
         assert metrics_short["agents_remaining"] == 0
         assert metrics_long["agents_remaining"] == 0
@@ -1329,7 +1459,7 @@ class TestRiMEA12cCongestionInfluence:
             counts.append(count)
         return counts
 
-    def test_congestion_at_bottlenecks(self):
+    def test_congestion_at_bottlenecks(self, vv_row):
         import pedpy
 
         metrics, trajectory = run_vv_scenario(
@@ -1357,7 +1487,6 @@ class TestRiMEA12cCongestionInfluence:
         peak_queue_2 = max(queue_2)
         mean_top10_queue_1 = float(np.mean(sorted(queue_1, reverse=True)[:10]))
         mean_top10_queue_2 = float(np.mean(sorted(queue_2, reverse=True)[:10]))
-
         assert peak_queue_1 > peak_queue_2, (
             f"Expected stronger queue before bottleneck 1, got peaks "
             f"b1={peak_queue_1}, b2={peak_queue_2}"
@@ -1368,6 +1497,24 @@ class TestRiMEA12cCongestionInfluence:
         )
         first_crossing_1 = float(crossing_1["frame"].min() / trajectory.frame_rate)
         first_crossing_2 = float(crossing_2["frame"].min() / trajectory.frame_rate)
+        vv_row.set(
+            quantity="peak_queue_before_b1_vs_b2", unit="agents",
+            measured={
+                "peak_queue_b1": peak_queue_1,
+                "peak_queue_b2": peak_queue_2,
+                "top10_mean_queue_b1": mean_top10_queue_1,
+                "top10_mean_queue_b2": mean_top10_queue_2,
+                "first_crossing_s_b1": first_crossing_1,
+                "first_crossing_s_b2": first_crossing_2,
+            },
+            n=metrics["total_agents"], seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: agents_remaining = 0; bound: crossings per line = total_agents; "
+                "comparison: peak queue b1 > b2, top-10 mean queue b1 > b2, "
+                "first crossing b1 < b2"
+            ),
+        )
         assert first_crossing_1 < first_crossing_2, (
             f"Expected bottleneck 2 to start later than bottleneck 1, got "
             f"b1={first_crossing_1:.2f}s, b2={first_crossing_2:.2f}s"
@@ -1415,7 +1562,7 @@ class TestRiMEA12dBottleneckWidthFlow:
         }
     }
 
-    def test_flow_increases_with_width(self):
+    def test_flow_increases_with_width(self, vv_row):
         """Wider bottlenecks should produce higher mean flow."""
         flows = {}
         for w in [0.8, 1.0, 1.2]:
@@ -1427,6 +1574,15 @@ class TestRiMEA12dBottleneckWidthFlow:
             )
             assert metrics["agents_remaining"] == 0, f"w={w}: not all evacuated"
             flows[w] = measure_flow_rate(metrics)
+        vv_row.set(
+            quantity="flow_by_bottleneck_width_0.8_1.0_1.2", unit="agents/s",
+            measured=[flows[0.8], flows[1.0], flows[1.2]], n=metrics["total_agents"],
+            seed=DEFAULT_SEED, model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: agents_remaining = 0 for each width; comparison: "
+                "flow(0.8 m) < flow(1.0 m) < flow(1.2 m)"
+            ),
+        )
 
         assert flows[0.8] < flows[1.0] < flows[1.2], (
             f"Expected flow to increase with width, got "
@@ -1452,7 +1608,7 @@ class TestRiMEA13FundamentalDiagramStairs:
             (scenario_dir / "geometry.wkt").write_text(STAIR_WALKABLE_AREA_WKT, encoding="utf-8")
 
             scenario = load_scenario(str(scenario_dir))
-            result = run_scenario(scenario, seed=42)
+            result = run_scenario(scenario, seed=DEFAULT_SEED)
 
             assert result.agents_remaining == 0, f"RiMEA 13 {direction}: not all agents evacuated"
 
@@ -1464,6 +1620,7 @@ class TestRiMEA13FundamentalDiagramStairs:
                 speed_calculation=pedpy.SpeedCalculation.BORDER_EXCLUDE,
             )
             merged = traj.data.merge(speed_df[["id", "frame", "speed"]], on=["id", "frame"], how="inner")
+            total_agents = result.total_agents
             result.cleanup()
 
         stair_points = merged[
@@ -1474,14 +1631,18 @@ class TestRiMEA13FundamentalDiagramStairs:
         stair_points["density"] = stair_points["count"] / stair_zone.area
         stair_points = stair_points[(stair_points["density"] >= 0.6) & (stair_points["density"] <= 1.5)]
         stair_points["density_bin"] = np.round(stair_points["density"], 1)
-        return stair_points
+        return stair_points, total_agents
 
-    def test_down_faster_than_up(self):
-        up_points = self._run_direction("up")
-        down_points = self._run_direction("down")
+    def test_down_faster_than_up(self, vv_row):
+        up_points, total_agents = self._run_direction("up")
+        down_points, _ = self._run_direction("down")
 
-        assert len(up_points) > 500, f"Too few upstairs stair samples: {len(up_points)}"
-        assert len(down_points) > 500, f"Too few downstairs stair samples: {len(down_points)}"
+        assert len(up_points) > RIMEA13_MIN_SAMPLES, (
+            f"Too few upstairs stair samples: {len(up_points)}"
+        )
+        assert len(down_points) > RIMEA13_MIN_SAMPLES, (
+            f"Too few downstairs stair samples: {len(down_points)}"
+        )
 
         up_low, up_high = corbetta_envelope_bounds("up", up_points["density"].to_numpy())
         down_low, down_high = corbetta_envelope_bounds("down", down_points["density"].to_numpy())
@@ -1504,9 +1665,10 @@ class TestRiMEA13FundamentalDiagramStairs:
         # drift can't make it flaky, while still catching a grossly broken sim
         # (a wrong stair model lands near 0). The run is seeded (seed=42), so it
         # is deterministic within a given environment.
-        FLOOR = 0.25
-        assert up_inside >= FLOOR, f"Upstairs points inside Corbetta band too low: {up_inside:.3f}"
-        assert down_inside >= FLOOR, (
+        assert up_inside >= RIMEA13_CORBETTA_FLOOR, (
+            f"Upstairs points inside Corbetta band too low: {up_inside:.3f}"
+        )
+        assert down_inside >= RIMEA13_CORBETTA_FLOOR, (
             f"Downstairs points inside Corbetta band too low: {down_inside:.3f}"
         )
 
@@ -1514,13 +1676,39 @@ class TestRiMEA13FundamentalDiagramStairs:
         down_binned = down_points.groupby("density_bin", observed=True)["speed"].mean()
         common_bins = up_binned.index.intersection(down_binned.index)
 
-        assert len(common_bins) >= 5, f"Expected enough shared density bins, got {list(common_bins)}"
+        assert len(common_bins) >= RIMEA13_MIN_COMMON_BINS, (
+            f"Expected enough shared density bins, got {list(common_bins)}"
+        )
         # "Downstairs faster than upstairs" is a population-level claim. Per-bin
         # comparison is sensitive to sparse high-density bins (count/area is
         # discrete, so the rightmost bins have few samples and high variance).
         # Require the majority of bins to satisfy down > up rather than all.
         down_wins = (down_binned.loc[common_bins] > up_binned.loc[common_bins]).mean()
-        assert down_wins >= 0.7, (
+        vv_row.set(
+            quantity="stair_speed_mean_up_and_down", unit="m/s",
+            measured={
+                "mean_speed_up": float(up_points["speed"].mean()),
+                "mean_speed_down": float(down_points["speed"].mean()),
+                "samples_up": len(up_points),
+                "samples_down": len(down_points),
+                "inside_corbetta_up": float(up_inside),
+                "inside_corbetta_down": float(down_inside),
+                "shared_bins": len(common_bins),
+                "down_wins_fraction": float(down_wins),
+                "bin_mean_speed_up": float(up_binned.loc[common_bins].mean()),
+                "bin_mean_speed_down": float(down_binned.loc[common_bins].mean()),
+            },
+            n=total_agents, seed=DEFAULT_SEED, model="CollisionFreeSpeedModel",
+            scenario_file="standards/rimea/scenario_builders/rimea13_stairs.py",
+            rule=(
+                f"bound: inside Corbetta band >= {RIMEA13_CORBETTA_FLOOR} (up and down); "
+                f"bound: samples > {RIMEA13_MIN_SAMPLES} per direction; "
+                f"bound: shared density bins >= {RIMEA13_MIN_COMMON_BINS}; "
+                f"bound: fraction of shared bins with down > up >= {RIMEA13_DOWN_WINS_MIN}; "
+                "comparison: bin-mean speed over shared bins, down > up"
+            ),
+        )
+        assert down_wins >= RIMEA13_DOWN_WINS_MIN, (
             f"Downstairs should exceed upstairs in most density bins, got {down_wins:.2f}; "
             f"up={up_binned.loc[common_bins].to_dict()}, down={down_binned.loc[common_bins].to_dict()}"
         )
@@ -1538,7 +1726,7 @@ class TestRiMEA14RouteChoice:
     Expected: Document whether agents take short or long route.
     """
 
-    def test_route_choice(self):
+    def test_route_choice(self, vv_row):
         scenario_zip = STANDARDS_DIR / "rimea" / "scenario_files" / "Rimea-14.zip"
         with zipfile.ZipFile(scenario_zip) as archive:
             raw = json.loads(archive.read("config.json"))
@@ -1550,7 +1738,7 @@ class TestRiMEA14RouteChoice:
             {
                 "use_flow_spawning": False,
                 "distribution_mode": "by_number",
-                "number": 30,
+                "number": RIMEA14_AGENTS,
             }
         )
 
@@ -1560,7 +1748,7 @@ class TestRiMEA14RouteChoice:
                 (scenario_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
                 (scenario_dir / "geometry.wkt").write_text(walkable_area_wkt, encoding="utf-8")
                 scenario = load_scenario(str(scenario_dir))
-                result = run_scenario(scenario, seed=42)
+                result = run_scenario(scenario, seed=DEFAULT_SEED)
                 traj_df = result.trajectory_dataframe()[["id", "frame", "x", "y"]].copy()
                 result.cleanup()
             return traj_df
@@ -1592,9 +1780,35 @@ class TestRiMEA14RouteChoice:
         direct_long_route_agents, direct_short_stage_agents = classify_routes(direct_traj)
         staged_total_agents = staged_traj["id"].nunique()
         direct_total_agents = direct_traj["id"].nunique()
+        vv_row.set(
+            quantity="agents_on_long_route_vs_short_stage_staged", unit="count",
+            measured={
+                "staged_long_route": staged_long_route_agents,
+                "staged_short_stage": staged_short_stage_agents,
+                "staged_total": staged_total_agents,
+                "direct_long_route": direct_long_route_agents,
+                "direct_short_stage": direct_short_stage_agents,
+                "direct_total": direct_total_agents,
+            },
+            n=staged_total_agents, seed=DEFAULT_SEED,
+            model=raw.get("config", {})
+            .get("simulation_settings", {})
+            .get("simulationParams", {})
+            .get("model_type"),
+            scenario_file="standards/rimea/scenario_files/Rimea-14.zip",
+            rule=(
+                f"bound: staged_total = direct_total = {RIMEA14_AGENTS}; "
+                "bound: direct_long_route = 0; comparison: direct_short_stage = "
+                "direct_total; comparison: staged_long_route > staged_short_stage"
+            ),
+        )
 
-        assert staged_total_agents == 30, f"Expected 30 staged agents, got {staged_total_agents}"
-        assert direct_total_agents == 30, f"Expected 30 direct agents, got {direct_total_agents}"
+        assert staged_total_agents == RIMEA14_AGENTS, (
+            f"Expected {RIMEA14_AGENTS} staged agents, got {staged_total_agents}"
+        )
+        assert direct_total_agents == RIMEA14_AGENTS, (
+            f"Expected {RIMEA14_AGENTS} direct agents, got {direct_total_agents}"
+        )
         assert direct_long_route_agents == 0, (
             f"Without stages, agents should take the short route only; got {direct_long_route_agents}"
         )
@@ -1671,7 +1885,7 @@ class TestRiMEA15LargeCrowdCorner:
         }
     }
 
-    def test_corner_slower_than_straight(self):
+    def test_corner_slower_than_straight(self, vv_row):
         """Corner should slow down evacuation compared to straight path."""
         metrics_straight, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE_STRAIGHT,
@@ -1684,6 +1898,16 @@ class TestRiMEA15LargeCrowdCorner:
             exits=self.EXIT_CORNER,
             distributions=self.DIST_CORNER,
             max_simulation_time=300.0,
+        )
+        vv_row.set(
+            quantity="evacuation_time_straight_vs_corner", unit="s",
+            measured=[metrics_straight["evacuation_time"], metrics_corner["evacuation_time"]],
+            n=metrics_straight["total_agents"], seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: agents_remaining = 0 in both runs; comparison: "
+                "evacuation_time(corner) > evacuation_time(straight)"
+            ),
         )
         assert metrics_straight["agents_remaining"] == 0
         assert metrics_corner["agents_remaining"] == 0
@@ -1702,9 +1926,10 @@ class TestRiMEA161DFundamentalDiagram:
     Expected: Curves lie within 10/90% percentile envelope of empirical data.
     """
 
-    def test_1d_fundamental_diagram(self):
+    def test_1d_fundamental_diagram(self, vv_row):
         reference = load_reference_band()
         runs = {}
+        agent_counts = {}
         for label, desired_speed in {
             "slower": 0.9,
             "baseline": 1.2,
@@ -1715,14 +1940,14 @@ class TestRiMEA161DFundamentalDiagram:
                 desired_speed=desired_speed,
             )
             with redirect_stdout(io.StringIO()):
-                result = run_scenario(scenario, seed=42)
+                result = run_scenario(scenario, seed=DEFAULT_SEED)
             trajectory_df = result.trajectory_dataframe()[["id", "frame", "x", "y"]]
             lap_counts = compute_lap_counts(
                 trajectory_df=trajectory_df,
                 centerline=geometry.centerline,
                 track_length=geometry.track_length,
             )
-            assert (lap_counts["completed_laps"] >= 3).all(), (
+            assert (lap_counts["completed_laps"] >= RIMEA16_MIN_LAPS).all(), (
                 f"All agents should complete at least 3 laps, got "
                 f"{lap_counts['completed_laps'].tolist()}"
             )
@@ -1734,13 +1959,33 @@ class TestRiMEA161DFundamentalDiagram:
             )
             curve = compute_density_speed_curve(samples)
             runs[label] = summarize_reference_fit(curve, reference)
+            agent_counts[label] = result.total_agents
             result.cleanup()
 
         baseline = runs["baseline"]
         slower = runs["slower"]
         faster = runs["faster"]
+        vv_row.set(
+            quantity="baseline_fraction_inside_reference_band", unit="fraction",
+            lower=RIMEA16_BASELINE_MIN_INSIDE,
+            measured={
+                "baseline_inside_band": float(baseline["inside_band"].mean()),
+                "slower_mean_speed_mps": float(slower["speed_mps"].mean()),
+                "baseline_mean_speed_mps": float(baseline["speed_mps"].mean()),
+                "faster_above_p90": float(faster["above_p90"].mean()),
+            },
+            n=agent_counts["baseline"], seed=DEFAULT_SEED,
+            model="CollisionFreeSpeedModel",
+            scenario_file="standards/rimea/scenario_builders/rimea16_loop.py",
+            rule=(
+                f"bound: baseline inside_band >= {RIMEA16_BASELINE_MIN_INSIDE}; "
+                "comparison: slower mean speed < baseline mean speed; "
+                f"bound: faster above_p90 >= {RIMEA16_FASTER_MIN_ABOVE_P90}; "
+                f"gate: every agent completes >= {RIMEA16_MIN_LAPS} laps in each run"
+            ),
+        )
 
-        assert baseline["inside_band"].mean() >= 0.75, (
+        assert baseline["inside_band"].mean() >= RIMEA16_BASELINE_MIN_INSIDE, (
             f"Baseline curve should mostly lie within the reference band, got "
             f"{baseline['inside_band'].mean():.2%} inside"
         )
@@ -1749,7 +1994,7 @@ class TestRiMEA161DFundamentalDiagram:
             f"slower={slower['speed_mps'].mean():.3f}, "
             f"baseline={baseline['speed_mps'].mean():.3f}"
         )
-        assert faster["above_p90"].mean() >= 0.75, (
+        assert faster["above_p90"].mean() >= RIMEA16_FASTER_MIN_ABOVE_P90, (
             f"Higher desired speed should push the curve above the 90th percentile band, got "
             f"{faster['above_p90'].mean():.2%} above"
         )
