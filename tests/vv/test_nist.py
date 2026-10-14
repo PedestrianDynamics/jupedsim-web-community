@@ -943,7 +943,7 @@ class TestNist41DynamicExitAvailability:
     @pytest.mark.xfail(
         reason=(
             "The harness cannot make an exit unavailable through the public "
-            "API: jupedsim_scenarios 0.6.4.4 only removes exits before a run "
+            "API: jupedsim-scenarios 0.7.3 only removes exits before a run "
             "and has no runtime exit closure. This test forces the reroute by "
             "writing the runner's private agent state, so the public API "
             "reroute is not exercised."
