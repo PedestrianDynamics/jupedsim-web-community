@@ -31,7 +31,7 @@ For deviations from the NIST original specifications see
 | Verif.3.1  | Exit route allocation                  | covered  | `Nist-3-1-route-allocation.zip` |
 | Verif.3.2  | Social influence                       | covered* | `Nist-3-2-social-influence-{1,2}.zip` (strict xfail: no social-influence model) |
 | Verif.3.3  | Affiliation                            | covered  | `Nist-3-3-familiar-exits.zip` (affiliation represented by journey weights) |
-| Verif.4.1  | Dynamic availability of exits          | covered  | `Nist-4-1-dynamic-exits.zip` (active target redirected at t = 1 s) |
+| Verif.4.1  | Dynamic availability of exits          | xfail    | `Nist-4-1-dynamic-exits.zip` (no public runtime exit closure; test not run) |
 | Verif.5.1  | Congestion                             | covered  | `Nist-5-1-congestion.zip` |
 | Verif.5.2  | Maximum flow rates                     | covered* | `Nist-5-2-max-flow.zip` (emergent-flow non-exceedance check) |
 
