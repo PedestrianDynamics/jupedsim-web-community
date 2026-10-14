@@ -50,6 +50,7 @@ STATUS_META = {
     "skip": ("SKIP", "skip"),
     "pending": ("PENDING", "pending"),
     "notebook": ("NOTEBOOK", "notebook"),
+    "test-local": ("TEST-LOCAL", "test-local"),
 }
 
 
@@ -103,6 +104,8 @@ def resolve(entry: dict, junit: dict) -> str:
         return fallback
     if any(st == "fail" for st in matches):
         return "fail"
+    if declared == "test-local":
+        return declared
     if all(st == "xfail" for st in matches):
         return "xfail"
     if any(st == "pass" for st in matches):
@@ -138,6 +141,7 @@ MD_ICON = {
     "skip": ":fast_forward:",
     "pending": ":hourglass_flowing_sand:",
     "notebook": ":ledger:",
+    "test-local": ":label:",
 }
 
 
@@ -191,7 +195,7 @@ h1{font-size:1.6rem;margin:0 0 .25rem}.sub{color:var(--muted);margin:0 0 1.5rem}
 .card h2{font-size:1.15rem;margin:0}.card .full{color:var(--muted);font-size:.82rem;margin:.15rem 0 .8rem;font-weight:400}
 .bar{display:flex;height:10px;border-radius:6px;overflow:hidden;margin:.2rem 0 .9rem;background:var(--border)}
 .bar i{display:block}.bar .pass{background:var(--pass)}.bar .notebook{background:var(--notebook)}
-.bar .xfail{background:var(--xfail)}.bar .skip{background:var(--skip)}.bar .pending{background:var(--pending)}.bar .fail{background:var(--fail)}
+.bar .xfail{background:var(--xfail)}.bar .skip{background:var(--skip)}.bar .test-local{background:var(--skip)}.bar .pending{background:var(--pending)}.bar .fail{background:var(--fail)}
 table{width:100%;border-collapse:collapse;font-size:.9rem}
 th,td{text-align:left;padding:.42rem .5rem;border-bottom:1px solid var(--border);vertical-align:top}
 th{color:var(--muted);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.03em}
@@ -199,7 +203,7 @@ td.id{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}
 .badge{display:inline-block;padding:.08rem .5rem;border-radius:999px;font-size:.72rem;font-weight:700;
 letter-spacing:.02em;color:#fff;white-space:nowrap}
 .badge.pass{background:var(--pass)}.badge.fail{background:var(--fail)}.badge.xfail{background:var(--xfail)}
-.badge.skip{background:var(--skip)}.badge.pending{background:var(--pending)}.badge.notebook{background:var(--notebook)}
+.badge.skip{background:var(--skip)}.badge.test-local{background:var(--skip)}.badge.pending{background:var(--pending)}.badge.notebook{background:var(--notebook)}
 .legend{color:var(--muted);font-size:.82rem;margin-top:1.5rem;line-height:1.9}
 .legend .badge{margin-right:.25rem}
 .tablewrap{overflow-x:auto}a{color:var(--notebook)}
@@ -208,7 +212,7 @@ letter-spacing:.02em;color:#fff;white-space:nowrap}
 
 def bar_segments(counts: dict, total: int) -> str:
     segs = []
-    order = ["pass", "notebook", "xfail", "skip", "fail", "pending"]
+    order = ["pass", "notebook", "xfail", "skip", "test-local", "fail", "pending"]
     # pending fills the remainder up to total_defined
     accounted = sum(counts.get(k, 0) for k in order if k != "pending")
     counts = dict(counts)
@@ -285,6 +289,7 @@ def render_html(data: list, stamp: str) -> str:
         '<span class="badge xfail">XFAIL</span> criterion asserted but blocked by a model limitation · '
         '<span class="badge notebook">NOTEBOOK</span> demonstrated in a notebook (no automated assert) · '
         '<span class="badge skip">SKIP</span> placeholder test · '
+        '<span class="badge test-local">TEST-LOCAL</span> asserts test-file logic, not simulator output (see note) · '
         '<span class="badge pending">PENDING</span> defined by the standard, not implemented · '
         '<span class="badge fail">FAIL</span> asserted &amp; failing'
         "</p>")

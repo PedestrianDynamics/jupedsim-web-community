@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "tests/vv/test_imo_*.py"
+      - "tests/vv/test_imo*.py"
       - "tests/vv/vv_helpers.py"
       - "pyproject.toml"
       - "uv.lock"
@@ -12,7 +12,7 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "tests/vv/test_imo_*.py"
+      - "tests/vv/test_imo*.py"
       - "tests/vv/vv_helpers.py"
       - "pyproject.toml"
       - "uv.lock"
@@ -35,7 +35,7 @@ jobs:
       run: uv sync --extra dev
 
     - name: Run IMO tests
-      run: uv run --extra dev python -m pytest tests/vv/test_imo_*.py -v --junitxml=results/imo-tests.xml
+      run: uv run --extra dev python -m pytest tests/vv/test_imo*.py -v --junitxml=results/imo-tests.xml
 
     - name: Upload results
       if: always()

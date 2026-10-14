@@ -145,15 +145,35 @@ See `_staging/convert.py::clean_config` for the synthesis code.
 - **Schema cleanup** (A3): `desired_speed_distribution` and
   `desired_speed_std` removed (duplicates of `v0_distribution` and `v0_std`).
 
-### B6. Verif.2.5 — Reduced visibility (S6) — PENDING
+### B6. Verif.2.5 — Reduced visibility (S6)
 
-Not shipped in this PR. NIST's smoke / extinction-coefficient correlation
-requires features (visibility-driven speed reduction) absent from
-CollisionFreeSpeedModel. Stays in source tree until those features land.
+- `CollisionFreeSpeedModel` has no native smoke field. The pytest V&V adapter
+  therefore makes the smoke assignment explicit: it converts the uniform
+  extinction coefficient to a zone `speed_factor` before simulation.
+- The selected model-specific correlation is NIST Equation 2 with a linear
+  fractional reduction, `c(K_s) = max(0.3 / 1.25, 1 - 0.5 K_s)`. At the NIST
+  value `K_s = 1 /m`, the assigned speed is `1.25 * 0.5 = 0.625 m/s`.
+- The geometry is extended to 120 m (10 m + the NIST 100 m measurement segment
+  + 10 m), consistent with the other single-agent speed tests. The exit opening
+  remains the NIST-specified 1 m wide.
+- This verifies the web-community smoke-to-speed assignment and the resulting
+  travel time. It does not claim native, spatially evolving smoke transport in
+  JuPedSim.
 
-### B7. Verif.2.6 — Agent incapacitation (S7.x) — PENDING
+### B7. Verif.2.6 — Agent incapacitation (S7.x)
 
-Not shipped. NIST's FED-based incapacitation needs an FED sub-model.
+- `CollisionFreeSpeedModel` has no native hazard or FED state. The pytest V&V
+  adapter accumulates the CO, CO2-hyperventilation, and low-O2 equations from
+  FDS+Evac section 3.3 (equations 11--14) on every JuPedSim timestep.
+- One occupant is held at `(5, 5)` by an indefinite waiting stage inside the
+  NIST 10 m x 10 m room. This is equivalent to the specified pre-evacuation
+  time greater than 1,000,000 s without requiring the test to run that long.
+- Constant conditions are `CO=5000 ppm`, `CO2=2%`, and `O2=18%`. When FED
+  reaches one, the adapter sets the agent's desired speed to zero. The observed
+  threshold time must be within one simulation timestep of a separate
+  closed-form calculation.
+- This verifies the web-community FED assignment; it does not claim native
+  fire, gas-transport, or FED capabilities in JuPedSim.
 
 ### B8. Verif.2.7 — Elevator usage (S8) — PENDING
 
@@ -173,9 +193,26 @@ test alone).
   through the loader's group-behaviour API (when available) or by post-hoc
   analysis of trajectory bunching.
 
-### B11. Verif.2.10 — Movement disabilities (S11.x) — PENDING
+### B11. Verif.2.10 — Movement disabilities (S11.x)
 
-Not shipped. Requires reduced-mobility / per-agent size profiles.
+- **Scenario reuse:** the two NIST scenario ZIPs are copied and renamed from
+  the corresponding ISO Test 7 scenarios because they exercise the same
+  overtaking behaviour required here: 24 occupants move past one occupant
+  with reduced mobility. The pytest test loads
+  `Nist-2-10-movement-disabilities.zip` and
+  `Nist-2-10-movement-disabilities-no-disability.zip` from
+  `standards/nist/scenario_files/`.
+- In `Nist-2-10-movement-disabilities.zip`, the 24 reference occupants have
+  `v0 = 1.25 m/s` and `radius = 0.2 m`; the reduced-mobility occupant has
+  `v0 = 0.8 m/s` and `radius = 0.4 m`.
+- The control scenario,
+  `Nist-2-10-movement-disabilities-no-disability.zip`, keeps the same geometry,
+  population, routes, and model parameters, but assigns the comparison
+  occupant the reference values `v0 = 1.25 m/s` and `radius = 0.2 m`.
+- Both scenarios must evacuate all 25 occupants. Acceptance is comparative:
+  total evacuation time with the slower, larger occupant must exceed the
+  control evacuation time. This tests the effect of per-agent speed and size
+  parameters; it does not introduce a separate physiological disability model.
 
 ### B12. Verif.3.1 — Exit route allocation (S12)
 
@@ -195,17 +232,43 @@ Not shipped. Requires reduced-mobility / per-agent size profiles.
   guideline — the Figure 8 layout has 12 rooms, so 13 is the faithful count.
   The allocation split (8 rooms → main, 4 → secondary) matches the standard.
 
-### B13. Verif.3.2 — Social influence (S13.x) — PENDING
+### B13. Verif.3.2 — Social influence (S13.x)
 
-Not shipped. Requires social-influence component.
+- **Scenario reuse:** `Nist-3-2-social-influence-1.zip` and
+  `Nist-3-2-social-influence-2.zip` are copied and renamed from the equivalent
+  ISO Test 15 scenarios. Their config and geometry contents are unchanged.
+- Scenario 1 gives two free occupants balanced choices between two equidistant
+  exits. Scenario 2 adds a third occupant deterministically assigned to Exit 2.
+- The NIST criterion is evaluated over 40 seeds: the committed occupant should
+  increase Exit 2 usage among the two free occupants. CollisionFreeSpeedModel
+  has no social-influence mechanism, so usage is unchanged and the real
+  criterion is retained as a strict `xfail` rather than replaced by a weaker
+  passing assertion.
 
-### B14. Verif.3.3 — Affiliation (S14.x) — PENDING
+### B14. Verif.3.3 — Affiliation (S14.x)
 
-Not shipped. Requires affiliation component.
+- **Scenario reuse:** `Nist-3-3-familiar-exits.zip` is copied and renamed from
+  the equivalent ISO Test 16 scenario without changes to its config or
+  geometry.
+- CollisionFreeSpeedModel has no intrinsic familiarity state. Affiliation is
+  therefore represented by the existing journey weights: a 50/50 baseline
+  must use the two equidistant exits within a 10% difference, while a 20/80
+  assignment must make Exit 2 strictly preferred over a 20-seed sweep.
+- This verifies assigned familiar-exit preference through route weights; it
+  does not introduce a behavioural affiliation sub-model.
 
-### B15. Verif.4.1 — Dynamic exit availability (S15) — PENDING
+### B15. Verif.4.1 — Dynamic exit availability (S15)
 
-Not shipped. Requires runtime exit toggling (NIST closes Exit 1 at t = 1 s).
+- **Scenario reuse:** `Nist-4-1-dynamic-exits.zip` is copied and renamed from
+  the equivalent ISO Test 9 scenario without changes to its config or
+  geometry.
+- The occupant initially targets Exit 1. At `t = 1 s`, the runtime adapter
+  changes that agent's active target to Exit 2, and the final trajectory must
+  terminate at Exit 2.
+- The runner does not globally close or disable the Exit 1 stage. Redirecting
+  the affected occupant is the web-community representation of that exit
+  becoming unavailable, so this verifies runtime rerouting but not a native
+  JuPedSim exit-toggle API.
 
 ### B16. Verif.5.1 — Congestion (S16)
 

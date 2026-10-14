@@ -22,30 +22,39 @@ For deviations from the NIST original specifications see
 | Verif.2.2  | Speed on stairs (downward)             | covered  | `Nist-2-2-stairs-down.zip` |
 | Verif.2.3  | Movement around a corner               | covered  | `Nist-2-3-corner.zip` |
 | Verif.2.4  | Assigned agent demographics            | covered  | `Nist-2-4-demographics.zip` |
-| Verif.2.5  | Reduced visibility vs walking speed    | pending  | requires smoke / extinction-coefficient handling |
-| Verif.2.6  | Agent incapacitation (FED)             | pending  | requires FED sub-model |
+| Verif.2.5  | Reduced visibility vs walking speed    | test-local | |
+| Verif.2.6  | Agent incapacitation (FED)             | test-local | |
 | Verif.2.7  | Elevator usage                         | pending  | requires elevator component |
 | Verif.2.8  | Horizontal counter-flows               | covered  | `Nist-2-8-counterflow-{0,10,50,100}.zip` + `scenario_files/nist2_8_counterflow_reference.csv` |
 | Verif.2.9  | Group behaviours                       | covered* | `Nist-2-9-groups.zip` |
-| Verif.2.10 | Agents with movement disabilities      | pending  | requires reduced-mobility / agent-size profiles |
+| Verif.2.10 | Agents with movement disabilities      | covered  |  |
 | Verif.3.1  | Exit route allocation                  | covered  | `Nist-3-1-route-allocation.zip` |
-| Verif.3.2  | Social influence                       | pending  | requires social-influence component |
-| Verif.3.3  | Affiliation                            | pending  | requires affiliation component |
-| Verif.4.1  | Dynamic availability of exits          | pending  | requires runtime exit toggling |
+| Verif.3.2  | Social influence                       | covered* | `Nist-3-2-social-influence-{1,2}.zip` (strict xfail: no social-influence model) |
+| Verif.3.3  | Affiliation                            | test-local | `Nist-3-3-familiar-exits.zip` (affiliation represented by journey weights) |
+| Verif.4.1  | Dynamic availability of exits          | xfail    | `Nist-4-1-dynamic-exits.zip` (no public runtime exit closure; test not run) |
 | Verif.5.1  | Congestion                             | covered  | `Nist-5-1-congestion.zip` |
 | Verif.5.2  | Maximum flow rates                     | covered* | `Nist-5-2-max-flow.zip` (emergent-flow non-exceedance check) |
 
-\* **Verif.2.9** and **Verif.5.2** run and produce trajectories, but their one
-NIST numeric criterion needs a `CollisionFreeSpeedModel` capability the model
-lacks, so each is a strict `xfail` (see issue #151):
+\* **Verif.2.9**, **Verif.3.2**, and **Verif.5.2** run and produce trajectories,
+but their NIST criteria need capabilities the model lacks, so each is a
+strict `xfail` (see issue #151):
+
 - Verif.2.9 expects Group 1 to reach the exit together (arrival spread ≤ 10 s).
   There is no native group-cohesion model, so the 0.5 m/s member lags the
   1.25 m/s members (spread ~24 s). The original config's custom `group_id`
   parameter was stripped during cleaning.
+- Verif.3.2 expects a person committed to Exit 2 to increase Exit 2 usage among
+  nearby free occupants. There is no social-influence model, so their exit
+  usage remains unchanged.
 - Verif.5.2 (emergent-flow reading of NIST §3.1.5) expects the sustained
   specific flow through the 1 m exit to stay under the IMO 1.33 p/m/s
   reference. There is no door-flow limiter, so the emergent flow (~5 p/m/s)
   exceeds it.
+
+`test-local` rows (Verif.2.5, 2.6, 3.3) assert logic implemented in the
+test files (a smoke speed-factor adapter, a FED adapter and journey-weight
+input), not simulator output. The notes in `standards/coverage.json` say
+what each one verifies.
 
 ## Modification highlights vs NIST originals
 
@@ -85,9 +94,7 @@ See [`MODIFICATIONS.md`](MODIFICATIONS.md) for the full audit trail. Summary:
 
 ## Pending NIST tests
 
-The "pending" rows above are blocked on simulator features that are not yet
-in the JuPedSim CollisionFreeSpeedModel. Each will be added in a follow-up
-PR once the corresponding feature lands.
+Verif.2.7 remains pending because JuPedSim has no elevator component.
 
 ## Citation
 

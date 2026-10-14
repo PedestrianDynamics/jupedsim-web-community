@@ -353,6 +353,44 @@ class TestIso06Counterflow:
 
 
 # ---------------------------------------------------------------------------
+# Test 7 - Overtaking people with movement disabilities
+# ---------------------------------------------------------------------------
+
+
+class TestIso07MovementDisabilities:
+    """ISO Test 7 - 24 occupants overtake one slower, larger occupant.
+
+    Two otherwise identical scenarios are compared. In the disability case,
+    the Zone-2 occupant has a lower desired speed and a larger radius. In the
+    control case, that occupant has the same characteristics as the other
+    occupants. Acceptance: the disability case has a longer total evacuation
+    time than the control case.
+    """
+
+    def test_movement_disability_increases_evacuation_time(self):
+        disability = _load("Iso-07-movement-disabilities")
+        control = _load("Iso-07-movement-disabilities-no-disability")
+
+        disability_result = run_scenario(disability, seed=42)
+        control_result = run_scenario(control, seed=42)
+        try:
+            assert disability_result.agents_remaining == 0, (
+                "not all agents evacuated in the movement-disability scenario"
+            )
+            assert control_result.agents_remaining == 0, (
+                "not all agents evacuated in the control scenario"
+            )
+            assert disability_result.evacuation_time > control_result.evacuation_time, (
+                "expected the movement-disability scenario to take longer: "
+                f"{disability_result.evacuation_time:.2f}s versus "
+                f"{control_result.evacuation_time:.2f}s"
+            )
+        finally:
+            disability_result.cleanup()
+            control_result.cleanup()
+
+
+# ---------------------------------------------------------------------------
 # Test 8 - Exit route allocation
 # ---------------------------------------------------------------------------
 
@@ -415,6 +453,81 @@ class TestIso08RouteAllocation:
                     )
             assert not mismatches, "allocation mismatches:\n" + "\n".join(
                 mismatches[:5]
+            )
+        finally:
+            result.cleanup()
+
+
+# ---------------------------------------------------------------------------
+# Test 9 - Dynamic availability of exits
+# ---------------------------------------------------------------------------
+
+
+class TestIso09DynamicExitAvailability:
+    """ISO Test 9 - an occupant reroutes when Exit 1 becomes unavailable.
+
+    Both exits are initially available and the occupant starts by targeting
+    Exit 1. At t = 1 s, Exit 1 is made unavailable by redirecting the active
+    agent to Exit 2. Acceptance: the occupant evacuates through Exit 2.
+    """
+
+    EXIT_1 = "jps-exits_0"
+    EXIT_2 = "jps-exits_1"
+
+    @staticmethod
+    def _redirect_agent(runner, agent_id, exit_key):
+        """Change the active agent's current destination."""
+        from jupedsim_scenarios.direct_steering_runtime import pick_stage_target
+
+        state = runner._agent_wait_info[agent_id]
+        exit_config = state["stage_configs"][exit_key]
+        state["current_target_stage"] = exit_key
+        state["target"] = pick_stage_target(state, exit_config)
+        state["target_assigned"] = False
+        state["state"] = "to_target"
+        state["inside_since"] = None
+        state["wait_until"] = None
+
+    @pytest.mark.xfail(
+        reason=(
+            "The harness cannot make an exit unavailable through the public "
+            "API: jupedsim-scenarios 0.7.3 only removes exits before a run "
+            "and has no runtime exit closure. This test forces the reroute by "
+            "writing the runner's private agent state, so the public API "
+            "reroute is not exercised."
+        ),
+        run=False,  # the body writes private state and would pass unchecked
+    )
+    def test_agent_uses_available_exit(self):
+        from jupedsim_scenarios import ScenarioRunner
+
+        scenario = _load("Iso-09-dynamic-exits")
+        with ScenarioRunner(scenario, seed=42, every_nth_frame=1) as runner:
+            agent = next(iter(runner.agents()))
+            self._redirect_agent(runner, agent.id, self.EXIT_1)
+            runner.run_until(1.0)
+            self._redirect_agent(runner, agent.id, self.EXIT_2)
+            runner.run_until()
+            result = runner.result()
+
+        try:
+            assert result.agents_remaining == 0, "occupant did not evacuate"
+            trajectory = result.trajectory_dataframe().sort_values("frame")
+            assert len(trajectory) > 0, "occupant trajectory is empty"
+
+            exit_polygons = {
+                exit_id: Polygon(exit_data["coordinates"])
+                for exit_id, exit_data in scenario.raw["exits"].items()
+            }
+            last_position = trajectory.iloc[-1]
+            last_point = Point(last_position.x, last_position.y)
+            actual_exit = min(
+                exit_polygons,
+                key=lambda exit_id: exit_polygons[exit_id].distance(last_point),
+            )
+            assert actual_exit == self.EXIT_2, (
+                "expected Exit 2 after Exit 1 became unavailable, "
+                f"but the occupant used {actual_exit}"
             )
         finally:
             result.cleanup()
