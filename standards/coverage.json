@@ -64,11 +64,11 @@
         {"id": "Verif.2.7", "name": "Elevator usage", "criterion": "Agents evacuate via elevator", "status": "pending", "note": "Needs an elevator component."},
         {"id": "Verif.2.8", "name": "Horizontal counter-flows", "criterion": "Primary completions non-increasing as counterflow grows (equal budget)", "status": "covered", "test": "TestNist28Counterflow", "notebook": "standards/nist/nist2_8_counterflow.ipynb"},
         {"id": "Verif.2.9", "name": "Group behaviours", "criterion": "Group 1 arrival spread <= 10 s", "status": "xfail", "test": "TestNist29Groups::test_group1_arrives_together", "note": "CollisionFreeSpeedModel has no group-cohesion model (spread ~24 s).", "notebook": "standards/nist/nist2_9_groups.ipynb"},
-        {"id": "Verif.2.10", "name": "Agents with movement disabilities", "criterion": "Reduced-mobility agent profiles", "status": "covered"},
+        {"id": "Verif.2.10", "name": "Agents with movement disabilities", "criterion": "Reduced-mobility agent profiles", "status": "covered", "test": "TestNist210Disabilities"},
         {"id": "Verif.3.1", "name": "Exit route allocation", "criterion": "Each of 13 agents reaches its allocated exit", "status": "covered", "test": "TestNist31RouteAllocation", "notebook": "standards/nist/nist3_1_route_allocation.ipynb"},
-        {"id": "Verif.3.2", "name": "Social influence", "criterion": "Exit choice shifts under social influence", "status": "pending", "note": "Needs a social-influence component."},
-        {"id": "Verif.3.3", "name": "Affiliation", "criterion": "Agents prefer familiar exits", "status": "pending", "note": "Needs an affiliation component."},
-        {"id": "Verif.4.1", "name": "Dynamic availability of exits", "criterion": "Agents reroute when an exit closes at runtime", "status": "pending", "note": "Needs runtime exit toggling."},
+        {"id": "Verif.3.2", "name": "Social influence", "criterion": "Exit choice shifts under social influence", "status": "xfail", "test": "TestNist32SocialInfluence::test_social_influence_raises_exit2_usage", "note": "CollisionFreeSpeedModel has no social-influence model; exit-2 usage is unchanged."},
+        {"id": "Verif.3.3", "name": "Affiliation", "criterion": "Agents prefer familiar exits", "status": "covered", "test": "TestNist33Affiliation"},
+        {"id": "Verif.4.1", "name": "Dynamic availability of exits", "criterion": "Agents reroute when an exit closes at runtime", "status": "covered", "test": "TestNist41DynamicExitAvailability"},
         {"id": "Verif.5.1", "name": "Congestion", "criterion": "Peak density at the room exit > corridor midsection", "status": "covered", "test": "TestNist51Congestion", "notebook": "standards/nist/nist5_1_congestion.ipynb"},
         {"id": "Verif.5.2", "name": "Maximum flow rates", "criterion": "Sustained specific flow <= 1.33 p/m/s (IMO)", "status": "xfail", "test": "TestNist52MaxFlow", "note": "CollisionFreeSpeedModel has no door-flow limiter (emergent ~5 p/m/s).", "notebook": "standards/nist/nist5_2_max_flow.ipynb"}
       ]
