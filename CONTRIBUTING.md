@@ -48,6 +48,7 @@ Always run the relevant subset locally before pushing.
   - `tests/` — pytest covering webapp scenarios + the scenario API.
 - `tests/vv/` — programmatic V&V suite (one test module per standard).
 - `docker/` — public local-deployment setup for the webapp.
+- `docker/llm-bridge/` — experimental HTTP bridge for driving the local viewer from scripts or LLM agents.
 - `geometries/` — public geometry examples (DXF, IFC, WKT).
 - `.github/workflows/` — CI: per-standard test workflows, scenario
   examples, scheduled notebook execution, and upstream-drift detection.

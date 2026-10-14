@@ -1,0 +1,147 @@
+{
+  "config": {
+    "project_version": "2.0",
+    "config": {
+      "simulation_settings": {
+        "simulationParams": {
+          "max_simulation_time": 300,
+          "dt": 0.01,
+          "model_type": "CollisionFreeSpeedModel",
+          "strength_neighbor_repulsion": 2.6,
+          "range_neighbor_repulsion": 0.1,
+          "relaxation_time": 0.5,
+          "s0": 0.5,
+          "T": 1
+        },
+        "numberOfSimulations": 1,
+        "baseSeed": 42
+      },
+      "ui_state": {
+        "useShortestPaths": false,
+        "boundaries": [{"mode": "manual"}]
+      }
+    },
+    "exits": {
+      "exit-left": {
+        "type": "polygon",
+        "coordinates": [
+          [-0.5, 0],
+          [0, 0],
+          [0, 3],
+          [-0.5, 3],
+          [-0.5, 0]
+        ],
+        "enable_throughput_throttling": false,
+        "max_throughput": 0
+      },
+      "exit-right": {
+        "type": "polygon",
+        "coordinates": [
+          [20, 0],
+          [20.5, 0],
+          [20.5, 3],
+          [20, 3],
+          [20, 0]
+        ],
+        "enable_throughput_throttling": false,
+        "max_throughput": 0
+      }
+    },
+    "distributions": {
+      "dist-left-group": {
+        "type": "polygon",
+        "coordinates": [
+          [1, 0.3],
+          [6, 0.3],
+          [6, 2.7],
+          [1, 2.7],
+          [1, 0.3]
+        ],
+        "parameters": {
+          "number": 10,
+          "radius": 0.15,
+          "v0": 1.0,
+          "distribution_mode": "by_number",
+          "radius_distribution": "constant",
+          "radius_std": null,
+          "v0_distribution": "normal",
+          "v0_std": 0.1,
+          "percentage": null,
+          "use_flow_spawning": false,
+          "initial_number": null,
+          "flow_start_time": 0,
+          "flow_end_time": 10,
+          "flow_schedule": [],
+          "use_premovement": false,
+          "premovement_distribution": "gamma",
+          "premovement_param_a": null,
+          "premovement_param_b": null,
+          "premovement_seed": null
+        },
+        "journey_weights": [
+          {
+            "journey_id": "journey-to-right",
+            "weight": 100
+          }
+        ]
+      },
+      "dist-right-group": {
+        "type": "polygon",
+        "coordinates": [
+          [14, 0.3],
+          [19, 0.3],
+          [19, 2.7],
+          [14, 2.7],
+          [14, 0.3]
+        ],
+        "parameters": {
+          "number": 10,
+          "radius": 0.15,
+          "v0": 1.0,
+          "distribution_mode": "by_number",
+          "radius_distribution": "constant",
+          "radius_std": null,
+          "v0_distribution": "normal",
+          "v0_std": 0.1,
+          "percentage": null,
+          "use_flow_spawning": false,
+          "initial_number": null,
+          "flow_start_time": 0,
+          "flow_end_time": 10,
+          "flow_schedule": [],
+          "use_premovement": false,
+          "premovement_distribution": "gamma",
+          "premovement_param_a": null,
+          "premovement_param_b": null,
+          "premovement_seed": null
+        },
+        "journey_weights": [
+          {
+            "journey_id": "journey-to-left",
+            "weight": 100
+          }
+        ]
+      }
+    },
+    "checkpoints": {},
+    "zones": {},
+    "obstacles": {},
+    "journeys_v2": [
+      {
+        "id": "journey-to-right",
+        "name": "Left-to-Right",
+        "color": "#10b981",
+        "sequence": ["exit-right"]
+      },
+      {
+        "id": "journey-to-left",
+        "name": "Right-to-Left",
+        "color": "#3b82f6",
+        "sequence": ["exit-left"]
+      }
+    ],
+    "journeys": [],
+    "transitions": []
+  },
+  "geometry_wkt": "POLYGON ((-0.5 0, 20.5 0, 20.5 3, -0.5 3, -0.5 0))"
+}

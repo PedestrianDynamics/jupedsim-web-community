@@ -1,0 +1,4 @@
+interface:
+  display_name: "JuPedSim Web Bridge"
+  short_description: "Operate the local JuPedSim HTTP bridge"
+  default_prompt: "Use $jupedsim-web-bridge to load, run, and inspect a local JuPedSim Web scenario."
