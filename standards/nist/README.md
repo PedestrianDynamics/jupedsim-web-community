@@ -22,15 +22,15 @@ For deviations from the NIST original specifications see
 | Verif.2.2  | Speed on stairs (downward)             | covered  | `Nist-2-2-stairs-down.zip` |
 | Verif.2.3  | Movement around a corner               | covered  | `Nist-2-3-corner.zip` |
 | Verif.2.4  | Assigned agent demographics            | covered  | `Nist-2-4-demographics.zip` |
-| Verif.2.5  | Reduced visibility vs walking speed    | covered  | |
-| Verif.2.6  | Agent incapacitation (FED)             | covered  | |
+| Verif.2.5  | Reduced visibility vs walking speed    | test-local | |
+| Verif.2.6  | Agent incapacitation (FED)             | test-local | |
 | Verif.2.7  | Elevator usage                         | pending  | requires elevator component |
 | Verif.2.8  | Horizontal counter-flows               | covered  | `Nist-2-8-counterflow-{0,10,50,100}.zip` + `scenario_files/nist2_8_counterflow_reference.csv` |
 | Verif.2.9  | Group behaviours                       | covered* | `Nist-2-9-groups.zip` |
 | Verif.2.10 | Agents with movement disabilities      | covered  |  |
 | Verif.3.1  | Exit route allocation                  | covered  | `Nist-3-1-route-allocation.zip` |
 | Verif.3.2  | Social influence                       | covered* | `Nist-3-2-social-influence-{1,2}.zip` (strict xfail: no social-influence model) |
-| Verif.3.3  | Affiliation                            | covered  | `Nist-3-3-familiar-exits.zip` (affiliation represented by journey weights) |
+| Verif.3.3  | Affiliation                            | test-local | `Nist-3-3-familiar-exits.zip` (affiliation represented by journey weights) |
 | Verif.4.1  | Dynamic availability of exits          | xfail    | `Nist-4-1-dynamic-exits.zip` (no public runtime exit closure; test not run) |
 | Verif.5.1  | Congestion                             | covered  | `Nist-5-1-congestion.zip` |
 | Verif.5.2  | Maximum flow rates                     | covered* | `Nist-5-2-max-flow.zip` (emergent-flow non-exceedance check) |
@@ -50,6 +50,11 @@ strict `xfail` (see issue #151):
   specific flow through the 1 m exit to stay under the IMO 1.33 p/m/s
   reference. There is no door-flow limiter, so the emergent flow (~5 p/m/s)
   exceeds it.
+
+`test-local` rows (Verif.2.5, 2.6, 3.3) assert logic implemented in the
+test files (a smoke speed-factor adapter, a FED adapter and journey-weight
+input), not simulator output. The notes in `standards/coverage.json` say
+what each one verifies.
 
 ## Modification highlights vs NIST originals
 
