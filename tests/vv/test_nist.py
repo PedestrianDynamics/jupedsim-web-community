@@ -36,7 +36,7 @@ for extra in (STANDARDS_DIR / "nist", STANDARDS_DIR):
     if str(extra) not in sys.path:
         sys.path.insert(0, str(extra))
 
-from jupedsim_scenarios import (  # noqa: E402
+from jupedsim_scenarios import (
     load_scenario,
     run_scenario,
     run_sweep,
@@ -327,21 +327,15 @@ class TestNist25ReducedVisibility:
         if extinction_coefficient_per_m < 0:
             raise ValueError("extinction coefficient must be non-negative")
         linear_factor = (
-            1.0
-            - cls.SPEED_REDUCTION_PER_EXTINCTION_M
-            * extinction_coefficient_per_m
+            1.0 - cls.SPEED_REDUCTION_PER_EXTINCTION_M * extinction_coefficient_per_m
         )
         minimum_factor = cls.MINIMUM_SPEED_M_S / cls.CLEAR_SPEED_M_S
         return max(minimum_factor, linear_factor)
 
     def test_smoke_reduced_travel_time(self):
-        speed_factor = self.smoke_speed_factor(
-            self.EXTINCTION_COEFFICIENT_PER_M
-        )
+        speed_factor = self.smoke_speed_factor(self.EXTINCTION_COEFFICIENT_PER_M)
         expected_speed = self.CLEAR_SPEED_M_S * speed_factor
-        expected_time = (
-            self.MEAS_END_X - self.MEAS_START_X
-        ) / expected_speed
+        expected_time = (self.MEAS_END_X - self.MEAS_START_X) / expected_speed
 
         raw = {
             "config": {
@@ -415,9 +409,7 @@ class TestNist25ReducedVisibility:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             scenario_dir = pathlib.Path(tmpdir)
-            (scenario_dir / "config.json").write_text(
-                json.dumps(raw), encoding="utf-8"
-            )
+            (scenario_dir / "config.json").write_text(json.dumps(raw), encoding="utf-8")
             (scenario_dir / "geometry.wkt").write_text(
                 "POLYGON ((0 0, 120 0, 120 2, 0 2, 0 0))",
                 encoding="utf-8",
@@ -425,15 +417,15 @@ class TestNist25ReducedVisibility:
             scenario = load_scenario(str(scenario_dir))
             result = run_scenario(scenario, seed=42)
             try:
-                trajectory = result.trajectory_dataframe().sort_values(
-                    ["id", "frame"]
+                trajectory = result.trajectory_dataframe().sort_values(["id", "frame"])
+                t_in = (
+                    trajectory.loc[trajectory.x >= self.MEAS_START_X, "frame"].iloc[0]
+                    / result.frame_rate
                 )
-                t_in = trajectory.loc[
-                    trajectory.x >= self.MEAS_START_X, "frame"
-                ].iloc[0] / result.frame_rate
-                t_out = trajectory.loc[
-                    trajectory.x >= self.MEAS_END_X, "frame"
-                ].iloc[0] / result.frame_rate
+                t_out = (
+                    trajectory.loc[trajectory.x >= self.MEAS_END_X, "frame"].iloc[0]
+                    / result.frame_rate
+                )
                 observed_time = t_out - t_in
             finally:
                 result.cleanup()
@@ -484,9 +476,7 @@ class TestNist26OccupantIncapacitation:
     @staticmethod
     def _o2_fed_rate(o2_percent: float) -> float:
         """FDS+Evac equation 13, returned as FED per second."""
-        return 1.0 / (
-            60.0 * math.exp(8.13 - 0.54 * (20.9 - o2_percent))
-        )
+        return 1.0 / (60.0 * math.exp(8.13 - 0.54 * (20.9 - o2_percent)))
 
     @staticmethod
     def _co2_hyperventilation(co2_percent: float) -> float:
@@ -500,9 +490,7 @@ class TestNist26OccupantIncapacitation:
             dt=self.DT_S,
         )
         waiting_stage = simulation.add_waiting_set_stage([self.CENTRE])
-        journey = simulation.add_journey(
-            jps.JourneyDescription([waiting_stage])
-        )
+        journey = simulation.add_journey(jps.JourneyDescription([waiting_stage]))
         agent_id = simulation.add_agent(
             jps.CollisionFreeSpeedModelAgentParameters(
                 journey_id=journey,
@@ -527,10 +515,7 @@ class TestNist26OccupantIncapacitation:
             _position = simulation.agent(agent_id).position
             fed_co += self._co_fed_rate(self.CO_PPM) * simulation.delta_time()
             fed_o2 += self._o2_fed_rate(self.O2_PERCENT) * simulation.delta_time()
-            total_fed = (
-                fed_co * self._co2_hyperventilation(self.CO2_PERCENT)
-                + fed_o2
-            )
+            total_fed = fed_co * self._co2_hyperventilation(self.CO2_PERCENT) + fed_o2
 
             if total_fed >= 1.0:
                 agent = simulation.agent(agent_id)
@@ -549,17 +534,9 @@ class TestNist26OccupantIncapacitation:
 
         # Independent closed-form calculation for constant concentrations.
         # It intentionally does not call the timestep adapter methods above.
-        expected_rate = (
-            4.607e-7
-            * self.CO_PPM**1.036
-            * math.exp(0.1930 * self.CO2_PERCENT + 2.0004)
-            / 7.1
-            + 1.0
-            / (
-                60.0
-                * math.exp(8.13 - 0.54 * (20.9 - self.O2_PERCENT))
-            )
-        )
+        expected_rate = 4.607e-7 * self.CO_PPM**1.036 * math.exp(
+            0.1930 * self.CO2_PERCENT + 2.0004
+        ) / 7.1 + 1.0 / (60.0 * math.exp(8.13 - 0.54 * (20.9 - self.O2_PERCENT)))
         expected_time = 1.0 / expected_rate
 
         # A discrete integrator crosses FED=1 on the first timestep at or
@@ -568,7 +545,9 @@ class TestNist26OccupantIncapacitation:
         assert incapacitation_time - expected_time <= simulation.delta_time(), (
             f"FED=1 at {incapacitation_time:.3f}s; independent calculation "
             f"predicts {expected_time:.3f}s"
-        )     
+        )
+
+
 # ---------------------------------------------------------------------------
 # Verif.2.8 - Horizontal counter-flows
 # ---------------------------------------------------------------------------
@@ -668,6 +647,7 @@ class TestNist29Groups:
             )
         finally:
             result.cleanup()
+
 
 # ---------------------------------------------------------------------------
 # Verif.2.10 - Agents with movement disabilities
@@ -861,9 +841,7 @@ class TestNist32SocialInfluence:
         scenario_1 = _load("Nist-3-2-social-influence-1")
         scenario_2 = _load("Nist-3-2-social-influence-2")
         baseline = self._exit2_fraction(scenario_1, self.SEEDS)
-        behind = self._exit2_fraction(
-            scenario_2, self.SEEDS, track="behind"
-        )
+        behind = self._exit2_fraction(scenario_2, self.SEEDS, track="behind")
         assert behind > baseline, (
             f"free-occupant exit-2 usage {behind:.3f} not increased over "
             f"baseline {baseline:.3f}"
@@ -891,9 +869,7 @@ class TestNist33Affiliation:
 
     @classmethod
     def _set_weight(cls, scenario, journey_id, weight):
-        for entry in scenario.raw["distributions"][cls.DIST_ID][
-            "journey_weights"
-        ]:
+        for entry in scenario.raw["distributions"][cls.DIST_ID]["journey_weights"]:
             if entry["journey_id"] == journey_id:
                 entry["weight"] = weight
 
@@ -918,9 +894,7 @@ class TestNist33Affiliation:
         e1_balanced, e2_balanced = self._exit_counts(balanced)
         total_balanced = e1_balanced + e2_balanced
         assert total_balanced > 0, "no agent reached an exit in the balanced case"
-        fraction_difference = (
-            abs(e1_balanced - e2_balanced) / total_balanced
-        )
+        fraction_difference = abs(e1_balanced - e2_balanced) / total_balanced
         assert fraction_difference <= 0.10, (
             f"50/50 weights not balanced: {e1_balanced} vs {e2_balanced}"
         )

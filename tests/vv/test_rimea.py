@@ -17,6 +17,7 @@ import sys
 import tempfile
 import zipfile
 from contextlib import redirect_stdout
+from typing import ClassVar
 
 import jupedsim as jps
 import numpy as np
@@ -322,15 +323,12 @@ class TestRiMEA04FundamentalDiagram:
     """
 
     SCENARIO_ZIP = (
-        STANDARDS_DIR
-        / "rimea"
-        / "scenario_files"
-        / "Rimea-04-fundamental-diagram.zip"
+        STANDARDS_DIR / "rimea" / "scenario_files" / "Rimea-04-fundamental-diagram.zip"
     )
-    AGENT_COUNTS = [1000, 2000, 4000, 6000]
+    AGENT_COUNTS: ClassVar[list] = [1000, 2000, 4000, 6000]
     T_MIN = 10.0
     T_MAX = 60.0
-    MEASURING_AREAS = {
+    MEASURING_AREAS: ClassVar[dict] = {
         "control1": {"x": 50.0, "x_tol": 1.0, "y_min": 6.0, "y_max": 8.0},
         "main": {"x": 100.0, "x_tol": 1.0, "y_min": 6.0, "y_max": 8.0},
         "control2": {"x": 100.0, "x_tol": 1.0, "y_min": 4.0, "y_max": 6.0},
@@ -359,7 +357,9 @@ class TestRiMEA04FundamentalDiagram:
             geometry=geometry,
             dt=simulation_params["dt"],
         )
-        exit_stage_id = simulation.add_exit_stage(list(exit_polygon.exterior.coords)[:-1])
+        exit_stage_id = simulation.add_exit_stage(
+            list(exit_polygon.exterior.coords)[:-1]
+        )
         journey_id = simulation.add_journey(jps.JourneyDescription([exit_stage_id]))
 
         positions = jps.distributions.distribute_by_number(
@@ -397,7 +397,8 @@ class TestRiMEA04FundamentalDiagram:
             for name, polygon in measurement_polygons.items():
                 agent_ids = list(simulation.agents_in_polygon(polygon))
                 current_positions = {
-                    agent_id: simulation.agent(agent_id).position for agent_id in agent_ids
+                    agent_id: simulation.agent(agent_id).position
+                    for agent_id in agent_ids
                 }
 
                 if elapsed >= cls.T_MIN:
@@ -441,7 +442,9 @@ class TestRiMEA04FundamentalDiagram:
             speeds = np.array([value["speed"] for value in values])
             flows = np.array([value["flow"] for value in values])
 
-            assert np.isfinite(densities).all(), f"{name}: invalid densities {densities}"
+            assert np.isfinite(densities).all(), (
+                f"{name}: invalid densities {densities}"
+            )
             assert np.isfinite(speeds).all(), f"{name}: invalid speeds {speeds}"
             assert np.isfinite(flows).all(), f"{name}: invalid flows {flows}"
             assert np.all(np.diff(densities) > 0), (
@@ -740,11 +743,9 @@ class TestRiMEA08ParameterStudy:
             seed=cls.SEED,
         )
 
-        evacuation_time, number_evacuated = (
-            run_rimea08_until_evacuation(
-                simulation,
-                max_time=cls.MAX_SIMULATION_TIME,
-            )
+        evacuation_time, number_evacuated = run_rimea08_until_evacuation(
+            simulation,
+            max_time=cls.MAX_SIMULATION_TIME,
         )
 
         assert number_evacuated == RIMEA08_N_AGENTS, (
@@ -759,8 +760,7 @@ class TestRiMEA08ParameterStudy:
         desired_speeds = [1.0, 1.25, 1.5, 2.0]
 
         evacuation_times = [
-            self._run(rimea08_v0_constant(speed))
-            for speed in desired_speeds
+            self._run(rimea08_v0_constant(speed)) for speed in desired_speeds
         ]
 
         for slower_speed, faster_speed, slower_time, faster_time in zip(
@@ -778,9 +778,7 @@ class TestRiMEA08ParameterStudy:
 
     def test_speed_distribution_sensitivity(self):
         """Different speed spreads with the same mean remain comparable."""
-        constant_time = self._run(
-            rimea08_v0_constant(1.25)
-        )
+        constant_time = self._run(rimea08_v0_constant(1.25))
         narrow_distribution_time = self._run(
             rimea08_v0_uniform(
                 mean=1.25,
@@ -811,6 +809,7 @@ class TestRiMEA08ParameterStudy:
             f"{wide_distribution_time:.2f} s versus "
             f"{constant_time:.2f} s"
         )
+
 
 # ---------------------------------------------------------------------------
 # A4 — Qualitative Verification
@@ -1042,10 +1041,7 @@ class TestRiMEA11EscapeRouteChoice:
     """
 
     SCENARIO_ZIP = (
-        STANDARDS_DIR
-        / "rimea"
-        / "scenario_files"
-        / "Rimea-11-choice-escape.zip"
+        STANDARDS_DIR / "rimea" / "scenario_files" / "Rimea-11-choice-escape.zip"
     )
     CHOICE_SCALE = 3.0
 
@@ -1061,7 +1057,10 @@ class TestRiMEA11EscapeRouteChoice:
             position[1] - exit2_centroid.y,
         )
         probability_exit2 = 1.0 / (
-            1.0 + np.exp((distance2 - distance1) / TestRiMEA11EscapeRouteChoice.CHOICE_SCALE)
+            1.0
+            + np.exp(
+                (distance2 - distance1) / TestRiMEA11EscapeRouteChoice.CHOICE_SCALE
+            )
         )
         return 1 if rng.random() < probability_exit2 else 0
 
@@ -1085,9 +1084,7 @@ class TestRiMEA11EscapeRouteChoice:
                 strength_neighbor_repulsion=simulation_params[
                     "strength_neighbor_repulsion"
                 ],
-                range_neighbor_repulsion=simulation_params[
-                    "range_neighbor_repulsion"
-                ],
+                range_neighbor_repulsion=simulation_params["range_neighbor_repulsion"],
             ),
             geometry=geometry,
             dt=simulation_params["dt"],
@@ -1135,7 +1132,10 @@ class TestRiMEA11EscapeRouteChoice:
         max_iterations = int(
             simulation_params["max_simulation_time"] / simulation.delta_time()
         )
-        while simulation.agent_count() > 0 and simulation.iteration_count() < max_iterations:
+        while (
+            simulation.agent_count() > 0
+            and simulation.iteration_count() < max_iterations
+        ):
             simulation.iterate()
 
         assert simulation.agent_count() == 0, (

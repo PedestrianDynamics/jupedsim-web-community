@@ -17,12 +17,12 @@ import sys
 import tempfile
 import zipfile
 from contextlib import redirect_stdout
+from typing import ClassVar
 
 import numpy as np
 import pytest
 from jupedsim_scenarios import load_scenario, run_scenario
 from shapely.geometry import Point, Polygon
-
 from vv_helpers import (
     HAS_VV_DEPS,
     agents_within_bounds,
@@ -36,7 +36,7 @@ if str(STANDARDS_DIR / "rimea") not in sys.path:
 if str(STANDARDS_DIR) not in sys.path:
     sys.path.insert(0, str(STANDARDS_DIR))
 
-from scenario_builders.rimea16_loop import (  # noqa: E402
+from scenario_builders.rimea16_loop import (
     build_loop_scenario,
     compute_density_speed_curve,
     compute_density_speed_samples,
@@ -62,7 +62,7 @@ class TestIMO01WalkingSpeedCorridor:
     """Single agent traverses a straight corridor at its assigned speed."""
 
     WALKABLE = "POLYGON ((0 0, 40 0, 40 2, 0 2, 0 0))"
-    EXIT = {
+    EXIT: ClassVar[dict] = {
         "jps-exits_0": {
             "type": "polygon",
             "coordinates": [[38, 0], [40, 0], [40, 2], [38, 2], [38, 0]],
@@ -70,7 +70,7 @@ class TestIMO01WalkingSpeedCorridor:
             "max_throughput": 0,
         }
     }
-    DIST = {
+    DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
             "coordinates": [[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]],
@@ -130,7 +130,7 @@ class TestIMO02WalkingSpeedUpstairs:
     """
 
     WALKABLE = "POLYGON ((0 0, 10.4 0, 10.4 2, 0 2, 0 0))"
-    EXIT = {
+    EXIT: ClassVar[dict] = {
         "jps-exits_0": {
             "type": "polygon",
             # Exit deliberately widened to 20 cm (was 5 cm) so the
@@ -145,7 +145,7 @@ class TestIMO02WalkingSpeedUpstairs:
             ],
         }
     }
-    DIST = {
+    DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
             "coordinates": [[0.0, 0.8], [0.3, 0.8], [0.3, 1.2], [0.0, 1.2], [0.0, 0.8]],
@@ -161,13 +161,13 @@ class TestIMO02WalkingSpeedUpstairs:
             "journey_weights": [{"journey_id": "jps-journeys_0", "weight": 100}],
         }
     }
-    ZONES = {
+    ZONES: ClassVar[dict] = {
         "jps-zones_0": {
             "coordinates": [[0, 0], [10.4, 0], [10.4, 2], [0, 2], [0, 0]],
             "speed_factor": 0.5,
         }
     }
-    JOURNEYS_V2 = [
+    JOURNEYS_V2: ClassVar[list] = [
         {
             "id": "jps-journeys_0",
             "name": "jps-journeys_0",
@@ -223,7 +223,7 @@ class TestIMO03WalkingSpeedDownstairs:
     """
 
     WALKABLE = "POLYGON ((0 0, 10.4 0, 10.4 2, 0 2, 0 0))"
-    EXIT = {
+    EXIT: ClassVar[dict] = {
         "jps-exits_0": {
             "type": "polygon",
             # Exit deliberately widened to 20 cm (was 5 cm) so the
@@ -238,7 +238,7 @@ class TestIMO03WalkingSpeedDownstairs:
             ],
         }
     }
-    DIST = {
+    DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
             "coordinates": [[0.0, 0.8], [0.3, 0.8], [0.3, 1.2], [0.0, 1.2], [0.0, 0.8]],
@@ -254,13 +254,13 @@ class TestIMO03WalkingSpeedDownstairs:
             "journey_weights": [{"journey_id": "jps-journeys_0", "weight": 100}],
         }
     }
-    ZONES = {
+    ZONES: ClassVar[dict] = {
         "jps-zones_0": {
             "coordinates": [[0, 0], [10.4, 0], [10.4, 2], [0, 2], [0, 0]],
             "speed_factor": 0.75,
         }
     }
-    JOURNEYS_V2 = [
+    JOURNEYS_V2: ClassVar[list] = [
         {
             "id": "jps-journeys_0",
             "name": "jps-journeys_0",
@@ -312,7 +312,7 @@ class TestIMO04ExitFlowRate:
     """One hundred agents evacuate through a 1 m exit."""
 
     WALKABLE = "POLYGON ((0 0, 8 0, 8 5, 0 5, 0 0))"
-    EXIT = {
+    EXIT: ClassVar[dict] = {
         "jps-exits_0": {
             "type": "polygon",
             "coordinates": [[7, 2], [8, 2], [8, 3], [7, 3], [7, 2]],
@@ -320,7 +320,7 @@ class TestIMO04ExitFlowRate:
             "max_throughput": 0,
         }
     }
-    DIST = {
+    DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
             "coordinates": [[0, 0], [6, 0], [6, 5], [0, 5], [0, 0]],
@@ -371,13 +371,13 @@ class TestIMO05ResponseTime:
     """
 
     WALKABLE = "POLYGON ((0 0, 8 0, 8 5, 0 5, 0 0))"
-    EXIT = {
+    EXIT: ClassVar[dict] = {
         "jps-exits_0": {
             "type": "polygon",
             "coordinates": [[0, 2], [1, 2], [1, 3], [0, 3], [0, 2]],
         }
     }
-    DIST = {
+    DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
             "coordinates": [[5.5, 1.0], [7.5, 1.0], [7.5, 4.0], [5.5, 4.0], [5.5, 1.0]],
@@ -398,7 +398,7 @@ class TestIMO05ResponseTime:
             "journey_weights": [{"journey_id": "jps-journeys_0", "weight": 100}],
         }
     }
-    JOURNEYS_V2 = [
+    JOURNEYS_V2: ClassVar[list] = [
         {
             "id": "jps-journeys_0",
             "name": "jps-journeys_0",
@@ -471,11 +471,8 @@ class TestIMO05ResponseTime:
 class TestIMO06RoundingCorners:
     """Twenty agents navigate a 90-degree corner."""
 
-    WALKABLE = (
-        "POLYGON ((0 0, 10 0, 10 -2, 12 -2, 12 10, 10 10, "
-        "10 2, 0 2, 0 0))"
-    )
-    EXIT = {
+    WALKABLE = "POLYGON ((0 0, 10 0, 10 -2, 12 -2, 12 10, 10 10, 10 2, 0 2, 0 0))"
+    EXIT: ClassVar[dict] = {
         "jps-exits_0": {
             "type": "polygon",
             "coordinates": [[10, 8], [12, 8], [12, 10], [10, 10], [10, 8]],
@@ -483,7 +480,7 @@ class TestIMO06RoundingCorners:
             "max_throughput": 0,
         }
     }
-    DIST = {
+    DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
             "coordinates": [[0, 0], [4, 0], [4, 2], [0, 2], [0, 0]],
@@ -518,9 +515,7 @@ class TestIMO06RoundingCorners:
             max_simulation_time=120.0,
         )
         violations = agents_within_bounds(trajectory, 0, -2, 12, 10)
-        assert not violations, "Agents left L-corridor:\n" + "\n".join(
-            violations[:10]
-        )
+        assert not violations, "Agents left L-corridor:\n" + "\n".join(violations[:10])
 
 
 # ---------------------------------------------------------------------------
@@ -532,7 +527,7 @@ class TestIMO07PopulationDemographics:
     """Fifty agents with assigned movement parameters evacuate successfully."""
 
     WALKABLE = "POLYGON ((0 0, 40 0, 40 10, 0 10, 0 0))"
-    EXIT = {
+    EXIT: ClassVar[dict] = {
         "jps-exits_0": {
             "type": "polygon",
             "coordinates": [[38, 0], [40, 0], [40, 10], [38, 10], [38, 0]],
@@ -540,7 +535,7 @@ class TestIMO07PopulationDemographics:
             "max_throughput": 0,
         }
     }
-    DIST = {
+    DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
             "coordinates": [[0, 0], [4, 0], [4, 10], [0, 10], [0, 0]],
@@ -593,7 +588,7 @@ class TestIMO08Counterflow:
         "POLYGON ((0 0, 10 0, 10 4, 20 4, 20 0, 30 0, 30 10, "
         "20 10, 20 6, 10 6, 10 10, 0 10, 0 0))"
     )
-    EXIT_RIGHT = {
+    EXIT_RIGHT: ClassVar[dict] = {
         "jps-exits_0": {
             "type": "polygon",
             "coordinates": [[28, 0], [30, 0], [30, 10], [28, 10], [28, 0]],
@@ -601,7 +596,7 @@ class TestIMO08Counterflow:
             "max_throughput": 0,
         }
     }
-    EXIT_BOTH = {
+    EXIT_BOTH: ClassVar[dict] = {
         **EXIT_RIGHT,
         "jps-exits_1": {
             "type": "polygon",
@@ -610,7 +605,7 @@ class TestIMO08Counterflow:
             "max_throughput": 0,
         },
     }
-    DIST_LEFT_ONLY = {
+    DIST_LEFT_ONLY: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
             "coordinates": [[0, 0], [8, 0], [8, 10], [0, 10], [0, 0]],
@@ -625,7 +620,7 @@ class TestIMO08Counterflow:
             },
         }
     }
-    DIST_COUNTERFLOW = {
+    DIST_COUNTERFLOW: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
             "coordinates": [[0, 0], [8, 0], [8, 10], [0, 10], [0, 0]],
@@ -687,8 +682,7 @@ class TestIMO08Counterflow:
         assert metrics_without["agents_remaining"] == 0
         assert metrics_counterflow["agents_remaining"] == 0
         assert (
-            metrics_counterflow["evacuation_time"]
-            > metrics_without["evacuation_time"]
+            metrics_counterflow["evacuation_time"] > metrics_without["evacuation_time"]
         ), (
             f"Counterflow ({metrics_counterflow['evacuation_time']:.1f}s) "
             f"should be slower than no counterflow "
@@ -705,7 +699,7 @@ class TestIMO09ExitCountSensitivity:
     """Reducing the number of available exits increases evacuation time."""
 
     WALKABLE = "POLYGON ((0 0, 30 0, 30 20, 0 20, 0 0))"
-    EXITS_4 = {
+    EXITS_4: ClassVar[dict] = {
         "jps-exits_0": {
             "type": "polygon",
             "coordinates": [[29, 0], [30, 0], [30, 1], [29, 1], [29, 0]],
@@ -731,7 +725,7 @@ class TestIMO09ExitCountSensitivity:
             "max_throughput": 0,
         },
     }
-    EXITS_2 = {
+    EXITS_2: ClassVar[dict] = {
         "jps-exits_0": EXITS_4["jps-exits_0"],
         "jps-exits_1": EXITS_4["jps-exits_3"],
     }
@@ -832,8 +826,7 @@ class TestIMO10ExitRouteAllocation:
             .reset_index()
         )
         distribution_polygons = {
-            key: Polygon(value["coordinates"])
-            for key, value in distributions.items()
+            key: Polygon(value["coordinates"]) for key, value in distributions.items()
         }
         agent_to_distribution = {}
         for row in first_positions.itertuples():
@@ -1081,8 +1074,7 @@ class TestIMOBehaviorAgentsInBounds:
         )
         violations = agents_within_bounds(trajectory, *scenario["bounds"])
         assert not violations, (
-            f"Agents left bounds in '{scenario_name}':\n"
-            + "\n".join(violations[:10])
+            f"Agents left bounds in '{scenario_name}':\n" + "\n".join(violations[:10])
         )
 
 
