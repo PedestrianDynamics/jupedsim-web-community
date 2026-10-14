@@ -17,7 +17,7 @@
         {"id": "IMO 8", "name": "Counterflow", "criterion": "Counterflow increases evacuation time", "status": "covered", "test": "TestIMO08Counterflow"},
         {"id": "IMO 9", "name": "Exit-count sensitivity", "criterion": "Halving the exits increases evacuation time", "status": "covered", "test": "TestIMO09ExitCountSensitivity"},
         {"id": "IMO 10", "name": "Exit route allocation", "criterion": "Agents use assigned escape routes", "status": "covered", "test": "TestIMO10ExitRouteAllocation"},
-        {"id": "IMO 11", "name": "Congestion / flow on stairs", "criterion": "1D speed-density curve matches the empirical envelope", "status": "covered", "test": "TestIMO11StairCongestion"}
+        {"id": "IMO 11", "name": "Congestion / flow on stairs", "criterion": "Baseline 1D speed-density samples at least 75% inside the reference 10/90 band; slower run has lower mean speed than baseline; faster run at least 75% above the 90th percentile", "status": "covered", "test": "TestIMO11RingFundamentalDiagram"}
       ]
     },
     {

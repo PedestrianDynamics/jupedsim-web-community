@@ -908,15 +908,18 @@ class TestIMO10ExitRouteAllocation:
 
 
 # ---------------------------------------------------------------------------
-# IMO 11 - Congestion and flow on stairs
+# IMO 11 - 1D speed-density curve on a ring
 # ---------------------------------------------------------------------------
 
 
-class TestIMO11StairCongestion:
-    """IMO Test 11 using the RiMEA Test 16 1D fundamental diagram.
+class TestIMO11RingFundamentalDiagram:
+    """IMO Test 11 checked against the RiMEA Test 16 ring fundamental diagram.
 
-    Ring or long narrow corridor, measuring speed versus 1D density.
-    Expected: curves lie within the empirical 10/90 percentile envelope.
+    Runs a loop at three desired speeds and measures speed versus 1D density.
+    Checks: at least 75% of baseline samples lie inside the reference 10/90
+    percentile band; the slower run has a lower mean speed than the baseline;
+    at least 75% of faster-run samples lie above the 90th percentile.
+    This is a consistency check against a reference band, not a validation.
     """
 
     def test_1d_fundamental_diagram(self):
