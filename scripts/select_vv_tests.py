@@ -52,8 +52,8 @@ STANDARD = (
     ("geometries/*", ("tests/vv/test_rimea.py",)),
 )
 
-# No V&V test reads these. The site generator test runs on every pull
-# request; standards/general and standards/tests belong to
+# No V&V test reads these. The site generator and selector tests run on
+# every pull request; standards/general and standards/tests belong to
 # scenario-examples.yml; notebooks do not run on pull requests.
 NO_VV = (
     "*.md",
@@ -66,6 +66,7 @@ NO_VV = (
     "scripts/run_notebooks.py",
     "scripts/assets/*",
     "tests/test_gen_vv_site.py",
+    "tests/test_select_vv_tests.py",
     "standards/definitions.json",
     "standards/general/*",
     "standards/tests/*",
@@ -73,40 +74,32 @@ NO_VV = (
 )
 
 
-def git(*args) -> str:
-    return subprocess.run(
-        ["git", *args], capture_output=True, text=True, check=True
-    ).stdout
-
-
 def standard_files(std_id: str) -> tuple[str, ...]:
     return dict(STANDARD).get(f"standards/{std_id}/*", ())
 
 
-def row_files(row: dict, std_id: str, head: str) -> set[str]:
+def row_files(row: dict, std_id: str, find_class) -> set[str]:
     """Test files that define the row's test class; else the standard's."""
     cls = (row.get("test") or "").split("::")[0]
     if not cls:
         return set()
-    try:
-        out = git("grep", "-l", "-E", rf"^class {cls}[(:]", head, "--", "tests/vv")
-    except subprocess.CalledProcessError:
-        out = ""
-    found = {line.split(":", 1)[1] for line in out.splitlines()}
-    return found or set(standard_files(std_id))
+    return set(find_class(cls)) or set(standard_files(std_id))
 
 
 def by_id(manifest: dict) -> dict:
     return {s["id"]: s for s in manifest["standards"]}
 
 
-def manifest_files(base: str, head: str) -> set[str] | None:
-    """Tests affected by a coverage.json change; None means the full suite."""
+def manifest_files(old_text, new_text, find_class) -> set[str] | None:
+    """Tests affected by a coverage.json change; None means the full suite.
+
+    ``old_text``/``new_text`` are the manifest at base and head (None if
+    missing); ``find_class(name)`` returns the test files defining a class.
+    """
     try:
-        old = json.loads(git("show", f"{base}:{MANIFEST}"))
-        new = json.loads(git("show", f"{head}:{MANIFEST}"))
+        old, new = json.loads(old_text), json.loads(new_text)
         old_std, new_std = by_id(old), by_id(new)
-    except (subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError):
         return None
     if {k: v for k, v in old.items() if k != "standards"} != {
         k: v for k, v in new.items() if k != "standards"
@@ -114,11 +107,13 @@ def manifest_files(base: str, head: str) -> set[str] | None:
         return None
     selected = {REGISTRY}
     for std_id in old_std.keys() | new_std.keys():
-        selected |= standard_changes(old_std.get(std_id), new_std.get(std_id), head)
+        selected |= standard_changes(
+            old_std.get(std_id), new_std.get(std_id), find_class
+        )
     return selected
 
 
-def standard_changes(old: dict | None, new: dict | None, head: str) -> set[str]:
+def standard_changes(old: dict | None, new: dict | None, find_class) -> set[str]:
     std_id = (old or new)["id"]
     if old is None or new is None:
         return set(standard_files(std_id))
@@ -130,17 +125,22 @@ def standard_changes(old: dict | None, new: dict | None, head: str) -> set[str]:
     changed = set(old_rows) ^ set(new_rows)
     files = set()
     for row in changed:
-        files |= row_files(json.loads(row), std_id, head)
+        files |= row_files(json.loads(row), std_id, find_class)
     return files
 
 
-def select(paths, base: str, head: str) -> list[str]:
+def select(paths, coverage=lambda: None, exists=lambda p: Path(p).exists()):
+    """Pytest targets for the changed ``paths``.
+
+    ``coverage()`` returns the tests affected by a coverage.json change
+    (None: full suite); ``exists(path)`` says whether a test file exists.
+    """
     selected = set()
     for path in paths:
         if any(fnmatch(path, p) for p in FULL_SUITE):
             return [FULL]
         if path == MANIFEST:
-            files = manifest_files(base, head)
+            files = coverage()
             if files is None:
                 return [FULL]
             selected |= files
@@ -155,15 +155,36 @@ def select(paths, base: str, head: str) -> list[str]:
             return [FULL]
         selected.update(hit)
     # A deleted test file cannot be run on its own; run everything.
-    if not all(Path(t).exists() for t in selected):
+    if not all(exists(t) for t in selected):
         return [FULL]
     return sorted(selected)
+
+
+def git(*args) -> str | None:
+    try:
+        return subprocess.run(
+            ["git", *args], capture_output=True, text=True, check=True
+        ).stdout
+    except subprocess.CalledProcessError:
+        return None
+
+
+def git_coverage(base: str, head: str):
+    def find_class(cls):
+        out = git("grep", "-l", "-E", rf"^class {cls}[(:]", head, "--", "tests/vv")
+        return {line.split(":", 1)[1] for line in (out or "").splitlines()}
+
+    return lambda: manifest_files(
+        git("show", f"{base}:{MANIFEST}"),
+        git("show", f"{head}:{MANIFEST}"),
+        find_class,
+    )
 
 
 def main() -> int:
     base, head = sys.argv[1:3]
     paths = [line.strip() for line in sys.stdin if line.strip()]
-    print(" ".join(select(paths, base, head)))
+    print(" ".join(select(paths, git_coverage(base, head))))
     return 0
 
 

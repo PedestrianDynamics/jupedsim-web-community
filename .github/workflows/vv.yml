@@ -61,9 +61,9 @@ jobs:
     - name: Sync environment
       run: uv sync --frozen --extra dev
 
-    - name: Run site generator tests
+    - name: Run site generator and selector tests
       if: github.event_name == 'pull_request'
-      run: uv run --frozen --extra dev python -m pytest tests/test_gen_vv_site.py -v
+      run: uv run --frozen --extra dev python -m pytest tests/test_gen_vv_site.py tests/test_select_vv_tests.py -v
 
     - name: Run V&V tests
       if: steps.select.outputs.tests != ''
