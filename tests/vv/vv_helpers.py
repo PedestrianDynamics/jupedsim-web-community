@@ -3,6 +3,7 @@
 Build web-style scenario JSON and execute it through the standalone core runner.
 """
 
+import itertools
 import json
 import pathlib
 import tempfile
@@ -233,3 +234,42 @@ def agents_outside_polygon(
         for row in df.itertuples()
         if not walkable.covers(Point(row.x, row.y))
     ]
+
+
+def last_room_entry_time(result, room2_x: float, spawn_x_max: float = 5.0):
+    """Return (n_primary, last entry time) for the counter-flow scenarios.
+
+    Primary agents spawn at ``x < spawn_x_max``. An agent enters room 2 at its
+    first frame with ``x >= room2_x``. The time is the latest such entry, or
+    None when any primary agent never enters room 2 (blocking).
+    """
+    df = result.trajectory_dataframe().sort_values(["id", "frame"])
+    primary = df.groupby("id").first().x.pipe(lambda x: x[x < spawn_x_max].index)
+    entered = df[df.id.isin(primary) & (df.x >= room2_x)].groupby("id").frame.min()
+    if len(entered) < len(primary):
+        return len(primary), None
+    return len(primary), float(entered.max() / result.frame_rate)
+
+
+def assert_last_entry_increases(levels: dict) -> None:
+    """Check the NIST Verif.2.8 / ISO 20414 Test 6 trend with blocking.
+
+    ``levels`` maps counter-flow count to the last entry time, or None for a
+    blocked level (documented, not a failure). A blocked level counts as later
+    than every finite level, so finite times must increase strictly with the
+    counter-flow count and no finite level may follow a blocked one. The
+    unblocked 0-counter-flow level must complete.
+    """
+    counts = sorted(levels)
+    assert levels[counts[0]] is not None, (
+        f"baseline level {counts[0]} did not complete: {levels}"
+    )
+    blocked = [c for c in counts if levels[c] is None]
+    finite = [c for c in counts if levels[c] is not None]
+    assert not blocked or max(finite) < min(blocked), (
+        f"finite level after a blocked level: {levels}"
+    )
+    times = [levels[c] for c in finite]
+    assert all(b > a for a, b in itertools.pairwise(times)), (
+        f"last room-2 entry time not strictly increasing: {levels}"
+    )

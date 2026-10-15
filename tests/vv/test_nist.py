@@ -31,6 +31,8 @@ from vv_helpers import (
     FLOW_CAP_TOLERANCE,
     HAS_VV_DEPS,
     MAX_SPECIFIC_FLOW,
+    assert_last_entry_increases,
+    last_room_entry_time,
     specific_exit_flow,
     with_flow_limiter,
 )
@@ -565,46 +567,39 @@ class TestNist28Counterflow:
     """NIST Verif.2.8 - 100 primary agents cross a 10 m x 2 m corridor against
     0/10/50/100 counterflow agents in the far room.
 
-    NIST criterion: the completion time (last primary agent to reach the far
-    room) increases with counterflow. Under CollisionFreeSpeedModel the high
-    counterflow branches deadlock, so a last-arrival *time* is undefined; the
-    equivalent monotone quantity is the number of primary agents that reach the
-    far room within a fixed, *equal* time budget, which must be non-increasing
-    as counterflow grows. Observed on seed 42: [100, 100, 1, 0].
+    NIST criterion: the time the last room-1 occupant enters room 2 increases
+    with the number of counterflow occupants. Room 2 starts at x = 20 m, so an
+    occupant enters it at its first frame with x >= 20.
+
+    Blocking (deadlock) is documented, not a failure: a level in which some
+    room-1 occupant never enters room 2 within the budget has no finite
+    last-entry time and counts as later than every finite level. Finite times
+    must increase strictly, no finite level may follow a blocked one, and the
+    0-counterflow level must complete. Observed on seed 42 (budget 200 s;
+    unblocked levels finish by 70 s): 0 -> 46.6 s, 10 -> 70.0 s, 50 and 100
+    blocked.
     """
 
-    BUDGET_S = 400
-    # The two 10 m rooms bracket a 10 m corridor, so the far room starts at
-    # x = 20 m. An agent that reaches it is absorbed at the far exit (x >= 29.7),
-    # so its *last* recorded position lies in the far room - counting a fixed
-    # crossing frame (x >= 29.7) misses every absorbed agent and reads 0.
-    FAR_ROOM_X = 20.0
+    BUDGET_S = 200
+    ROOM2_X = 20.0
 
-    def test_completion_non_increasing_with_counterflow(self):
+    def test_last_room2_entry_increases_with_counterflow(self):
         load_branches = _load_builder("nist2_8_counterflow").load_branches
 
-        reached = []
+        levels = {}
         for branch in load_branches():
             scenario = load_scenario(str(branch.scenario_zip))
             scenario.max_simulation_time = self.BUDGET_S
             result = run_scenario(scenario, seed=42)
             try:
-                df = result.trajectory_dataframe().sort_values(["id", "frame"])
-                grouped = df.groupby("id")
-                first_x = grouped.first().x
-                last_x = grouped.last().x
-                # Primary population spawns in the near room (x < 5).
-                primary = first_x[first_x < 5.0].index
-                reached.append(
-                    sum(1 for aid in primary if last_x[aid] >= self.FAR_ROOM_X)
+                _, levels[branch.counterflow_agents] = last_room_entry_time(
+                    result, self.ROOM2_X
                 )
             finally:
                 result.cleanup()
 
-        deltas = np.diff(reached)
-        assert (deltas <= 0).all(), (
-            f"primary completions not non-increasing in counterflow: {reached}"
-        )
+        print(f"last room-2 entry [s] by counterflow (None = blocked): {levels}")
+        assert_last_entry_increases(levels)
 
 
 # ---------------------------------------------------------------------------

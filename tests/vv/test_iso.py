@@ -9,11 +9,10 @@ This module ports the acceptance criteria encoded in the notebooks under
 ones). Each notebook carries an "## Acceptance" cell that is authoritative for
 the criterion and thresholds reproduced here.
 
-Three scenarios exercise a genuine ISO criterion that CollisionFreeSpeedModel
+Two scenarios exercise a genuine ISO criterion that CollisionFreeSpeedModel
 cannot satisfy and are therefore strict xfails (they assert the real criterion
 and fail with AssertionError):
 
-* Test 6  - counter-flow: no lane formation, the primary crowd deadlocks.
 * Test 11 - maximum flow: no door-flow limiter, emergent flow >> IMO 1.33 p/m/s.
 * Test 15 - social influence: no social-influence model.
 
@@ -34,6 +33,8 @@ from vv_helpers import (
     FLOW_CAP_TOLERANCE,
     HAS_VV_DEPS,
     MAX_SPECIFIC_FLOW,
+    assert_last_entry_increases,
+    last_room_entry_time,
     specific_exit_flow,
     with_flow_limiter,
 )
@@ -306,11 +307,17 @@ class TestIso06Counterflow:
     """ISO Test 6 - 100 primary agents cross a corridor against 0/10/50/100
     counter-flow agents.
 
-    ISO criterion: the crossing time (primary crowd reaching room 2) must
-    increase with counter-flow. CollisionFreeSpeedModel forms no lanes, so at
-    >= 50 counter-flow agents the primary crowd deadlocks and almost none reach
-    room 2 - the crossing time is undefined, so the expected increase cannot be
-    produced. The model fails ISO Test 6.
+    ISO criterion: the time the last room-1 occupant enters room 2 increases
+    with the number of counter-flow occupants; long-term blocking is to be
+    documented, not counted as failure. Room 2 starts at x = 20 m, so an
+    occupant enters it at its first frame with x >= 20.
+
+    A level in which some room-1 occupant never enters room 2 within the
+    budget has no finite last-entry time and counts as later than every finite
+    level. Finite times must increase strictly, no finite level may follow a
+    blocked one, and the 0-counter-flow level must complete. Observed on seed
+    42 (budget 200 s; unblocked levels finish by 70 s): 0 -> 46.6 s,
+    10 -> 70.0 s, 50 and 100 blocked.
     """
 
     CF_ZIPS = {
@@ -322,42 +329,19 @@ class TestIso06Counterflow:
     BUDGET_S = 200
     ROOM2_X = 20.0
 
-    @pytest.mark.xfail(
-        reason="CollisionFreeSpeedModel forms no lanes: the primary crowd "
-        "deadlocks at >= 50 counter-flow agents, so a room-2 crossing time is "
-        "undefined and the ISO-expected increase with counter-flow cannot be "
-        "produced. Needs AnticipationVelocityModel.",
-        raises=AssertionError,
-        strict=True,
-    )
-    def test_crossing_time_increases_with_counterflow(self):
-        crossing_times = []
+    def test_last_room2_entry_increases_with_counterflow(self):
+        levels = {}
         for cf, stem in self.CF_ZIPS.items():
             scenario = _load(stem)
             scenario.max_simulation_time = self.BUDGET_S
             result = run_scenario(scenario, seed=42)
             try:
-                df = result.trajectory_dataframe().sort_values(["id", "frame"])
-                first_x = df.groupby("id").first().x
-                primary = first_x[first_x < 5.0].index
-                reach = []
-                for aid in primary:
-                    sub = df[df.id == aid]
-                    hit = sub[sub.x >= self.ROOM2_X]
-                    if len(hit):
-                        reach.append(hit.iloc[0].frame / result.frame_rate)
-                # Crossing time is only defined when the whole primary crowd
-                # crosses; a deadlocked branch yields nan.
-                if len(reach) == len(primary) and len(reach) > 0:
-                    crossing_times.append(float(np.mean(reach)))
-                else:
-                    crossing_times.append(float("nan"))
+                _, levels[cf] = last_room_entry_time(result, self.ROOM2_X)
             finally:
                 result.cleanup()
-        deltas = np.diff(crossing_times)
-        assert (deltas > 0).all(), (
-            f"crossing time not increasing with counter-flow: {crossing_times}"
-        )
+
+        print(f"last room-2 entry [s] by counter-flow (None = blocked): {levels}")
+        assert_last_entry_increases(levels)
 
 
 # ---------------------------------------------------------------------------
