@@ -15,9 +15,12 @@ permissions:
   pages: write
   id-token: write
 
+# A newer pull request or main push supersedes the running one (the deploy
+# uses the newest main). Schedule and dispatch runs have their own groups,
+# queue instead of cancelling, and never cancel a main push run.
 concurrency:
-  group: "pages-${{ github.ref }}"
-  cancel-in-progress: false
+  group: "pages-${{ github.event_name }}-${{ github.ref }}"
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   vv-tests:
