@@ -1,9 +1,13 @@
 """V&V test configuration — makes vv_helpers importable and exports results.
 
-Tests that request the ``vv_row`` fixture write one row each to
+Every test in the standard test files (``STANDARD_FILES``) writes one row to
 ``results/vv-results.json`` at the end of the session. The row carries the
-manifest metadata (standard, clause, criterion) and whatever the test reports
-through ``vv_row.set(...)``. Fields a test does not report are null.
+manifest metadata (standard, clause, criterion), the test status and the run
+provenance, plus whatever the test reports through ``vv_row.set(...)``.
+Fields a test does not report are null.
+
+A run that collects only part of the suite writes ``vv-results-partial.json``
+instead, so a subset run never replaces the full results file.
 """
 
 import datetime
@@ -23,8 +27,18 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 MANIFEST = REPO_ROOT / "standards" / "coverage.json"
 RESULTS_PATH = REPO_ROOT / "results" / "vv-results.json"
 RESULTS_PARTIAL_PATH = REPO_ROOT / "results" / "vv-results-partial.json"
-# RiMEA items a full run collects (includes the 3 skipped placeholder classes).
-FULL_RIMEA_ITEMS = 22
+# Test files whose tests write a results row; a full run collects all of them.
+STANDARD_FILES = frozenset(
+    {
+        "test_imo.py",
+        "test_imo_behavior.py",
+        "test_imo_room_evacuation.py",
+        "test_imo_single_agent.py",
+        "test_iso.py",
+        "test_nist.py",
+        "test_rimea.py",
+    }
+)
 
 ROW_FIELDS = (
     "quantity",
@@ -42,6 +56,7 @@ ROW_FIELDS = (
 
 _ROWS: list[dict] = []
 _STATUS_KEY = pytest.StashKey[dict]()
+_DESELECTED: list[int] = [0]
 
 
 def _package_version(name: str) -> str | None:
@@ -66,22 +81,34 @@ def _provenance() -> dict:
     }
 
 
-def _manifest_entry(class_name: str | None) -> dict:
-    """Standard, clause and criterion for a test class (longest manifest prefix)."""
-    empty = {"standard": None, "clause": None, "criterion": None}
+def _manifest_entry(class_name: str | None, method_name: str) -> dict:
+    """Standard, clause and criterion for a test (longest manifest prefix).
+
+    A manifest ``test`` reference is ``ClassPrefix`` or ``ClassPrefix::method``;
+    the method form matches only that method (parametrised ids included).
+    """
+    empty = {"standard": None, "standard_id": None, "clause": None, "criterion": None}
     if not class_name:
         return empty
     best, best_len = None, 0
     for std in json.loads(MANIFEST.read_text())["standards"]:
         for test in std["tests"]:
             ref = test.get("test")
-            if ref and class_name.startswith(ref) and len(ref) > best_len:
+            if not ref:
+                continue
+            ref_class, _, ref_method = ref.partition("::")
+            if not class_name.startswith(ref_class):
+                continue
+            if ref_method and ref_method != method_name.split("[")[0]:
+                continue
+            if len(ref) > best_len:
                 best, best_len = (std, test), len(ref)
     if best is None:
         return empty
     std, test = best
     return {
         "standard": std["name"],
+        "standard_id": std["id"],
         "clause": test["id"],
         "criterion": test.get("criterion"),
     }
@@ -120,16 +147,28 @@ class VVRow:
 def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
-    item.stash.setdefault(_STATUS_KEY, {})[report.when] = report.outcome
+    outcome_name = report.outcome
+    if hasattr(report, "wasxfail"):
+        # pytest reports an expected failure as "skipped" and an unexpected
+        # pass of a non-strict xfail as "passed"; keep both visible.
+        outcome_name = "xfailed" if report.skipped else "xpassed"
+    item.stash.setdefault(_STATUS_KEY, {})[report.when] = outcome_name
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def vv_row(request):
-    """Yield a VVRow and append its finished row after the test ends."""
+    """Yield a VVRow and append its finished row after the test ends.
+
+    Autouse, so every test in ``STANDARD_FILES`` writes a row even if it does
+    not report any field. Tests in other files get a row that is not recorded.
+    """
+    if request.node.path.name not in STANDARD_FILES:
+        yield VVRow({})
+        return
     cls = request.cls.__name__ if request.cls else None
     base = {
         "test_id": request.node.nodeid,
-        **_manifest_entry(cls),
+        **_manifest_entry(cls, request.node.name),
         "test_source": f"{pathlib.Path(request.node.fspath).relative_to(REPO_ROOT)}"
         f"::{request.node.name}",
         **_provenance(),
@@ -145,21 +184,35 @@ def _status(phases: dict) -> str:
         return "error"
     if phases.get("setup") == "skipped":
         return "skip"
-    return {"passed": "pass", "failed": "fail", "skipped": "skip"}.get(
-        phases.get("call", ""), "error"
-    )
+    return {
+        "passed": "pass",
+        "failed": "fail",
+        "skipped": "skip",
+        "xfailed": "xfail",
+        "xpassed": "xpass",
+    }.get(phases.get("call", ""), "error")
+
+
+def pytest_deselected(items):
+    _DESELECTED[0] += len(items)
+
+
+def _is_full_run(session) -> bool:
+    """All standard files collected, nothing deselected, no node-id selection."""
+    collected = {item.path.name for item in session.items}
+    node_selection = any("::" in arg for arg in session.config.args)
+    return STANDARD_FILES <= collected and not _DESELECTED[0] and not node_selection
 
 
 def pytest_sessionfinish(session):
     if not _ROWS:
         return
-    rimea_items = sum(1 for item in session.items if item.path.name == "test_rimea.py")
-    full_run = rimea_items == FULL_RIMEA_ITEMS
+    full_run = _is_full_run(session)
     path = RESULTS_PATH if full_run else RESULTS_PARTIAL_PATH
     if not full_run:
         print(
-            f"WARNING: subset run ({rimea_items} of {FULL_RIMEA_ITEMS} RiMEA tests "
-            f"collected); writing {path.name}, {RESULTS_PATH.name} is not touched",
+            "WARNING: subset run (not every V&V test collected); writing "
+            f"{path.name}, {RESULTS_PATH.name} is not touched",
             file=sys.stderr,
         )
     path.parent.mkdir(parents=True, exist_ok=True)
