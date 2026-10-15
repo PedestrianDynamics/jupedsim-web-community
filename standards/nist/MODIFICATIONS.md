@@ -195,24 +195,23 @@ test alone).
 
 ### B11. Verif.2.10 — Movement disabilities (S11.x)
 
-- **Scenario reuse:** the two NIST scenario ZIPs are copied and renamed from
-  the corresponding ISO Test 7 scenarios because they exercise the same
-  overtaking behaviour required here: 24 occupants move past one occupant
-  with reduced mobility. The pytest test loads
-  `Nist-2-10-movement-disabilities.zip` and
-  `Nist-2-10-movement-disabilities-no-disability.zip` from
-  `standards/nist/scenario_files/`.
-- In `Nist-2-10-movement-disabilities.zip`, the 24 reference occupants have
-  `v0 = 1.25 m/s` and `radius = 0.2 m`; the reduced-mobility occupant has
-  `v0 = 0.8 m/s` and `radius = 0.4 m`.
-- The control scenario,
-  `Nist-2-10-movement-disabilities-no-disability.zip`, keeps the same geometry,
-  population, routes, and model parameters, but assigns the comparison
-  occupant the reference values `v0 = 1.25 m/s` and `radius = 0.2 m`.
-- Both scenarios must evacuate all 25 occupants. Acceptance is comparative:
-  total evacuation time with the slower, larger occupant must exceed the
-  control evacuation time. This tests the effect of per-agent speed and size
-  parameters; it does not introduce a separate physiological disability model.
+- **Scenario:** built by `standards/utils/movement_disability.py`, shared with
+  ISO Test 7, which differs only in the ramp length. Geometry follows
+  TN 1822 Figure 7: room 1 5 m x 4 m, a 2 m x 1.5 m ramp, room 2 5 m x 4 m
+  and a 1 m exit opening. Zone 2 is the last 1 m of room 1.
+- The 24 zone-1 occupants have `v0 = 1.25 m/s` and the model's default
+  `radius = 0.2 m` throughout. The reduced-mobility occupant has
+  `radius = 0.4 m` (0.8 m wide, more than half the ramp) and walks at
+  0.8 m/s on the flat and 0.4 m/s on the ramp. jupedsim-scenarios 0.7.3
+  applies speed zones to every agent, so the builder drives jupedsim
+  directly and sets this occupant's desired speed every step.
+- In the control scenario the zone-2 occupant has the reference values.
+- Acceptance (decision D8): all 25 occupants evacuate in both scenarios, and
+  the last and the mean zone-1 exit times are later with the
+  reduced-mobility occupant. This tests the effect of per-agent speed and
+  size; it does not introduce a separate physiological disability model.
+- The earlier scenario ZIPs (13 m ramp, 4 m room 1, comparison occupant on
+  the ramp, ramp speed factor for everyone) were removed.
 
 ### B12. Verif.3.1 — Exit route allocation (S12)
 
