@@ -185,11 +185,13 @@ jobs:
       with:
         path: site/public
 
-  # Publish the site to GitHub Pages (main pushes only). Requires Pages to be
-  # enabled with "GitHub Actions" as the source (Settings -> Pages).
+  # Publish the site to GitHub Pages (main pushes only), and only when both
+  # the tests and the notebooks succeeded: a failing run never replaces the
+  # live page. Requires Pages to be enabled with "GitHub Actions" as the
+  # source (Settings -> Pages).
   deploy-pages:
-    needs: build-pages
-    if: ${{ !cancelled() && needs.build-pages.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [vv-tests, notebooks, build-pages]
+    if: ${{ !cancelled() && needs.vv-tests.result == 'success' && needs.notebooks.result == 'success' && needs.build-pages.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
