@@ -368,10 +368,11 @@
       "expected": "The travel time at 1.33 m/s lies between 26 and 34 s. This is the only test in the guideline with a fixed window; for all other tests RiMEA states that it sets no fixed pass limits (p. 28).",
       "deviations": [
         "The agent starts within the first 0.4 m of the corridor and is removed on entering a 0.1 m exit strip at 39.9 to 40 m, so it walks slightly less than 40 m. The window is applied to the simulated travel time without adjustment.",
-        "The suite adds a second check that RiMEA does not ask for: on every sample the agent's centre stays at least its radius, less 1 mm, inside the corridor walls (decision D16).",
-        "The scenario is built in code (tests/vv/test_rimea.py) with a desired speed of 1.33 m/s. The notebook loads Rimea-01-corridor.zip instead: a 60 m corridor with a 10 m run-up and a 10 m buffer, a desired speed of 1.0 m/s, and a speed measured over a 40 m segment (target 1.0 m/s, tolerance 0.05 m/s). It does not use the 26 to 34 s window."
+        "The suite adds a second check that RiMEA does not ask for: on every sample the agent's centre stays at least its radius, less 1 mm, inside the corridor walls (decision D16)."
       ],
-      "scenario_files": []
+      "scenario_files": [
+        "standards/rimea/scenario_files/Rimea-01-corridor.zip"
+      ]
     },
     {
       "slug": "rimea-2",
@@ -388,10 +389,11 @@
       "deviations": [
         "The stair is a flat corridor 2 m wide with a speed-factor zone of 0.5, not a stair object. A desired speed of 1.0 m/s then gives 0.5 m/s, inside the Fruin range for ascent. The model has no incline.",
         "The zone covers the whole 10.4 m corridor and the agent walks about 10 m from its start to the exit strip.",
-        "The pass rule is the suite's own: the travel time lies between 19.5 and 20.5 s (10 m at 0.5 m/s is 20 s, with a tolerance of 0.5 s). RiMEA gives no window for this test.",
-        "The scenario is built in code (tests/vv/test_rimea.py). The notebook loads Rimea-02-upstairs.zip instead: a 30 m corridor with the speed-factor zone on 10 to 20 m only, and a speed measured over that segment (target 0.5 m/s, tolerance 0.05 m/s)."
+        "The pass rule is the suite's own: the travel time lies between 19.5 and 20.5 s (10 m at 0.5 m/s is 20 s, with a tolerance of 0.5 s). RiMEA gives no window for this test."
       ],
-      "scenario_files": []
+      "scenario_files": [
+        "standards/rimea/scenario_files/Rimea-02-upstairs.zip"
+      ]
     },
     {
       "slug": "rimea-3",
@@ -408,10 +410,11 @@
       "deviations": [
         "The stair is a flat corridor 2 m wide with a speed-factor zone of 0.75, not a stair object. A desired speed of 1.0 m/s then gives 0.75 m/s, inside the Fruin range for descent. The model has no incline.",
         "The zone covers the whole 10.4 m corridor and the agent walks about 10 m from its start to the exit strip.",
-        "The pass rule is the suite's own: the travel time lies between 13.0 and 13.7 s (10 m at 0.75 m/s is 13.3 s). RiMEA gives no window for this test.",
-        "The scenario is built in code (tests/vv/test_rimea.py). The notebook loads Rimea-03-downstairs.zip instead: a 30 m corridor with a speed-factor zone of 0.65 on 10 to 20 m only, and a speed measured over that segment (target 0.65 m/s, tolerance 0.05 m/s)."
+        "The pass rule is the suite's own: the travel time lies between 13.0 and 13.7 s (10 m at 0.75 m/s is 13.3 s). RiMEA gives no window for this test."
       ],
-      "scenario_files": []
+      "scenario_files": [
+        "standards/rimea/scenario_files/Rimea-03-downstairs.zip"
+      ]
     },
     {
       "slug": "rimea-4",
@@ -451,10 +454,12 @@
       "deviations": [
         "The pass rule is the suite's own: each agent's observed start (the first frame with a displacement above 0.05 m from its spawn point) is within 0.5 s of that agent's own sampled premovement time, and every start lies between 9.9 and 101 s.",
         "The test pairs agents with their draws by id order, because the runner assigns ids in spawn order and the scenario result does not expose per-agent premovement times.",
-        "RiMEA does not fix where the persons start. The suite places them in a 2 m by 3 m area at the end opposite the exit, with a constant desired speed of 1.2 m/s, the default radius of 0.15 m and premovement seed 12345.",
-        "The scenario is built in code (tests/vv/test_rimea.py). The notebook loads Rimea-05-premovement.zip instead: a larger start area (6.6 m by 4.6 m) and a different acceptance rule, a two-sample Kolmogorov-Smirnov test of the start times against the uniform distribution (alpha 0.05)."
+        "RiMEA does not fix where the persons start. The scenario file places them in a 6.6 m by 4.6 m area that covers most of the room, with a constant desired speed of 1.2 m/s, the default radius of 0.15 m and premovement seed 12345 (so the test can recompute each agent's draw).",
+        "The notebook loads the same scenario file but applies a different acceptance rule: a two-sample Kolmogorov-Smirnov test of the start times against the uniform distribution (alpha 0.05)."
       ],
-      "scenario_files": []
+      "scenario_files": [
+        "standards/rimea/scenario_files/Rimea-05-premovement.zip"
+      ]
     },
     {
       "slug": "rimea-6",
@@ -469,12 +474,13 @@
       "definition": "Twenty persons, spread uniformly over a start area 6 m long, walk towards a corner that turns left. A corridor 10 m long and 2 m wide ends in a turn into an arm 2 m wide and 10 m long. The persons go around the corner without passing through walls.",
       "expected": "All 20 persons go around the corner without passing through a wall. RiMEA states this as a yes/no outcome and sets no further pass limit (p. 28).",
       "deviations": [
-        "The vertical arm runs 8 m above the corridor and 2 m below it. Fig. 6 labels a 10 m arm above the corridor and shows nothing below it.",
+        "The vertical arm runs 8 m above the corridor and nothing below it, and the start area is 4 m long. Fig. 6 labels a 10 m arm above the corridor and a start area 6 m long.",
         "The pass rule is the suite's own: all 20 agents evacuate, and on every sample each agent's centre stays at least its radius, less 1 mm, inside the walkable polygon, so a body overlapping the inner corner fails (decision D16).",
-        "Agents have a constant desired speed (1.2 m/s) and the default radius of 0.15 m. RiMEA's text asks for no speed.",
-        "The scenario is built in code (tests/vv/test_rimea.py). The notebook loads Rimea-06-corner.zip instead: a corridor 10 m long with an arm 8 m above it and no extension below, a 4 m by 2 m start area, a desired speed of 1.0 m/s, and a check of the agent centres against the polygon with a 1 mm tolerance and no radius."
+        "Agents have a constant desired speed (1.0 m/s) and the default radius of 0.15 m. RiMEA's text asks for no speed."
       ],
-      "scenario_files": []
+      "scenario_files": [
+        "standards/rimea/scenario_files/Rimea-06-corner.zip"
+      ]
     },
     {
       "slug": "rimea-7",
@@ -528,11 +534,14 @@
       "expected": "RiMEA expects the time to leave the room to roughly double with two doors locked. Footnote 7 (p. 34) says denser queues in front of the doors may raise the flow, so the test is not to be used as an exclusion criterion and only documents model behaviour. RiMEA sets no pass limit.",
       "deviations": [
         "The pass rule is the suite's own (decision D22): all agents evacuate in both runs and the evacuation with two exits takes longer than with four. The ratio of the two times is reported and is not asserted.",
-        "The scenario is built in code (tests/vv/test_rimea.py) as a room of 20 m by 20 m with four exits 2 m wide at the centre of each wall, and 200 agents with a constant desired speed of 1.2 m/s. The two-exit case keeps the bottom and top exits. The notebook loads Rimea-09-large-public.zip and Rimea-09-large-public-locked.zip instead: 30 m by 20 m, doors 1 m wide as in Fig. 8, 1000 agents with Gaussian speeds (mean 1.6 m/s, standard deviation 0.2 m/s), and the top doors removed in the second run.",
-        "Agents do not choose a door. Journey weights fix the exit of each group: in the test every spawn quadrant has one exit, so some groups cross the room; in the scenario files the weights split the agents evenly over the open doors.",
+        "The scenario is loaded from Rimea-09-large-public.zip (30 m by 20 m, doors 1 m wide as in Fig. 8, 1000 agents with Gaussian speeds, mean 1.6 m/s and standard deviation 0.2 m/s) and, for step 2, Rimea-09-large-public-locked.zip. The locked file keeps all four door polygons and locks the two doors in the top wall by routing: its journeys lead only to the two doors in the bottom wall, so no agent is sent to the others. The notebook loads the same two files.",
+        "Agents do not choose a door. Journey weights fix the exit of each group: in the scenario files the weights split the agents evenly over the open doors.",
         "Agents have no premovement time, the default radius of 0.15 m and one seed (42). The speeds are not drawn from the RiMEA population of Fig. 3."
       ],
-      "scenario_files": []
+      "scenario_files": [
+        "standards/rimea/scenario_files/Rimea-09-large-public.zip",
+        "standards/rimea/scenario_files/Rimea-09-large-public-locked.zip"
+      ]
     },
     {
       "slug": "rimea-10",
@@ -656,10 +665,11 @@
         "The test uses 50 agents, not 150.",
         "The test takes the flow as the number of agents divided by the total evacuation time of the run, which includes the walk to the bottleneck and on to the goal, so it is not a flow measured at the bottleneck. The notebook measures the mean flow at the bottleneck line x = 10 m with PedPy and compares it with the line J = 1.9 w.",
         "The pass rule is the suite's own: flow(0.8 m) < flow(1.0 m) < flow(1.2 m), with one run per width.",
-        "The goal is a strip 2 m deep at 23 to 25 m rather than a line at the right edge. Agents have one desired speed (1.2 m/s), the suite's default body radius of 0.15 m and one seed (42). RiMEA's standard population (section 3.2.4, p. 16) defines sex and age; speeds follow from age (Fig. 3, p. 13) and body size is not defined.",
-        "The scenario is built in code (tests/vv/test_rimea.py). The notebook loads Rimea-12d-bottleneck.zip, the 1.0 m case, and changes the width in memory for the other cases."
+        "The goal is a strip 2 m deep at 23 to 25 m rather than a line at the right edge. Agents have one desired speed (1.2 m/s), the suite's default body radius of 0.15 m and one seed (42). RiMEA's standard population (section 3.2.4, p. 16) defines sex and age; speeds follow from age (Fig. 3, p. 13) and body size is not defined."
       ],
-      "scenario_files": []
+      "scenario_files": [
+        "standards/rimea/scenario_files/Rimea-12d-bottleneck.zip"
+      ]
     },
     {
       "slug": "rimea-13",
@@ -715,11 +725,14 @@
       "definition": "Three geometries, each 20 m wide with a start area of 20 m by 6 m, hold 500 persons; the same group of persons is used in each. The geometries are a straight route of 75.4 m (the longest), a straight route of 44 m (the shortest) and a route with a corner whose dimensions Fig. 19 gives (34 m leg, then a turning area 30 m wide). The time until all persons reach the target is compared, to show how much a corner changes the evacuation time.",
       "expected": "Ideally the time for the corner geometry lies between the times for the 44 m and the 75.4 m straight routes. RiMEA sets no fixed pass limit (p. 28).",
       "deviations": [
-        "The test builds two geometries, not three: a straight corridor 55 m long and an L-shaped corridor of about the same path length, both 6 m wide. It has 100 agents with a constant desired speed (1.2 m/s) and the default radius of 0.15 m. The start areas differ (6 m by 6 m and 5 m by 4 m), so the initial conditions are not identical. One seed (42).",
+        "The test loads two of the three scenario files, the corner geometry (Rimea-15-large-crowd-corner-2.zip) and the shortest straight geometry (-3.zip, 50 m); it does not run the 81.4 m straight geometry (-1.zip). All three are 20 m wide with 500 agents, a constant desired speed of 1.2 m/s, the default radius of 0.15 m and one seed (42).",
         "The pass rule is the suite's own: all agents evacuate and the corner geometry takes longer than the straight one. This is a different claim from RiMEA's bracket between the shortest and the longest route.",
-        "The notebook loads three scenario files (Rimea-15-large-crowd-corner-1.zip to -3.zip): 20 m wide geometries of 81.4 m and 50 m straight length and a curved corner geometry, with 500 agents, and checks the bracket. The test does not use them."
+        "The notebook runs all three scenario files and checks the bracket."
       ],
-      "scenario_files": []
+      "scenario_files": [
+        "standards/rimea/scenario_files/Rimea-15-large-crowd-corner-2.zip",
+        "standards/rimea/scenario_files/Rimea-15-large-crowd-corner-3.zip"
+      ]
     },
     {
       "slug": "rimea-16",

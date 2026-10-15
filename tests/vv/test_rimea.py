@@ -31,7 +31,6 @@ from vv_helpers import (
     HAS_VV_DEPS,
     agents_outside_polygon,
     measure_flow_rate,
-    run_vv_scenario,
 )
 
 STANDARDS_DIR = pathlib.Path(__file__).resolve().parents[2] / "standards"
@@ -107,6 +106,25 @@ pytestmark = [
 ]
 
 
+def _rimea_zip(name):
+    """Path of a RiMEA scenario zip, the same file the notebook loads."""
+    return STANDARDS_DIR / "rimea" / "scenario_files" / name
+
+
+def _trajectory(result):
+    """PedPy trajectory of a scenario result."""
+    return pedpy.TrajectoryData(
+        result.trajectory_dataframe()[["id", "frame", "x", "y"]].copy(),
+        frame_rate=result.frame_rate,
+    )
+
+
+def _agent_radius(scenario):
+    """Body radius of the first start area of a loaded scenario, in m."""
+    first = next(iter(scenario.distributions.values()))
+    return first["parameters"]["radius"]
+
+
 @pytest.fixture(autouse=True)
 def _rimea_results_row(vv_row):
     """Every RiMEA test writes a results row (fields it does not set stay null)."""
@@ -121,51 +139,26 @@ def _rimea_results_row(vv_row):
 class TestRiMEA01SpeedCorridor:
     """RiMEA Test 1: Maintaining the specified walking speed in a corridor.
 
-    Geometry: 2m x 40m corridor.
+    Scenario: scenario_files/Rimea-01-corridor.zip, the file the notebook
+    loads (2 m x 40 m corridor, thin start strip at x 0-0.4 m and exit
+    strip at x 39.9-40 m so the agent walks close to the full 40 m).
     Agent: 1 agent, v0=1.33 m/s.
     Expected: Travel time in [26, 34] seconds.
     """
 
-    WALKABLE = "POLYGON ((0 0, 40 0, 40 2, 0 2, 0 0))"
-    EXIT = {
-        "jps-exits_0": {
-            "type": "polygon",
-            # Thin exit strip and start strip at the two ends, so the agent
-            # walks close to the full 40 m that the 26-34 s window is based on.
-            "coordinates": [[39.9, 0], [40, 0], [40, 2], [39.9, 2], [39.9, 0]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        }
-    }
-    DIST = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0, 0], [0.4, 0], [0.4, 2], [0, 2], [0, 0]],
-            "parameters": {
-                "number": 1,
-                "radius": 0.15,
-                "v0": 1.33,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-        }
-    }
+    SCENARIO_ZIP = _rimea_zip("Rimea-01-corridor.zip")
 
     def test_travel_time(self, vv_row):
         """Travel time at 1.33 m/s should be in [26, 34] seconds."""
-        metrics, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE,
-            exits=self.EXIT,
-            distributions=self.DIST,
-            max_simulation_time=120.0,
-        )
-        assert metrics["agents_remaining"] == 0, "Agent did not evacuate"
-        evac = metrics["evacuation_time"]
+        result = run_scenario(load_scenario(str(self.SCENARIO_ZIP)), seed=DEFAULT_SEED)
+        evac = result.evacuation_time
+        remaining = result.agents_remaining
+        total_agents = result.total_agents
+        result.cleanup()
+        assert remaining == 0, "Agent did not evacuate"
         vv_row.set(
             quantity="travel_time", unit="s", lower=RIMEA01_LOWER, upper=RIMEA01_UPPER,
-            measured=evac, n=metrics["total_agents"], seed=DEFAULT_SEED,
+            measured=evac, n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
             rule=f"bound: {RIMEA01_LOWER} <= measured <= {RIMEA01_UPPER}",
         )
@@ -175,20 +168,19 @@ class TestRiMEA01SpeedCorridor:
 
     def test_agent_stays_in_corridor(self, vv_row):
         """Agent must remain within corridor bounds."""
-        metrics, trajectory = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE,
-            exits=self.EXIT,
-            distributions=self.DIST,
-            max_simulation_time=120.0,
-        )
+        scenario = load_scenario(str(self.SCENARIO_ZIP))
+        result = run_scenario(scenario, seed=DEFAULT_SEED)
+        trajectory = _trajectory(result)
+        total_agents = result.total_agents
+        result.cleanup()
         violations = agents_outside_polygon(
             trajectory,
-            self.WALKABLE,
-            radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
+            scenario.walkable_area_wkt,
+            radius=_agent_radius(scenario),
         )
         vv_row.set(
             quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
-            measured=len(violations), n=metrics["total_agents"], seed=DEFAULT_SEED,
+            measured=len(violations), n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
             rule="bound: 0 <= measured <= 0 (samples outside the walkable area)",
         )
@@ -198,85 +190,20 @@ class TestRiMEA01SpeedCorridor:
 class TestRiMEA02SpeedUpStairs:
     """RiMEA Test 2: Maintaining the specified walking speed up stairs.
 
-    Geometry: 2m x 10m staircase (measured along slope).
+    Scenario: scenario_files/Rimea-02-upstairs.zip, the file the notebook loads
+    (2 m x 10.4 m corridor, a 0.5 m x 0.5 m start box and a 20 cm exit
+    strip; one speed-factor zone of 0.5 covers the whole corridor).
     Expected: Travel time consistent with defined stair speed.
     """
 
-    WALKABLE = "POLYGON ((0 0, 10.4 0, 10.4 2, 0 2, 0 0))"
-    EXIT = {
-        "jps-exits_0": {
-            "type": "polygon",
-            # Exit deliberately widened to 20 cm (was 5 cm) so the
-            # direct-steering arrival waypoint lands inside the polygon.
-            # See jupedsim-scenarios#15.
-            "coordinates": [
-                [10.20, 0.8],
-                [10.4, 0.8],
-                [10.4, 1.2],
-                [10.20, 1.2],
-                [10.20, 0.8],
-            ],
-        }
-    }
-    DIST = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0.0, 0.75], [0.5, 0.75], [0.5, 1.25], [0.0, 1.25], [0.0, 0.75]],
-            "parameters": {
-                "number": 1,
-                "radius": 0.15,
-                "v0": 1.0,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-            "journey_weights": [{"journey_id": "jps-journeys_0", "weight": 100}],
-        }
-    }
-    ZONES = {
-        "jps-zones_0": {
-            "coordinates": [[0, 0], [10.4, 0], [10.4, 2], [0, 2], [0, 0]],
-            "speed_factor": 0.5,
-        }
-    }
-    JOURNEYS_V2 = [
-        {
-            "id": "jps-journeys_0",
-            "name": "jps-journeys_0",
-            "color": "#888888",
-            "sequence": ["jps-exits_0"],
-        }
-    ]
+    SCENARIO_ZIP = _rimea_zip("Rimea-02-upstairs.zip")
 
     def test_travel_time(self, vv_row):
-        """Zone-based stair approximation should keep the slowed 10 m run near 20 s."""
-        raw = {
-            "config": {
-                "simulation_settings": {
-                    "baseSeed": DEFAULT_SEED,
-                    "simulationParams": {
-                        "model_type": "CollisionFreeSpeedModel",
-                        "max_simulation_time": 60,
-                    },
-                }
-            },
-            "distributions": self.DIST,
-            "exits": self.EXIT,
-            "zones": self.ZONES,
-            "journeys_v2": self.JOURNEYS_V2,
-        }
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            scenario_dir = pathlib.Path(tmpdir)
-            (scenario_dir / "config.json").write_text(json.dumps(raw), encoding="utf-8")
-            (scenario_dir / "geometry.wkt").write_text(self.WALKABLE, encoding="utf-8")
-
-            scenario = load_scenario(str(scenario_dir))
-            result = run_scenario(scenario, seed=DEFAULT_SEED)
-            evac = result.evacuation_time
-            total_agents = result.total_agents
-            result.cleanup()
+        """Zone-based stair approximation should keep the run near 20 s."""
+        result = run_scenario(load_scenario(str(self.SCENARIO_ZIP)), seed=DEFAULT_SEED)
+        evac = result.evacuation_time
+        total_agents = result.total_agents
+        result.cleanup()
 
         vv_row.set(
             quantity="travel_time", unit="s", lower=RIMEA02_LOWER, upper=RIMEA02_UPPER,
@@ -294,85 +221,20 @@ class TestRiMEA02SpeedUpStairs:
 class TestRiMEA03SpeedDownStairs:
     """RiMEA Test 3: Maintaining the specified walking speed down stairs.
 
-    Geometry: 2m x 10m staircase (measured along slope).
+    Scenario: scenario_files/Rimea-03-downstairs.zip, the file the notebook loads
+    (2 m x 10.4 m corridor, a 0.5 m x 0.5 m start box and a 20 cm exit
+    strip; one speed-factor zone of 0.75 covers the whole corridor).
     Expected: Travel time consistent with defined stair speed.
     """
 
-    WALKABLE = "POLYGON ((0 0, 10.4 0, 10.4 2, 0 2, 0 0))"
-    EXIT = {
-        "jps-exits_0": {
-            "type": "polygon",
-            # Exit deliberately widened to 20 cm (was 5 cm) so the
-            # direct-steering arrival waypoint lands inside the polygon.
-            # See jupedsim-scenarios#15.
-            "coordinates": [
-                [10.20, 0.8],
-                [10.4, 0.8],
-                [10.4, 1.2],
-                [10.20, 1.2],
-                [10.20, 0.8],
-            ],
-        }
-    }
-    DIST = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0.0, 0.75], [0.5, 0.75], [0.5, 1.25], [0.0, 1.25], [0.0, 0.75]],
-            "parameters": {
-                "number": 1,
-                "radius": 0.15,
-                "v0": 1.0,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-            "journey_weights": [{"journey_id": "jps-journeys_0", "weight": 100}],
-        }
-    }
-    ZONES = {
-        "jps-zones_0": {
-            "coordinates": [[0, 0], [10.4, 0], [10.4, 2], [0, 2], [0, 0]],
-            "speed_factor": 0.75,
-        }
-    }
-    JOURNEYS_V2 = [
-        {
-            "id": "jps-journeys_0",
-            "name": "jps-journeys_0",
-            "color": "#888888",
-            "sequence": ["jps-exits_0"],
-        }
-    ]
+    SCENARIO_ZIP = _rimea_zip("Rimea-03-downstairs.zip")
 
     def test_travel_time(self, vv_row):
-        """Zone-based stair approximation should keep downstairs travel near 13 s."""
-        raw = {
-            "config": {
-                "simulation_settings": {
-                    "baseSeed": DEFAULT_SEED,
-                    "simulationParams": {
-                        "model_type": "CollisionFreeSpeedModel",
-                        "max_simulation_time": 60,
-                    },
-                }
-            },
-            "distributions": self.DIST,
-            "exits": self.EXIT,
-            "zones": self.ZONES,
-            "journeys_v2": self.JOURNEYS_V2,
-        }
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            scenario_dir = pathlib.Path(tmpdir)
-            (scenario_dir / "config.json").write_text(json.dumps(raw), encoding="utf-8")
-            (scenario_dir / "geometry.wkt").write_text(self.WALKABLE, encoding="utf-8")
-
-            scenario = load_scenario(str(scenario_dir))
-            result = run_scenario(scenario, seed=DEFAULT_SEED)
-            evac = result.evacuation_time
-            total_agents = result.total_agents
-            result.cleanup()
+        """Zone-based stair approximation should keep the run near 13.3 s."""
+        result = run_scenario(load_scenario(str(self.SCENARIO_ZIP)), seed=DEFAULT_SEED)
+        evac = result.evacuation_time
+        total_agents = result.total_agents
+        result.cleanup()
 
         vv_row.set(
             quantity="travel_time", unit="s", lower=RIMEA03_LOWER, upper=RIMEA03_UPPER,
@@ -535,75 +397,21 @@ class TestRiMEA04FundamentalDiagram:
 class TestRiMEA05PremovementTime:
     """RiMEA Test 5: Premovement time.
 
-    Geometry: 8m x 5m room, 1m exit.
-    Agents: 10 persons, premovement U[10, 100] seconds.
+    Scenario: scenario_files/Rimea-05-premovement.zip, the file the notebook
+    loads (8 m x 5 m room, 1 m exit in the middle of a 5 m wall).
+    Agents: 10 persons, premovement U[10, 100] seconds (premovement_seed in
+    the zip, so the per-agent delays can be recomputed here).
     Expected: Each person starts moving at their assigned premovement time.
     """
 
-    WALKABLE = "POLYGON ((0 0, 8 0, 8 5, 0 5, 0 0))"
-    EXIT = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[0, 2], [1, 2], [1, 3], [0, 3], [0, 2]],
-        }
-    }
-    DIST = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[5.5, 1.0], [7.5, 1.0], [7.5, 4.0], [5.5, 4.0], [5.5, 1.0]],
-            "parameters": {
-                "number": 10,
-                "radius": 0.15,
-                "v0": 1.2,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-                "use_premovement": True,
-                "premovement_distribution": "uniform",
-                "premovement_param_a": 10.0,
-                "premovement_param_b": 100.0,
-                "premovement_seed": RIMEA05_PREMOVEMENT_SEED,
-            },
-            "journey_weights": [{"journey_id": "jps-journeys_0", "weight": 100}],
-        }
-    }
-    JOURNEYS_V2 = [
-        {
-            "id": "jps-journeys_0",
-            "name": "jps-journeys_0",
-            "color": "#888888",
-            "sequence": ["jps-exits_0"],
-        }
-    ]
+    SCENARIO_ZIP = _rimea_zip("Rimea-05-premovement.zip")
 
     def test_premovement_respected(self, vv_row):
         """Agents should remain still until their sampled premovement delay expires."""
-        raw = {
-            "config": {
-                "simulation_settings": {
-                    "baseSeed": DEFAULT_SEED,
-                    "simulationParams": {
-                        "model_type": "CollisionFreeSpeedModel",
-                        "max_simulation_time": 180,
-                    },
-                }
-            },
-            "distributions": self.DIST,
-            "exits": self.EXIT,
-            "journeys_v2": self.JOURNEYS_V2,
-        }
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            scenario_dir = pathlib.Path(tmpdir)
-            (scenario_dir / "config.json").write_text(json.dumps(raw), encoding="utf-8")
-            (scenario_dir / "geometry.wkt").write_text(self.WALKABLE, encoding="utf-8")
-
-            scenario = load_scenario(str(scenario_dir))
-            result = run_scenario(scenario, seed=DEFAULT_SEED)
-            frame_rate = result.frame_rate
-            df = result.trajectory_dataframe().sort_values(["id", "frame"]).copy()
-            result.cleanup()
+        result = run_scenario(load_scenario(str(self.SCENARIO_ZIP)), seed=DEFAULT_SEED)
+        frame_rate = result.frame_rate
+        df = result.trajectory_dataframe().sort_values(["id", "frame"]).copy()
+        result.cleanup()
 
         expected_times = np.random.default_rng(RIMEA05_PREMOVEMENT_SEED).uniform(10.0, 100.0, 10)
         agent_ids = sorted(df["id"].unique())
@@ -651,71 +459,43 @@ class TestRiMEA05PremovementTime:
 class TestRiMEA06Corner:
     """RiMEA Test 6: Movement around a corner.
 
-    Geometry: L-shaped corridor (10m x 6m area + 2m wide turn + 10m x 2m exit arm).
+    Scenario: scenario_files/Rimea-06-corner.zip, the file the notebook loads
+    (L-shaped corridor 2 m wide: 10 m along x, then an arm up to y = 10 m).
     Agents: 20 persons.
     Expected: All navigate the corner without passing through walls.
     """
 
-    # L-shape from RiMEA Fig. 6: 10m horizontal, 2m wide, then 10m vertical, 2m wide
-    WALKABLE = "POLYGON ((0 0, 10 0, 10 -2, 12 -2, 12 10, 10 10, 10 2, 0 2, 0 0))"
-    EXIT = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[10, 8], [12, 8], [12, 10], [10, 10], [10, 8]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        }
-    }
-    DIST = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0, 0], [6, 0], [6, 2], [0, 2], [0, 0]],
-            "parameters": {
-                "number": 20,
-                "radius": 0.15,
-                "v0": 1.2,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-        }
-    }
+    SCENARIO_ZIP = _rimea_zip("Rimea-06-corner.zip")
 
     def test_all_evacuate(self, vv_row):
         """All 20 agents navigate corner and evacuate."""
-        metrics, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE,
-            exits=self.EXIT,
-            distributions=self.DIST,
-            max_simulation_time=120.0,
-        )
+        result = run_scenario(load_scenario(str(self.SCENARIO_ZIP)), seed=DEFAULT_SEED)
+        remaining = result.agents_remaining
+        total_agents = result.total_agents
+        result.cleanup()
         vv_row.set(
             quantity="agents_remaining", unit="count", lower=0, upper=0,
-            measured=metrics["agents_remaining"], n=metrics["total_agents"],
+            measured=remaining, n=total_agents,
             seed=DEFAULT_SEED, model="CollisionFreeSpeedModel",
             rule="bound: 0 <= measured <= 0",
         )
-        assert metrics["agents_remaining"] == 0, (
-            f"{metrics['agents_remaining']} agents stuck at corner"
-        )
+        assert remaining == 0, f"{remaining} agents stuck at corner"
 
     def test_agents_stay_in_geometry(self, vv_row):
         """No agent passes through walls."""
-        metrics, trajectory = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE,
-            exits=self.EXIT,
-            distributions=self.DIST,
-            max_simulation_time=120.0,
-        )
+        scenario = load_scenario(str(self.SCENARIO_ZIP))
+        result = run_scenario(scenario, seed=DEFAULT_SEED)
+        trajectory = _trajectory(result)
+        total_agents = result.total_agents
+        result.cleanup()
         violations = agents_outside_polygon(
             trajectory,
-            self.WALKABLE,
-            radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
+            scenario.walkable_area_wkt,
+            radius=_agent_radius(scenario),
         )
         vv_row.set(
             quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
-            measured=len(violations), n=metrics["total_agents"], seed=DEFAULT_SEED,
+            measured=len(violations), n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
             rule="bound: 0 <= measured <= 0 (samples outside the walkable area)",
         )
@@ -933,136 +713,44 @@ class TestRiMEA08ParameterStudy:
 class TestRiMEA09LargePublicSpace:
     """RiMEA Test 9: Crowd leaving a large public space.
 
-    Geometry: 20m x 20m room.
-    Step 1: 200 agents, 4 exits (1m each) with routed journeys → record time.
-    Step 2: 2 exits only → evacuation time should increase.
-    Uses per-exit distribution groups to ensure agents use all exits.
+    Scenarios: scenario_files/Rimea-09-large-public.zip (30 m x 20 m room,
+    four 1 m doors, 1000 agents with Gaussian speeds) and
+    Rimea-09-large-public-locked.zip, the same room with the two doors on
+    one long wall locked. Locking is expressed by routing: the locked
+    variant keeps all four door polygons but its journeys lead only to the
+    two doors on the y = 0 wall, so nobody uses the doors on the y = 20 wall.
+    Step 1: all doors open -> record time. Step 2: two doors locked ->
+    evacuation time should increase.
     """
 
-    WALKABLE = "POLYGON ((0 0, 20 0, 20 20, 0 20, 0 0))"
-
-    EXITS_4 = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[0, 9], [0, 11], [1, 11], [1, 9], [0, 9]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        },
-        "jps-exits_1": {
-            "type": "polygon",
-            "coordinates": [[19, 9], [19, 11], [20, 11], [20, 9], [19, 9]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        },
-        "jps-exits_2": {
-            "type": "polygon",
-            "coordinates": [[9, 0], [11, 0], [11, 1], [9, 1], [9, 0]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        },
-        "jps-exits_3": {
-            "type": "polygon",
-            "coordinates": [[9, 19], [11, 19], [11, 20], [9, 20], [9, 19]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        },
-    }
-
-    EXITS_2 = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[9, 0], [11, 0], [11, 1], [9, 1], [9, 0]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        },
-        "jps-exits_1": {
-            "type": "polygon",
-            "coordinates": [[9, 19], [11, 19], [11, 20], [9, 20], [9, 19]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        },
-    }
+    OPEN_ZIP = _rimea_zip("Rimea-09-large-public.zip")
+    LOCKED_ZIP = _rimea_zip("Rimea-09-large-public-locked.zip")
 
     @staticmethod
-    def _make_dist_and_journeys(exits):
-        """Create per-exit distributions so agents split across exits.
-
-        Returns (distributions, journeys_v2). Each distribution carries
-        a `journey_weights` entry pinning it to its dedicated journey.
-        """
-        exit_keys = list(exits.keys())
-        n_per = 200 // len(exit_keys)
-        distributions = {}
-        journeys_v2 = []
-        # Quadrants for spawn areas
-        quads = [(2, 2, 9, 9), (11, 2, 18, 9), (2, 11, 9, 18), (11, 11, 18, 18)]
-        for i, ek in enumerate(exit_keys):
-            dk = f"jps-distributions_{i}"
-            jid = f"journey_{i}"
-            q = quads[i % len(quads)]
-            distributions[dk] = {
-                "type": "polygon",
-                "coordinates": [
-                    [q[0], q[1]],
-                    [q[2], q[1]],
-                    [q[2], q[3]],
-                    [q[0], q[3]],
-                    [q[0], q[1]],
-                ],
-                "parameters": {
-                    "number": n_per,
-                    "radius": 0.15,
-                    "v0": 1.2,
-                    "use_flow_spawning": False,
-                    "distribution_mode": "by_number",
-                    "radius_distribution": "constant",
-                    "v0_distribution": "constant",
-                },
-                "journey_weights": [{"journey_id": jid, "weight": 100}],
-            }
-            journeys_v2.append(
-                {
-                    "id": jid,
-                    "name": jid,
-                    "color": "#888888",
-                    "sequence": [ek],
-                }
-            )
-        return distributions, journeys_v2
+    def _run(zip_path):
+        result = run_scenario(load_scenario(str(zip_path)), seed=DEFAULT_SEED)
+        outcome = (result.evacuation_time, result.agents_remaining, result.total_agents)
+        result.cleanup()
+        return outcome
 
     def test_closing_exits_increases_time(self, vv_row):
         """Closing 2 of 4 exits should increase evacuation time."""
-        dist_4, j_4 = self._make_dist_and_journeys(self.EXITS_4)
-        metrics_4, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE,
-            exits=self.EXITS_4,
-            distributions=dist_4,
-            journeys_v2=j_4,
-            max_simulation_time=600.0,
-        )
-        dist_2, j_2 = self._make_dist_and_journeys(self.EXITS_2)
-        metrics_2, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE,
-            exits=self.EXITS_2,
-            distributions=dist_2,
-            journeys_v2=j_2,
-            max_simulation_time=600.0,
-        )
+        time_4, remaining_4, total = self._run(self.OPEN_ZIP)
+        time_2, remaining_2, _ = self._run(self.LOCKED_ZIP)
         vv_row.set(
             quantity="evacuation_time_4_exits_vs_2_exits", unit="s",
-            measured=[metrics_4["evacuation_time"], metrics_2["evacuation_time"]],
-            n=metrics_4["total_agents"], seed=DEFAULT_SEED,
+            measured=[time_4, time_2],
+            n=total, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: agents_remaining = 0 in both runs; comparison: "
                 "evacuation_time(2 exits) > evacuation_time(4 exits)"
             ),
         )
-        assert metrics_4["agents_remaining"] == 0, "4-exit: not all evacuated"
-        assert metrics_2["agents_remaining"] == 0, "2-exit: not all evacuated"
-        assert metrics_2["evacuation_time"] > metrics_4["evacuation_time"], (
-            f"2-exit ({metrics_2['evacuation_time']:.1f}s) should be slower "
-            f"than 4-exit ({metrics_4['evacuation_time']:.1f}s)"
+        assert remaining_4 == 0, "4-exit: not all evacuated"
+        assert remaining_2 == 0, "2-exit: not all evacuated"
+        assert time_2 > time_4, (
+            f"2-exit ({time_2:.1f}s) should be slower than 4-exit ({time_4:.1f}s)"
         )
 
 
@@ -1518,11 +1206,16 @@ class TestRiMEA12cCongestionInfluence:
 class TestRiMEA12dBottleneckWidthFlow:
     """RiMEA Test 12d: Influence of bottleneck width on flow.
 
-    Two rooms connected by long bottleneck, width varied: 0.8m, 1.0m, 1.2m.
+    Scenario: scenario_files/Rimea-12d-bottleneck.zip (two rooms connected by
+    a 5 m long bottleneck, 1.0 m wide). Only the bottleneck width is changed
+    (0.8 m, 1.0 m, 1.2 m), by rewriting the geometry in memory.
     Expected: Flow increases with bottleneck width.
     """
 
-    def _make_geometry(self, width):
+    SCENARIO_ZIP = _rimea_zip("Rimea-12d-bottleneck.zip")
+
+    @staticmethod
+    def _make_geometry(width):
         """Two rooms connected by a 5m-long bottleneck of given width."""
         hw = width / 2
         cy = 5.0  # center y
@@ -1532,40 +1225,16 @@ class TestRiMEA12dBottleneckWidthFlow:
             f"10 {cy + hw}, 10 10, 0 10, 0 0))"
         )
 
-    EXIT = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[23, 0], [25, 0], [25, 10], [23, 10], [23, 0]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        }
-    }
-    DIST = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0, 0], [5, 0], [5, 10], [0, 10], [0, 0]],
-            "parameters": {
-                "number": 50,
-                "radius": 0.15,
-                "v0": 1.2,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-        }
-    }
-
     def test_flow_increases_with_width(self, vv_row):
         """Wider bottlenecks should produce higher mean flow."""
+        base = load_scenario(str(self.SCENARIO_ZIP))
         flows = {}
         for w in [0.8, 1.0, 1.2]:
-            metrics, _ = run_vv_scenario(
-                walkable_area_wkt=self._make_geometry(w),
-                exits=self.EXIT,
-                distributions=self.DIST,
-                max_simulation_time=600.0,
-            )
+            variant = base.copy()
+            variant.walkable_area_wkt = self._make_geometry(w)
+            result = run_scenario(variant, seed=DEFAULT_SEED)
+            metrics = dict(result.metrics)
+            result.cleanup()
             assert metrics["agents_remaining"] == 0, f"w={w}: not all evacuated"
             flows[w] = measure_flow_rate(metrics)
         vv_row.set(
@@ -1818,98 +1487,42 @@ class TestRiMEA14RouteChoice:
 class TestRiMEA15LargeCrowdCorner:
     """RiMEA Test 15: Movement of a large crowd around a corner.
 
-    Three geometries: straight, corner, and long detour (same path length).
-    500 agents. Corner time should be between straight and detour times.
+    Scenarios: scenario_files/Rimea-15-large-crowd-corner-1.zip (long straight
+    geometry), -2.zip (corner) and -3.zip (short straight geometry), the files
+    the notebook loads: 20 m wide, 500 agents each. The shortest straight
+    geometry is the reference for the suite's rule: the corner takes longer.
     """
 
-    # Straight corridor: 6m wide, 55m long
-    WALKABLE_STRAIGHT = "POLYGON ((0 0, 6 0, 6 -55, 0 -55, 0 0))"
-    EXIT_STRAIGHT = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[0, -55], [6, -55], [6, -53], [0, -53], [0, -55]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        }
-    }
+    STRAIGHT_ZIP = _rimea_zip("Rimea-15-large-crowd-corner-3.zip")
+    CORNER_ZIP = _rimea_zip("Rimea-15-large-crowd-corner-2.zip")
+    LONG_STRAIGHT_ZIP = _rimea_zip("Rimea-15-large-crowd-corner-1.zip")
 
-    # L-shaped: horizontal 21x6 + vertical 6x35, overlapping 1m
-    # Total path ~55m (20m horizontal + 35m vertical)
-    WALKABLE_CORNER = (
-        "POLYGON ((26 1, 26 -34, 20 -34, 20 0, 0 0, 0 6, 21 6, 21 1, 26 1))"
-    )
-    EXIT_CORNER = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[20, -34], [26, -34], [26, -32], [20, -32], [20, -34]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        }
-    }
-
-    DIST_STRAIGHT = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0, 0], [6, 0], [6, -6], [0, -6], [0, 0]],
-            "parameters": {
-                "number": 100,
-                "radius": 0.15,
-                "v0": 1.2,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-        }
-    }
-
-    DIST_CORNER = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[1, 1], [6, 1], [6, 5], [1, 5], [1, 1]],
-            "parameters": {
-                "number": 100,
-                "radius": 0.15,
-                "v0": 1.2,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-        }
-    }
+    @staticmethod
+    def _run(zip_path):
+        result = run_scenario(load_scenario(str(zip_path)), seed=DEFAULT_SEED)
+        outcome = (result.evacuation_time, result.agents_remaining, result.total_agents)
+        result.cleanup()
+        return outcome
 
     def test_corner_slower_than_straight(self, vv_row):
         """Corner should slow down evacuation compared to straight path."""
-        metrics_straight, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE_STRAIGHT,
-            exits=self.EXIT_STRAIGHT,
-            distributions=self.DIST_STRAIGHT,
-            max_simulation_time=300.0,
-        )
-        metrics_corner, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE_CORNER,
-            exits=self.EXIT_CORNER,
-            distributions=self.DIST_CORNER,
-            max_simulation_time=300.0,
-        )
+        time_straight, remaining_straight, total = self._run(self.STRAIGHT_ZIP)
+        time_corner, remaining_corner, _ = self._run(self.CORNER_ZIP)
         vv_row.set(
             quantity="evacuation_time_straight_vs_corner", unit="s",
-            measured=[metrics_straight["evacuation_time"], metrics_corner["evacuation_time"]],
-            n=metrics_straight["total_agents"], seed=DEFAULT_SEED,
+            measured=[time_straight, time_corner],
+            n=total, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: agents_remaining = 0 in both runs; comparison: "
                 "evacuation_time(corner) > evacuation_time(straight)"
             ),
         )
-        assert metrics_straight["agents_remaining"] == 0
-        assert metrics_corner["agents_remaining"] == 0
-        assert (
-            metrics_corner["evacuation_time"] > metrics_straight["evacuation_time"]
-        ), (
-            f"Corner ({metrics_corner['evacuation_time']:.1f}s) should be slower "
-            f"than straight ({metrics_straight['evacuation_time']:.1f}s)"
+        assert remaining_straight == 0
+        assert remaining_corner == 0
+        assert time_corner > time_straight, (
+            f"Corner ({time_corner:.1f}s) should be slower "
+            f"than straight ({time_straight:.1f}s)"
         )
 
 
