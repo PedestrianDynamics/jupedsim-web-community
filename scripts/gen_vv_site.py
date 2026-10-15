@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the static public V&V site.
+"""Write the Hugo content of the public V&V site.
 
 Inputs:
   --manifest     standards/coverage.json (one row per standard test)
@@ -7,11 +7,18 @@ Inputs:
   --results      vv-results.json from a full pytest run (optional)
   --notebooks    directory holding the executed-notebook manifest.json (optional)
 
-Output (under --outdir):
-  index.html                          summary per standard
-  standards/<std>/index.html          grouped test table
-  standards/<std>/<slug>/index.html   one self-contained page per test
-  assets/                             style.css and the JuPedSim logo
+Output (--hugo-content, for example site/content; the Hugo project in site/
+holds the theme, layouts and styles):
+  content/_index.md                          summary, cards, references
+  content/diagnostics.md                     join diagnostics
+  content/standards/<std>/_index.md          grouped test table
+  content/standards/<std>/<slug>/index.md    one page bundle per test
+  data/run.json                              versions and run provenance
+  static/notebooks/<std>/<slug>/             executed notebook HTML
+All of these are generated and git-ignored; the generator replaces
+content/standards and static/notebooks on every run.
+
+Build the site with: cd site && hugo --minify --panicOnWarning
 
 Slugs: the definitions.json slug when present. Otherwise
 "<standard-id>-<id>" where <id> is the coverage id lower-cased, stripped of
@@ -34,9 +41,9 @@ import re
 import shutil
 import sys
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 
-import jinja2
 import matplotlib
 
 matplotlib.use("Agg")
@@ -44,7 +51,6 @@ import matplotlib.pyplot as plt
 from shapely import wkt
 
 REPO = "https://github.com/PedestrianDynamics/jupedsim-web-community"
-LOGO = Path(__file__).resolve().parent / "assets" / "jupedsim_logo.svg"
 BANNER = "Verification only; no validation comparisons have been run (#165)."
 STATUS_ORDER = ["PASS", "FAIL", "TEST-LOCAL", "PENDING", "NOT RUN"]
 FAIL_ROWS = {"fail", "error", "xfail"}
@@ -194,8 +200,10 @@ def derive_status(row, res_rows):
     return "NOT RUN", ["Not run in this build."]
 
 
-def blocking_documented(row) -> bool:
-    return "blocking" in (row.get("note") or "").lower()
+def blocking_documented(row, definition=None) -> bool:
+    """True when the row note or a deviation of its definition documents blocking."""
+    texts = [row.get("note") or ""] + list((definition or {}).get("deviations", []))
+    return any("blocking" in t.lower() for t in texts)
 
 
 def notebook_for(row, std_id, nb_manifest):
@@ -326,6 +334,22 @@ def pick_versions(results, nb_manifest) -> dict:
     return out
 
 
+def format_time(ts) -> dict | None:
+    """Return {"iso": ms-precision ISO string, "text": "YYYY-MM-DD HH:MM UTC"}."""
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(ts))
+    except ValueError:
+        return {"iso": str(ts), "text": str(ts)}
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(UTC)
+    return {
+        "iso": dt.isoformat(timespec="milliseconds"),
+        "text": dt.strftime("%Y-%m-%d %H:%M UTC"),
+    }
+
+
 def pick_run(results, nb_manifest) -> dict:
     nb_prov = (nb_manifest or {}).get("provenance") or {}
     run = {}
@@ -333,6 +357,7 @@ def pick_run(results, nb_manifest) -> dict:
         val = next((r[key] for r in results or [] if r.get(key)), None)
         run[key] = val or nb_prov.get(key)
     run["local"] = not any(run.values())
+    run["time"] = format_time(run["timestamp"])
     return run
 
 
@@ -378,18 +403,14 @@ def copy_figures(nb_dir, rel_paths, dest_dir: Path, rel_prefix: str) -> list[str
 # ----------------------------------------------------------------- build
 
 
-def build_pages(
-    manifest, definitions, results, nb_manifest, nb_dir, outdir: Path, repo_root: Path
-):
+def collect_standards(manifest, definitions, results, nb_manifest):
+    """Join the inputs into one entry per coverage row, grouped by standard."""
     def_by_key = {}
     for d in definitions.get("tests", []):
         c = d.get("coverage", {})
         def_by_key.setdefault((d["standard"], c.get("id")), []).append(d)
     slugs = derive_slugs(manifest, def_by_key)
     assigned = assign_results(manifest, results)
-    versions = pick_versions(results, nb_manifest)
-    run = pick_run(results, nb_manifest)
-    commit = run["commit_sha"] or "main"
     matched_ids, no_results, standards = set(), [], []
 
     for std in manifest["standards"]:
@@ -416,7 +437,7 @@ def build_pages(
                     "group": definition.get("group"),
                     "status": status,
                     "notes": notes,
-                    "blocking": blocking_documented(row),
+                    "blocking": blocking_documented(row, definition),
                     "res_rows": res_rows,
                     "notebook": notebook_for(row, std["id"], nb_manifest),
                 }
@@ -429,31 +450,21 @@ def build_pages(
                 "group_titles": group_titles,
             }
         )
-
     orphans = sorted(
         r["test_id"] for r in results or [] if r["test_id"] not in matched_ids
     )
-    env = make_env()
-    ctx = {"versions": versions, "run": run, "banner": BANNER, "repo_root": repo_root}
-    write_assets(outdir)
-    for s in standards:
-        write_standard_pages(env, ctx, s, outdir, commit, nb_dir, results is not None)
-    summary = summarize(standards)
-    write(
-        outdir / "index.html",
-        env.get_template("index.html").render(
-            **ctx,
-            root="",
-            title="Verification and validation",
-            summary=summary,
-            has_results=results is not None,
-            has_notebooks=nb_manifest is not None,
-            orphans=orphans,
-            no_results=no_results,
-            order=STATUS_ORDER,
-        ),
-    )
     return standards, orphans, no_results
+
+
+def reference_of(s) -> dict:
+    d = s["std_def"]
+    doi = d.get("doi")
+    link = f"https://doi.org/{doi}" if doi else d.get("url")
+    return {
+        "citation": d.get("citation") or s["std"]["full_name"],
+        "link": link,
+        "link_text": doi or link,
+    }
 
 
 def summarize(standards) -> list[dict]:
@@ -483,95 +494,41 @@ def group_entries(s) -> list[dict]:
     return [g for g in groups + [other] if g["entries"]]
 
 
-def write_standard_pages(env, ctx, s, outdir, commit, nb_dir, has_results):
-    std = s["std"]
-    sdir = outdir / "standards" / std["id"]
-    write(
-        sdir / "index.html",
-        env.get_template("standard.html").render(
-            **ctx,
-            root="../../",
-            title=std["name"],
-            std=std,
-            std_def=s["std_def"],
-            groups=group_entries(s),
-        ),
-    )
-    for e in s["entries"]:
-        write_test_page(env, ctx, s, e, sdir / e["slug"], commit, nb_dir, has_results)
+# ----------------------------------------------------------------- markdown
 
 
-def write_test_page(env, ctx, s, e, pdir: Path, commit, nb_dir, has_results):
-    pdir.mkdir(parents=True, exist_ok=True)
-    definition, row, std = e["definition"], e["row"], s["std"]
-    repo_root = ctx["repo_root"]
-    nb = e["notebook"]
-    nb_info = None
-    scenario_imgs, result_imgs, other_imgs = [], [], []
-    if nb:
-        figs = nb.get("figures", {})
-        scenario_imgs = copy_figures(
-            nb_dir, figs.get("scenario"), pdir / "figures", "figures/"
-        )
-        result_imgs = copy_figures(
-            nb_dir, figs.get("result"), pdir / "figures", "figures/"
-        )
-        other_imgs = copy_figures(
-            nb_dir, figs.get("other"), pdir / "figures", "figures/"
-        )
-        html_src = Path(nb_dir) / nb["html"] if nb.get("html") else None
-        has_html = bool(html_src and html_src.is_file())
-        if has_html:
-            shutil.copy2(html_src, pdir / "notebook.html")
-        nb_info = {
-            "status": nb["status"],
-            "error": nb.get("error_summary"),
-            "has_html": has_html,
-            "source_url": f"{REPO}/blob/{commit}/{row.get('notebook') or nb['path']}",
-        }
-    zip_paths = [repo_root / p for p in definition.get("scenario_files", [])]
-    scenario_note = None
-    if not scenario_imgs and render_scenarios(zip_paths, pdir / "scenario.png"):
-        scenario_imgs = ["scenario.png"]
-        scenario_note = (
-            "Rendered from the scenario files of this repository (top view)."
-        )
-    test_src = None
-    for r in e["res_rows"]:
-        if r.get("test_source"):
-            test_src = r["test_source"]
-            break
-    test_url = f"{REPO}/blob/{commit}/{test_src.split('::')[0]}" if test_src else None
-    res_views = [result_view(r) for r in e["res_rows"]]
-    has_measured = any(v["measured"] for v in res_views)
-    write(
-        pdir / "index.html",
-        env.get_template("test.html").render(
-            **ctx,
-            root="../../../",
-            title=f"{row['id']}: {e['title']}",
-            std=std,
-            std_def=s["std_def"],
-            e=e,
-            row=row,
-            definition=definition,
-            scenario_imgs=scenario_imgs,
-            scenario_note=scenario_note,
-            result_imgs=result_imgs,
-            other_imgs=other_imgs,
-            res_views=res_views,
-            has_measured=has_measured,
-            has_results=has_results,
-            test_url=test_url,
-            test_src=test_src,
-            scenario_links=[
-                {"name": Path(p).name, "url": f"{REPO}/blob/{commit}/{p}"}
-                for p in definition.get("scenario_files", [])
-            ],
-            nb=nb_info,
-            model=next((r["model"] for r in e["res_rows"] if r.get("model")), None),
-        ),
-    )
+def md(text) -> str:
+    """Escape free text so Markdown shows it literally (single line)."""
+    s = " ".join(str(text if text is not None else "").split())
+    s = re.sub(r"([\\`*_\[\]<>|#])", r"\\\1", s)
+    return s.replace("{", "&#123;").replace("}", "&#125;")
+
+
+def md_link(text, url) -> str:
+    return f"[{md(text)}]({url})"
+
+
+def front_matter(**fields) -> str:
+    """YAML front matter; JSON scalars and objects are valid YAML."""
+    lines = [f"{k}: {json.dumps(v, ensure_ascii=False)}" for k, v in fields.items()]
+    return "---\n" + "\n".join(lines) + "\n---\n\n"
+
+
+def shortcode_arg(value) -> str:
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def status_chip(status: str) -> str:
+    return f"{{{{< status {shortcode_arg(status)} >}}}}"
+
+
+def reference_line(std, std_def) -> str:
+    text = f"Reference: {md(std_def.get('citation') or std['full_name'])}"
+    if std_def.get("url"):
+        text += " " + md_link(std_def.get("doi") or std_def["url"], std_def["url"])
+    if std_def.get("page_note"):
+        text += f" ({md(std_def['page_note'])})"
+    return text
 
 
 def write(path: Path, text: str):
@@ -579,289 +536,393 @@ def write(path: Path, text: str):
     path.write_text(text, encoding="utf-8")
 
 
-def write_assets(outdir: Path):
-    adir = outdir / "assets"
-    adir.mkdir(parents=True, exist_ok=True)
-    (adir / "style.css").write_text(CSS, encoding="utf-8")
-    if LOGO.is_file():
-        shutil.copy2(LOGO, adir / "jupedsim_logo.svg")
+# ----------------------------------------------------------------- summary
 
 
-def make_env():
-    env = jinja2.Environment(
-        loader=jinja2.DictLoader(TEMPLATES),
-        autoescape=True,
-        trim_blocks=True,
-        lstrip_blocks=True,
+def card_markup(item) -> str:
+    std, counts = item["std"], item["counts"]
+    args = [
+        f"name={shortcode_arg(std['name'])}",
+        f"full={shortcode_arg(std['full_name'])}",
+        f"url={shortcode_arg('standards/' + std['id'] + '/')}",
+        f"total={shortcode_arg(item['total'])}",
+        f"blocking={shortcode_arg(item['blocking'])}",
+    ]
+    for st in STATUS_ORDER:
+        key = st.lower().replace("-", "_").replace(" ", "_")
+        args.append(f"{key}={shortcode_arg(counts[st])}")
+    return "{{< vv-card " + " ".join(args) + " >}}"
+
+
+def summary_page(model) -> str:
+    lines = [
+        front_matter(title="JuPedSim verification"),
+        INTRO,
+        "",
+    ]
+    if not model["has_results"]:
+        lines += ["Test results are not available in this run.", ""]
+    if not model["has_notebooks"]:
+        lines += ["Executed notebooks are not available in this run.", ""]
+    cards = "\n".join(card_markup(i) for i in summarize(model["standards"]))
+    lines += ["{{< vv-cards >}}", cards, "{{< /vv-cards >}}", ""]
+    lines += ["{{< vv-legend >}}", "", "## References {#references}", ""]
+    for s in model["standards"]:
+        r = reference_of(s)
+        item = f"- {md(r['citation'])}"
+        if r["link"]:
+            item += " " + md_link(r["link_text"], r["link"])
+        lines.append(item)
+    return "\n".join(lines) + "\n"
+
+
+def diagnostics_page(model) -> str:
+    lines = [front_matter(title="Join diagnostics")]
+    if not model["has_results"]:
+        lines.append("Test results are not available in this run.")
+        return "\n".join(lines) + "\n"
+    orphans, no_results = model["orphans"], model["no_results"]
+    lines += [
+        (
+            f"Result rows mapped to no coverage row: {len(orphans)}. "
+            f"Covered rows with no result rows: {len(no_results)}."
+        ),
+        "",
+    ]
+    for title, items in (
+        ("Result rows mapped to no coverage row", orphans),
+        ("Covered rows with no result rows", no_results),
+    ):
+        if items:
+            lines += [f"## {title}", ""] + [f"- `{t}`" for t in items] + [""]
+    return "\n".join(lines) + "\n"
+
+
+# ----------------------------------------------------------------- standards
+
+
+def standard_page(s, weight: int) -> str:
+    std, std_def = s["std"], s["std_def"]
+    title = std_def.get("title") or std["full_name"]
+    if std_def.get("edition"):
+        title += f" ({std_def['edition']})"
+    lines = [
+        front_matter(
+            title=std["name"],
+            weight=weight,
+            cascade={"type": "docs"},
+        ),
+        md(title),
+        "",
+    ]
+    if std_def.get("citation"):
+        lines += [reference_line(std, std_def), ""]
+    lines += [f"> {md(BANNER)}", ""]
+    for g in group_entries(s):
+        lines += [
+            f"## {md(g['title'])}",
+            "",
+            "| Test | Title | Status | Page |",
+            "|---|---|---|---|",
+        ]
+        for e in g["entries"]:
+            status = status_chip(e["status"])
+            if e["blocking"]:
+                status += " blocking documented"
+            page = md_link("Open test page", f"{e['slug']}/")
+            lines.append(
+                f"| {md(e['row']['id'])} | {md(e['title'])} | {status} | {page} |"
+            )
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def figure(path: str, alt: str, caption: str) -> list[str]:
+    return [f"![{md(alt)}]({path})", "", f"*{md(caption)}*", ""]
+
+
+def copy_notebook(std_id, e, nb_dir, static_dir: Path, commit):
+    """Copy the executed HTML under static/ and return the page's notebook info."""
+    nb, row = e["notebook"], e["row"]
+    if not nb:
+        return None
+    html_src = Path(nb_dir) / nb["html"] if nb.get("html") else None
+    html_path = None
+    if html_src and html_src.is_file():
+        html_path = f"notebooks/{std_id}/{e['slug']}/notebook.html"
+        dest = static_dir / html_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(html_src, dest)
+    return {
+        "status": nb["status"],
+        "error": nb.get("error_summary"),
+        "html_path": html_path,
+        "source_url": f"{REPO}/blob/{commit}/{row.get('notebook') or nb['path']}",
+    }
+
+
+def bundle_figures(nb, nb_dir, pdir: Path):
+    if not nb:
+        return [], [], []
+    figs = nb.get("figures", {})
+    return tuple(
+        copy_figures(nb_dir, figs.get(kind), pdir / "figures", "figures/")
+        for kind in ("scenario", "result", "other")
     )
-    env.filters["badge_class"] = lambda s: slugify(s)
-    return env
 
 
-# ----------------------------------------------------------------- assets
+def first_test_source(e):
+    return next((r["test_source"] for r in e["res_rows"] if r.get("test_source")), None)
 
-CSS = """\
-:root {
-  --bg: #ffffff; --fg: #1b1f24; --muted: #4b5563; --line: #d0d7de;
-  --panel: #f6f8fa; --link: #0b5cad;
-  --pass-bg: #dff3e6; --pass-fg: #0b4d26;
-  --fail-bg: #fbe3e3; --fail-fg: #8a1010;
-  --local-bg: #e6e9fb; --local-fg: #25318f;
-  --pending-bg: #fdf1d3; --pending-fg: #6b4700;
-  --notrun-bg: #eceff2; --notrun-fg: #3b434c;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14181d; --fg: #e6e9ed; --muted: #aab3bd; --line: #343c45;
-    --panel: #1c2128; --link: #79b8ff;
-    --pass-bg: #123522; --pass-fg: #9be3b4;
-    --fail-bg: #471818; --fail-fg: #ffb3b3;
-    --local-bg: #1f2650; --local-fg: #b9c3ff;
-    --pending-bg: #3d3010; --pending-fg: #f3d58a;
-    --notrun-bg: #272d34; --notrun-fg: #c3cad2;
-  }
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg);
-  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
-a { color: var(--link); }
-header.site, footer.site { background: var(--panel); border-color: var(--line);
-  border-style: solid; border-width: 0 0 1px; padding: 12px 16px; }
-footer.site { border-width: 1px 0 0; margin-top: 48px; color: var(--muted); font-size: 0.875rem; }
-.bar { max-width: 62rem; margin: 0 auto; display: flex; flex-wrap: wrap;
-  gap: 8px 24px; align-items: center; justify-content: space-between; }
-.logo { height: 34px; width: auto; display: block; }
-.versions { color: var(--muted); font-size: 0.875rem; margin: 0; }
-main { max-width: 62rem; margin: 0 auto; padding: 8px 16px; }
-nav.crumbs { font-size: 0.9rem; margin: 16px 0 0; }
-h1 { font-size: 1.6rem; line-height: 1.25; margin: 0.6em 0 0.3em; }
-h2 { font-size: 1.2rem; margin: 1.8em 0 0.4em; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
-h3 { font-size: 1.05rem; margin: 1.4em 0 0.3em; }
-.banner { border: 1px solid var(--line); border-left: 4px solid var(--link);
-  background: var(--panel); padding: 8px 12px; margin: 16px 0; }
-.note { border-left: 3px solid var(--line); padding: 2px 12px; color: var(--muted); }
-.table-wrap { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
-caption { text-align: left; font-weight: 600; padding: 8px 0; }
-th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
-th { background: var(--panel); }
-td.num { font-variant-numeric: tabular-nums; }
-.badge { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.8rem;
-  font-weight: 700; letter-spacing: 0.03em; border: 2px solid currentColor; white-space: nowrap; }
-.badge-pass { background: var(--pass-bg); color: var(--pass-fg); }
-.badge-fail { background: var(--fail-bg); color: var(--fail-fg); border-style: dashed; }
-.badge-test-local { background: var(--local-bg); color: var(--local-fg); border-style: double; }
-.badge-pending { background: var(--pending-bg); color: var(--pending-fg); border-style: dotted; }
-.badge-not-run { background: var(--notrun-bg); color: var(--notrun-fg); border-style: dotted; }
-figure { margin: 12px 0; }
-figure img { max-width: 100%; height: auto; background: #fff; border: 1px solid var(--line); }
-figcaption { font-size: 0.875rem; color: var(--muted); }
-ul.plain { padding-left: 1.2rem; }
-.kv { color: var(--muted); font-size: 0.9rem; }
-code { font-size: 0.9em; background: var(--panel); padding: 0 4px; border-radius: 3px; }
-@media (max-width: 480px) { h1 { font-size: 1.35rem; } th, td { padding: 5px 6px; } }
-"""
 
-BASE = """\
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ title }} | JuPedSim V&amp;V</title>
-<link rel="stylesheet" href="{{ root }}assets/style.css">
-</head>
-<body>
-<header class="site"><div class="bar">
-<a href="{{ root }}index.html"><img class="logo" src="{{ root }}assets/jupedsim_logo.svg" alt="JuPedSim"></a>
-<p class="versions">Versions used:
-{% for name, v in versions.items() %}{{ name }} {{ v or "not available" }}{{ "; " if not loop.last }}{% endfor %}</p>
-</div></header>
-<main>
-{% block body %}{% endblock %}
-</main>
-<footer class="site"><div class="bar"><span>
-{% if run.local %}local build
-{% else %}Run: commit {{ (run.commit_sha or "unknown")[:12] }}, run ID {{ run.run_id or "unknown" }}, {{ run.timestamp or "time unknown" }}
-{% endif %}</span>
-<span>All numbers and figures on this site come from one run on the locked versions.</span></div></footer>
-</body>
-</html>
-"""
+def case_table(res_views) -> list[str]:
+    show_rule = any(v["rule"] for v in res_views)
+    cols = ["Case", "Status", "Quantity", "Measured", "Unit", "Lower", "Upper", "n"]
+    cols += ["Seed"] + (["Rule"] if show_rule else [])
+    lines = [
+        "**Test cases of this row**",
+        "",
+        "| " + " | ".join(cols) + " |",
+        "|" + "---|" * len(cols),
+    ]
+    for v in res_views:
+        status = status_chip(v["status"]) if v["status"] != "SKIP" else "SKIP"
+        cells = [
+            f"`{v['test']}`".replace("|", "\\|"),
+            status,
+            md(v["quantity"]),
+            md(v["measured"]),
+            md(v["unit"]),
+            md(v["lower"]),
+            md(v["upper"]),
+            md(v["n"]),
+            md(v["seed"]),
+        ]
+        if show_rule:
+            cells.append(md(v["rule"]))
+        lines.append("| " + " | ".join(cells) + " |")
+    return lines + [""]
 
-BADGE = """\
-{% macro badge(status) %}<span class="badge badge-{{ status|badge_class }}">{{ status }}</span>{% endmacro %}
-"""
 
-INDEX = (
-    """\
-{% extends "base.html" %}
-"""
-    + BADGE
-    + """\
-{% block body %}
-<h1>JuPedSim verification and validation</h1>
-<p class="banner">{{ banner }}</p>
-{% if not has_results %}<p class="note">Test results are not available in this run.</p>{% endif %}
-{% if not has_notebooks %}<p class="note">Executed notebooks are not available in this run.</p>{% endif %}
-<div class="table-wrap"><table>
-<caption>Tests per standard, by page status</caption>
-<thead><tr><th scope="col">Standard</th><th scope="col">Tests</th>
-{% for s in order %}<th scope="col">{{ s }}</th>{% endfor %}
-<th scope="col">Blocking documented</th></tr></thead>
-<tbody>
-{% for item in summary %}
-<tr><th scope="row"><a href="standards/{{ item.std.id }}/index.html">{{ item.std.name }}</a><br>
-<span class="kv">{{ item.std.full_name }}</span></th>
-<td class="num">{{ item.total }}</td>
-{% for s in order %}<td class="num">{{ item.counts[s] }}</td>{% endfor %}
-<td class="num">{{ item.blocking }}</td></tr>
-{% endfor %}
-</tbody></table></div>
-<p class="kv">PENDING: the standard defines the test and the suite does not cover it yet.
-TEST-LOCAL: the test asserts logic in the test file, not simulator output.
-NOT RUN: no result was available in this build.</p>
-<h2>Run</h2>
-<p>{% if run.local %}Local build; no CI run provenance.{% else %}Commit {{ run.commit_sha or "unknown" }}; run ID {{ run.run_id or "unknown" }}; timestamp {{ run.timestamp or "unknown" }}.{% endif %}
- Locked versions:
-{% for name, v in versions.items() %}{{ name }} {{ v or "not available" }}{{ "; " if not loop.last }}{% endfor %}.</p>
-{% if has_results and (orphans or no_results) %}
-<details><summary>Join diagnostics</summary>
-<p>Result rows mapped to no coverage row: {{ orphans|length }}. Covered rows with no result rows: {{ no_results|length }}.</p>
-</details>
-{% endif %}
-{% endblock %}
-"""
+def result_section(e, res_views, has_results, imgs, row) -> list[str]:
+    result_imgs, other_imgs = imgs
+    lines = [
+        "## 4. Our result {#result}",
+        "",
+        f"Status: {status_chip(e['status'])}",
+        "",
+    ]
+    for n in e["notes"]:
+        if n != row.get("note"):
+            lines += [f"> {md(n)}", ""]
+    has_measured = any(v["measured"] for v in res_views)
+    if not has_results:
+        lines += ["Test results are not available in this run.", ""]
+    elif e["status"] in ("PENDING", "TEST-LOCAL") and not res_views:
+        reason = (
+            "this test is not covered yet"
+            if e["status"] == "PENDING"
+            else "this test does not measure simulator output"
+        )
+        lines += [f"No measured values: {reason}.", ""]
+    elif not has_measured:
+        lines += ["Measured values not reported yet.", ""]
+    if res_views:
+        lines += case_table(res_views)
+    for img in result_imgs:
+        lines += figure(
+            img,
+            f"Result figure for {row['id']}",
+            "Result figure from the executed notebook.",
+        )
+    if not result_imgs:
+        for img in other_imgs:
+            lines += figure(img, f"Notebook figure for {row['id']}", "Notebook figure.")
+    return lines
+
+
+def implementation_section(e, model_name, test_src, commit) -> list[str]:
+    row, definition = e["row"], e["definition"]
+    lines = ["## 5. Our implementation {#implementation}", ""]
+    if definition.get("deviations"):
+        lines += ["Deviations from the standard:", ""]
+        lines += [f"- {md(d)}" for d in definition["deviations"]]
+    else:
+        lines.append("No deviations listed yet.")
+    lines += ["", f"Model: {md(model_name or 'not available in this run')}", ""]
+    if test_src:
+        url = f"{REPO}/blob/{commit}/{test_src.split('::')[0]}"
+        lines.append(f"- Test function: {md_link(test_src, url)}")
+    elif row.get("test"):
+        lines.append(f"- Test: `{row['test']}` (source link not available in this run)")
+    else:
+        lines.append("- No test function for this row.")
+    for p in definition.get("scenario_files", []):
+        lines.append(
+            f"- Scenario file: {md_link(Path(p).name, f'{REPO}/blob/{commit}/{p}')}"
+        )
+    return lines + [""]
+
+
+def notebook_section(nb) -> list[str]:
+    lines = ["## 6. Our notebook {#notebook}", ""]
+    if not nb:
+        return lines + ["No notebook for this test yet.", ""]
+    if nb["status"] == "acceptance_failed":
+        lines += [
+            f"{status_chip('FAIL')} The acceptance check of this notebook failed in this run.",
+            "",
+        ]
+    elif nb["status"] == "error":
+        detail = f": {md(nb['error'])}" if nb["error"] else ""
+        lines += [f"{status_chip('FAIL')} The notebook did not execute{detail}.", ""]
+    if nb["html_path"]:
+        link = f'{{{{< static-link {shortcode_arg(nb["html_path"])} "Executed notebook (HTML)" >}}}}'
+        lines.append(f"- {link}")
+    lines.append(f"- {md_link('Notebook source (.ipynb) on GitHub', nb['source_url'])}")
+    return lines + [""]
+
+
+def test_page(ctx, s, e, weight, pdir: Path) -> str:
+    row, definition, std, std_def = e["row"], e["definition"], s["std"], s["std_def"]
+    commit, has_results = ctx["commit"], ctx["has_results"]
+    nb = copy_notebook(std["id"], e, ctx["nb_dir"], ctx["static_dir"], commit)
+    scenario_imgs, result_imgs, other_imgs = bundle_figures(
+        e["notebook"], ctx["nb_dir"], pdir
+    )
+    scenario_note = None
+    zip_paths = [ctx["repo_root"] / p for p in definition.get("scenario_files", [])]
+    if not scenario_imgs and render_scenarios(zip_paths, pdir / "scenario.png"):
+        scenario_imgs = ["scenario.png"]
+        scenario_note = (
+            "Rendered from the scenario files of this repository (top view)."
+        )
+    res_views = [result_view(r) for r in e["res_rows"]]
+    model_name = next((r["model"] for r in e["res_rows"] if r.get("model")), None)
+
+    title = f"{row['id']}: {e['title']}"
+    lines = [front_matter(title=title, linkTitle=title, weight=weight)]
+    blocking = " blocking documented (see note)" if e["blocking"] else ""
+    lines += [f"{status_chip(e['status'])}{blocking}", ""]
+
+    lines += ["## 1. Definition {#definition}", ""]
+    if definition.get("definition"):
+        lines += [md(definition["definition"]), ""]
+        lines += [
+            (
+                f"Source: {md(definition.get('source'))}. "
+                "This is a paraphrase, not the text of the standard."
+            ),
+            "",
+        ]
+    else:
+        lines += ["Definition text not written yet for this test.", ""]
+    lines += [reference_line(std, std_def), ""]
+
+    lines += ["## 2. Scenario {#scenario}", ""]
+    for img in scenario_imgs:
+        lines += figure(
+            img,
+            f"Top view of the scenario for {row['id']}",
+            scenario_note or "Scenario figure from the executed notebook.",
+        )
+    if not scenario_imgs:
+        lines += ["Scenario picture not available.", ""]
+
+    lines += ["## 3. What to expect {#expect}", ""]
+    if definition.get("expected"):
+        lines += [md(definition["expected"]), ""]
+    lines += [f"**Our criterion:** {md(row['criterion'])}", ""]
+    if row.get("note"):
+        lines += [f"> {md(row['note'])}", ""]
+
+    lines += result_section(e, res_views, has_results, (result_imgs, other_imgs), row)
+    lines += implementation_section(e, model_name, first_test_source(e), commit)
+    lines += notebook_section(nb)
+    return "\n".join(lines) + "\n"
+
+
+def write_standard(ctx, s, weight: int):
+    sdir = ctx["content_dir"] / "standards" / s["std"]["id"]
+    write(sdir / "_index.md", standard_page(s, weight))
+    for i, e in enumerate(s["entries"], start=1):
+        pdir = sdir / e["slug"]
+        pdir.mkdir(parents=True, exist_ok=True)
+        write(pdir / "index.md", test_page(ctx, s, e, i, pdir))
+
+
+def standards_index(standards) -> str:
+    lines = [
+        front_matter(title="Standards", weight=2, cascade={"type": "docs"}),
+        "Test pages of the four published test suites.",
+        "",
+    ]
+    for s in standards:
+        std = s["std"]
+        lines.append(
+            f"- {md_link(std['name'], std['id'] + '/')}: {md(std['full_name'])}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def run_data(model) -> dict:
+    return {
+        "versions": [{"name": k, "version": v} for k, v in model["versions"].items()],
+        "run": model["run"],
+    }
+
+
+def clean_generated(content_dir: Path, static_dir: Path):
+    for path in (content_dir / "standards", static_dir / "notebooks"):
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def build_site(
+    manifest, definitions, results, nb_manifest, nb_dir, content_dir: Path, repo_root
+):
+    """Write Hugo content, data/run.json and static/notebooks next to it."""
+    site_dir = content_dir.parent
+    static_dir, data_dir = site_dir / "static", site_dir / "data"
+    standards, orphans, no_results = collect_standards(
+        manifest, definitions, results, nb_manifest
+    )
+    run = pick_run(results, nb_manifest)
+    model = {
+        "standards": standards,
+        "orphans": orphans,
+        "no_results": no_results,
+        "versions": pick_versions(results, nb_manifest),
+        "run": run,
+        "has_results": results is not None,
+        "has_notebooks": nb_manifest is not None,
+    }
+    ctx = {
+        "commit": run["commit_sha"] or "main",
+        "has_results": model["has_results"],
+        "nb_dir": nb_dir,
+        "repo_root": repo_root,
+        "content_dir": content_dir,
+        "static_dir": static_dir,
+    }
+    clean_generated(content_dir, static_dir)
+    write(content_dir / "_index.md", summary_page(model))
+    write(content_dir / "diagnostics.md", diagnostics_page(model))
+    write(content_dir / "standards" / "_index.md", standards_index(standards))
+    for weight, s in enumerate(standards, start=1):
+        write_standard(ctx, s, weight)
+    write(data_dir / "run.json", json.dumps(run_data(model), indent=2) + "\n")
+    return standards, orphans, no_results
+
+
+INTRO = (
+    "This page shows the live verification status of [JuPedSim](https://www.jupedsim.org) "
+    "against four published test suites for evacuation models: IMO MSC.1/Circ.1533, RiMEA 4.1.1, "
+    "NIST TN 1822 and ISO 20414:2020. Each test is rebuilt from the standard's description, run on "
+    "every change to the main branch with the versions shown above, and checked against the "
+    "standard's expected result. Every test has its own page with the definition, the scenario, our "
+    "result and the notebook. Failures are shown as they are. Code and scenarios: "
+    "[jupedsim-web-community on GitHub](https://github.com/PedestrianDynamics/jupedsim-web-community)."
 )
-
-STANDARD = (
-    """\
-{% extends "base.html" %}
-"""
-    + BADGE
-    + """\
-{% block body %}
-<nav class="crumbs"><a href="{{ root }}index.html">Summary</a> / {{ std.name }}</nav>
-<h1>{{ std.name }}</h1>
-<p>{{ std_def.title or std.full_name }}{% if std_def.edition %} ({{ std_def.edition }}){% endif %}</p>
-{% if std_def.citation %}<p class="kv">Reference: {{ std_def.citation }}
-{% if std_def.url %}<a href="{{ std_def.url }}">{{ std_def.doi or std_def.url }}</a>{% endif %}</p>{% endif %}
-<p class="banner">{{ banner }}</p>
-{% for g in groups %}
-<div class="table-wrap"><table>
-<caption>{{ g.title }}</caption>
-<thead><tr><th scope="col">Test</th><th scope="col">Title</th><th scope="col">Status</th><th scope="col">Page</th></tr></thead>
-<tbody>
-{% for e in g.entries %}
-<tr><td>{{ e.row.id }}</td><td>{{ e.title }}</td>
-<td>{{ badge(e.status) }}{% if e.blocking %} <span class="kv">blocking documented</span>{% endif %}</td>
-<td><a href="{{ e.slug }}/index.html">Open test page</a></td></tr>
-{% endfor %}
-</tbody></table></div>
-{% endfor %}
-{% endblock %}
-"""
-)
-
-TEST = (
-    """\
-{% extends "base.html" %}
-"""
-    + BADGE
-    + """\
-{% block body %}
-<nav class="crumbs"><a href="{{ root }}index.html">Summary</a> /
-<a href="../index.html">{{ std.name }}</a> / {{ row.id }}</nav>
-<h1>{{ row.id }}: {{ e.title }}</h1>
-<p>{{ badge(e.status) }}{% if e.blocking %} <span class="kv">blocking documented (see note)</span>{% endif %}</p>
-
-<h2 id="definition">1. Definition</h2>
-{% if definition.definition %}
-<p>{{ definition.definition }}</p>
-<p class="kv">Source: {{ definition.source }}. This is a paraphrase, not the text of the standard.</p>
-{% else %}
-<p>Definition text not written yet for this test.</p>
-{% endif %}
-<p class="kv">Reference: {{ std_def.citation or std.full_name }}
-{% if std_def.url %}<a href="{{ std_def.url }}">{{ std_def.doi or std_def.url }}</a>{% endif %}
-{% if std_def.page_note %}({{ std_def.page_note }}){% endif %}</p>
-
-<h2 id="scenario">2. Scenario</h2>
-{% if scenario_imgs %}
-{% for img in scenario_imgs %}
-<figure><img src="{{ img }}" alt="Top view of the scenario for {{ row.id }}">
-<figcaption>{{ scenario_note or "Scenario figure from the executed notebook." }}</figcaption></figure>
-{% endfor %}
-{% else %}
-<p>Scenario picture not available.</p>
-{% endif %}
-
-<h2 id="expect">3. What to expect</h2>
-{% if definition.expected %}<p>{{ definition.expected }}</p>{% endif %}
-<p><strong>Our criterion:</strong> {{ row.criterion }}</p>
-{% if row.note %}<p class="note">{{ row.note }}</p>{% endif %}
-
-<h2 id="result">4. Our result</h2>
-<p>Status: {{ badge(e.status) }}</p>
-{% for n in e.notes if n != row.note %}<p class="note">{{ n }}</p>{% endfor %}
-{% if not has_results %}<p>Test results are not available in this run.</p>
-{% elif e.status in ("PENDING", "TEST-LOCAL") and not res_views %}
-<p>No measured values: {{ "this test is not covered yet" if e.status == "PENDING" else "this test does not measure simulator output" }}.</p>
-{% elif not has_measured %}<p>Measured values not reported yet.</p>{% endif %}
-{% if res_views %}
-<div class="table-wrap"><table>
-<caption>Test cases of this row</caption>
-<thead><tr><th scope="col">Case</th><th scope="col">Status</th><th scope="col">Quantity</th>
-<th scope="col">Measured</th><th scope="col">Unit</th><th scope="col">Lower</th><th scope="col">Upper</th>
-<th scope="col">n</th><th scope="col">Seed</th></tr></thead>
-<tbody>
-{% for v in res_views %}
-<tr><td><code>{{ v.test }}</code></td><td>{{ v.status }}</td><td>{{ v.quantity }}</td>
-<td class="num">{{ v.measured }}</td><td>{{ v.unit }}</td><td class="num">{{ v.lower }}</td>
-<td class="num">{{ v.upper }}</td><td class="num">{{ v.n }}</td><td class="num">{{ v.seed }}</td></tr>
-{% if v.rule %}<tr><td colspan="9" class="kv">Rule: {{ v.rule }}</td></tr>{% endif %}
-{% endfor %}
-</tbody></table></div>
-{% endif %}
-{% for img in result_imgs %}
-<figure><img src="{{ img }}" alt="Result figure for {{ row.id }}"><figcaption>Result figure from the executed notebook.</figcaption></figure>
-{% endfor %}
-{% if not result_imgs %}{% for img in other_imgs %}
-<figure><img src="{{ img }}" alt="Notebook figure for {{ row.id }}"><figcaption>Notebook figure.</figcaption></figure>
-{% endfor %}{% endif %}
-
-<h2 id="implementation">5. Our implementation</h2>
-{% if definition.deviations %}
-<p>Deviations from the standard:</p>
-<ul class="plain">{% for d in definition.deviations %}<li>{{ d }}</li>{% endfor %}</ul>
-{% else %}<p>No deviations listed yet.</p>{% endif %}
-<p>Model: {{ model or "not available in this run" }}</p>
-<ul class="plain">
-{% if test_url %}<li>Test function: <a href="{{ test_url }}">{{ test_src }}</a></li>
-{% elif row.test %}<li>Test: <code>{{ row.test }}</code> (source link not available in this run)</li>
-{% else %}<li>No test function for this row.</li>{% endif %}
-{% for l in scenario_links %}<li>Scenario file: <a href="{{ l.url }}">{{ l.name }}</a></li>{% endfor %}
-</ul>
-
-<h2 id="notebook">6. Our notebook</h2>
-{% if nb %}
-{% if nb.status == "acceptance_failed" %}<p>{{ badge("FAIL") }} The acceptance check of this notebook failed in this run.</p>
-{% elif nb.status == "error" %}<p>{{ badge("FAIL") }} The notebook did not execute{% if nb.error %}: {{ nb.error }}{% endif %}.</p>{% endif %}
-<ul class="plain">
-{% if nb.has_html %}<li><a href="notebook.html">Executed notebook (HTML)</a></li>{% endif %}
-<li><a href="{{ nb.source_url }}">Notebook source (.ipynb) on GitHub</a></li>
-</ul>
-{% else %}<p>No notebook for this test yet.</p>{% endif %}
-{% endblock %}
-"""
-)
-
-TEMPLATES = {
-    "base.html": BASE,
-    "index.html": INDEX,
-    "standard.html": STANDARD,
-    "test.html": TEST,
-}
 
 
 def main(argv=None) -> int:
@@ -870,15 +931,25 @@ def main(argv=None) -> int:
     ap.add_argument("--definitions", type=Path)
     ap.add_argument("--results", type=Path)
     ap.add_argument("--notebooks", type=Path)
-    ap.add_argument("--outdir", type=Path, required=True)
+    ap.add_argument(
+        "--hugo-content",
+        type=Path,
+        required=True,
+        help="content directory of the Hugo site (for example site/content)",
+    )
     args = ap.parse_args(argv)
     manifest, definitions, results, nb_manifest, nb_dir = load_inputs(args)
-    args.outdir.mkdir(parents=True, exist_ok=True)
+    args.hugo_content.mkdir(parents=True, exist_ok=True)
     repo_root = args.manifest.resolve().parent.parent
-    build = build_pages(
-        manifest, definitions, results, nb_manifest, nb_dir, args.outdir, repo_root
+    _, orphans, no_results = build_site(
+        manifest,
+        definitions,
+        results,
+        nb_manifest,
+        nb_dir,
+        args.hugo_content,
+        repo_root,
     )
-    _, orphans, no_results = build
     for t in orphans:
         print(f"join: results row maps to no coverage row: {t}", file=sys.stderr)
     for t in no_results:

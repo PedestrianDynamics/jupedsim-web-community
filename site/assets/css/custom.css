@@ -1,0 +1,65 @@
+:root {
+  --vv-line: #d0d7de; --vv-panel: #f6f8fa; --vv-muted: #4b5563;
+  --vv-pass-bg: #dff3e6; --vv-pass-fg: #0b4d26;
+  --vv-fail-bg: #fbe3e3; --vv-fail-fg: #8a1010;
+  --vv-local-bg: #e6e9fb; --vv-local-fg: #25318f;
+  --vv-pending-bg: #fdf1d3; --vv-pending-fg: #6b4700;
+  --vv-notrun-bg: #eceff2; --vv-notrun-fg: #3b434c;
+  --vv-radius: 6px; --vv-gap: 16px;
+}
+html.dark {
+  --vv-line: #343c45; --vv-panel: #1c2128; --vv-muted: #aab3bd;
+  --vv-pass-bg: #123522; --vv-pass-fg: #9be3b4;
+  --vv-fail-bg: #471818; --vv-fail-fg: #ffb3b3;
+  --vv-local-bg: #1f2650; --vv-local-fg: #b9c3ff;
+  --vv-pending-bg: #3d3010; --vv-pending-fg: #f3d58a;
+  --vv-notrun-bg: #272d34; --vv-notrun-fg: #c3cad2;
+}
+
+/* Header: logo with the versions line beneath it */
+.vv-brand { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.vv-logo { display: block; height: 29px; width: auto; }
+html.dark .vv-logo { background: #fff; border-radius: 4px; padding: 2px 6px; }
+.vv-versions { margin: 2px 0 0; font-size: 0.7rem; line-height: 1.2; color: var(--vv-muted); white-space: nowrap; }
+@media (max-width: 480px) { .vv-versions { white-space: normal; font-size: 0.65rem; } }
+
+/* Footer provenance */
+.vv-footer { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 0.875rem; }
+.vv-footer time { white-space: nowrap; }
+
+/* Status chips */
+.vv-badge { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.8rem;
+  font-weight: 700; letter-spacing: 0.03em; border: 1px solid currentColor; white-space: nowrap; line-height: 1.4; }
+.vv-badge-pass { background: var(--vv-pass-bg); color: var(--vv-pass-fg); }
+.vv-badge-fail { background: var(--vv-fail-bg); color: var(--vv-fail-fg); }
+.vv-badge-test-local { background: var(--vv-local-bg); color: var(--vv-local-fg); }
+.vv-badge-pending { background: var(--vv-pending-bg); color: var(--vv-pending-fg); }
+.vv-badge-not-run { background: var(--vv-notrun-bg); color: var(--vv-notrun-fg); }
+
+/* Summary cards */
+.vv-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--vv-gap); margin: 1.5rem 0 0; }
+@media (max-width: 40rem) { .vv-cards { grid-template-columns: minmax(0, 1fr); } }
+.vv-card { border: 1px solid var(--vv-line); border-radius: var(--vv-radius); background: var(--vv-panel); padding: var(--vv-gap);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto 1fr auto; gap: 4px 12px; }
+.vv-card h2 { font-size: 1.333rem; line-height: 1.2; border: 0; margin: 0; padding: 0; letter-spacing: normal; }
+.vv-card h2 a { text-decoration: none; }
+.vv-card h2 a:hover { text-decoration: underline; }
+.vv-card .vv-full { grid-column: 1 / -1; grid-row: 2; margin: 0; font-size: 0.875rem; color: var(--vv-muted); }
+.vv-card .vv-count { grid-column: 2; grid-row: 1; margin: 0; font-size: 1.333rem; font-weight: 700; line-height: 1.2;
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vv-card .vv-count span { font-size: 0.875rem; font-weight: 400; color: var(--vv-muted); }
+.vv-chips { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 12px 0 0; align-content: start; }
+.vv-chips .vv-badge { display: flex; justify-content: space-between; gap: 12px;
+  padding: 3px 10px; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.vv-chips .vv-zero { background: transparent; color: var(--vv-muted); border-color: var(--vv-line); font-weight: 400; }
+.vv-card .vv-foot { grid-column: 1 / -1; margin: 8px 0 0; font-size: 0.875rem; color: var(--vv-muted); }
+.vv-card p { margin-top: 0 !important; }
+
+.vv-legend { display: grid; gap: 8px; margin: 20px 0 0; font-size: 0.875rem; color: var(--vv-muted); }
+.vv-legend > span { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.vv-legend .vv-badge { text-align: center; }
+.vv-legend b { font-weight: 400; }
+
+/* Test pages */
+.content figure img, .content p > img { max-width: 100%; height: auto; background: #fff; border: 1px solid var(--vv-line); }
+.content table { font-size: 0.95rem; }

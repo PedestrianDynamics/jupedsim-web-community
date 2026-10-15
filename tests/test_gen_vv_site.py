@@ -2,6 +2,8 @@
 
 import importlib.util
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -121,60 +123,169 @@ def inputs(tmp_path):
     return paths
 
 
-def build(gen, paths, out, *, results=True):
+def build(gen, paths, content, *, results=True):
     argv = [
         "--manifest",
         str(paths["coverage"]),
         "--definitions",
         str(paths["definitions"]),
-        "--outdir",
-        str(out),
+        "--hugo-content",
+        str(content),
     ]
     if results:
         argv += ["--results", str(paths["results"])]
     assert gen.main(argv) == 0
 
 
-def page(out, slug):
-    return (out / "standards" / "std" / slug / "index.html").read_text()
+@pytest.fixture
+def content(tmp_path):
+    return tmp_path / "site" / "content"
 
 
-def test_every_row_gets_a_page(gen, inputs, tmp_path):
-    out = tmp_path / "site"
-    build(gen, inputs, out)
+def page(content, slug):
+    return (content / "standards" / "std" / slug / "index.md").read_text()
+
+
+def test_every_row_gets_a_page_bundle(gen, inputs, content):
+    build(gen, inputs, content)
     pages = sorted(
-        p.parent.name for p in (out / "standards" / "std").glob("*/index.html")
+        p.parent.name for p in (content / "standards" / "std").glob("*/index.md")
     )
     assert len(pages) == len(ROWS)
     assert "std-t1" in pages
     assert "std-t5-up" in pages and "std-t5-down" in pages
-    assert "Other tests" in (out / "standards" / "std" / "index.html").read_text()
+    index = (content / "standards" / "std" / "_index.md").read_text()
+    assert "Other tests" in index and "Group G" in index
+    assert "type" in index and "docs" in index
 
 
-def test_status_rendering(gen, inputs, tmp_path):
-    out = tmp_path / "site"
-    build(gen, inputs, out)
-    assert "badge-pass" in page(out, "std-t1")
-    limit = page(out, "std-t2")
-    assert ">FAIL<" in limit and "Model has no cohesion." in limit
-    assert ">PENDING<" in page(out, "std-t3")
-    assert ">TEST-LOCAL<" in page(out, "std-t4")
-    assert ">FAIL<" in page(out, "std-t5-down")
-    assert "1.5" in page(out, "std-t1")
+def test_sidebar_weights_follow_test_order(gen, inputs, content):
+    build(gen, inputs, content)
+    slugs = ["std-t1", "std-t2", "std-t3", "std-t4", "std-t5-up", "std-t5-down"]
+    weights = [int(page(content, s).split("weight: ")[1].split("\n")[0]) for s in slugs]
+    assert weights == sorted(weights) and len(set(weights)) == len(slugs)
 
 
-def test_no_xfail_wording(gen, inputs, tmp_path):
-    out = tmp_path / "site"
-    build(gen, inputs, out)
-    for f in out.rglob("*.html"):
-        assert "xfail" not in f.read_text().lower()
+def test_status_rendering(gen, inputs, content):
+    build(gen, inputs, content)
+    assert '{{< status "PASS" >}}' in page(content, "std-t1")
+    limit = page(content, "std-t2")
+    assert '{{< status "FAIL" >}}' in limit and "Model has no cohesion." in limit
+    assert '{{< status "PENDING" >}}' in page(content, "std-t3")
+    assert '{{< status "TEST-LOCAL" >}}' in page(content, "std-t4")
+    assert '{{< status "FAIL" >}}' in page(content, "std-t5-down")
+    assert "1.5" in page(content, "std-t1")
 
 
-def test_missing_results_and_notebooks(gen, inputs, tmp_path):
-    out = tmp_path / "site"
-    build(gen, inputs, out, results=False)
-    index = (out / "index.html").read_text()
+def test_page_sections(gen, inputs, content):
+    build(gen, inputs, content)
+    text = page(content, "std-t1")
+    for n, name in enumerate(
+        [
+            "Definition",
+            "Scenario",
+            "What to expect",
+            "Our result",
+            "Our implementation",
+            "Our notebook",
+        ],
+        start=1,
+    ):
+        assert f"## {n}. {name}" in text
+
+
+def test_no_forbidden_wording(gen, inputs, content):
+    build(gen, inputs, content)
+    for f in content.rglob("*.md"):
+        text = f.read_text().lower()
+        for word in ("xfail", "expected failure", "known"):
+            assert word not in text, (f, word)
+
+
+def test_missing_results_and_notebooks(gen, inputs, content):
+    build(gen, inputs, content, results=False)
+    index = (content / "_index.md").read_text()
     assert "not available in this run" in index
-    assert "local build" in index
-    assert "No notebook for this test yet" in page(out, "std-t1")
-    assert "Scenario picture not available" in page(out, "std-t1")
+    run = json.loads((content.parent / "data" / "run.json").read_text())
+    assert run["run"]["local"] is True
+    assert "No notebook for this test yet" in page(content, "std-t1")
+    assert "Scenario picture not available" in page(content, "std-t1")
+    assert "not available" in (content / "diagnostics.md").read_text()
+
+
+def test_footer_data_and_diagnostics(gen, inputs, content):
+    build(gen, inputs, content)
+    run = json.loads((content.parent / "data" / "run.json").read_text())
+    assert run["run"]["commit_sha"] == "abc123def456"
+    assert run["run"]["run_id"] == "42"
+    assert run["run"]["time"]["iso"] == "2026-01-01T00:00:00.000+00:00"
+    assert run["run"]["time"]["text"] == "2026-01-01 00:00 UTC"
+    assert run["versions"][0] == {"name": "jupedsim", "version": "1.0"}
+    diag = (content / "diagnostics.md").read_text()
+    assert "TestOrphan" in diag
+    assert "Join diagnostics" not in (content / "_index.md").read_text()
+
+
+def test_footer_without_run_ids(gen):
+    run = gen.pick_run([{"commit_sha": "a" * 40}], None)
+    assert run["time"] is None and not run["local"]
+    assert gen.format_time("2026-10-15T10:38:07.421947+00:00") == {
+        "iso": "2026-10-15T10:38:07.421+00:00",
+        "text": "2026-10-15 10:38 UTC",
+    }
+
+
+def test_summary_cards_and_blocking_count(gen, inputs, content):
+    rows = json.loads(inputs["coverage"].read_text())
+    rows["standards"][0]["tests"][0]["note"] = (
+        "Counterflow 50 blocks; blocking documented."
+    )
+    inputs["coverage"].write_text(json.dumps(rows))
+    build(gen, inputs, content)
+    index = (content / "_index.md").read_text()
+    assert 'blocking="1"' in index
+    assert 'pass="2"' in index and 'fail="2"' in index
+    assert 'test_local="1"' in index and 'pending="1"' in index
+    assert 'not_run="0"' in index
+    assert "blocking documented" in page(content, "std-t1")
+
+
+def test_blocking_from_definition_deviation(gen):
+    row = {"id": "X", "note": "Seed 42: 0 -> 46 s."}
+    assert not gen.blocking_documented(row)
+    definition = {"deviations": ["Level N is reported as blocking documented."]}
+    assert gen.blocking_documented(row, definition)
+
+
+def test_summary_intro_and_references(gen, inputs, content):
+    defs = json.loads(inputs["definitions"].read_text())
+    defs["standards"]["std"].update(citation="Cite A (2020).", doi="10.1/x")
+    inputs["definitions"].write_text(json.dumps(defs))
+    build(gen, inputs, content)
+    index = (content / "_index.md").read_text()
+    assert "Verification only" not in index
+    assert 'title: "JuPedSim verification"' in index
+    assert "(https://www.jupedsim.org)" in index
+    assert "Cite A (2020)." in index
+    assert "(https://doi.org/10.1/x)" in index
+
+
+@pytest.mark.skipif(shutil.which("hugo") is None, reason="hugo not installed")
+def test_hugo_builds_fixture_site(gen, inputs, tmp_path):
+    site_src = Path(__file__).resolve().parents[1] / "site"
+    site = tmp_path / "site"
+    shutil.copytree(
+        site_src,
+        site,
+        ignore=shutil.ignore_patterns("content", "data", "public", "resources"),
+    )
+    build(gen, inputs, site / "content")
+    proc = subprocess.run(
+        ["hugo", "--minify", "--panicOnWarning"],
+        cwd=site,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert (site / "public" / "standards" / "std" / "std-t1" / "index.html").is_file()
