@@ -77,7 +77,11 @@ class TestSA01SpeedInCorridor:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_outside_polygon(trajectory, self.WALKABLE)
+        violations = agents_outside_polygon(
+            trajectory,
+            self.WALKABLE,
+            radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
+        )
         assert not violations, "Agent left corridor:\n" + "\n".join(violations[:5])
 
 
@@ -193,5 +197,9 @@ class TestSA04Cornering:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_outside_polygon(trajectory, self.WALKABLE)
+        violations = agents_outside_polygon(
+            trajectory,
+            self.WALKABLE,
+            radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
+        )
         assert not violations, "Agents left L-corridor:\n" + "\n".join(violations[:10])

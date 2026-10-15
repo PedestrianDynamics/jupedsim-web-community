@@ -207,7 +207,8 @@ class TestIso04Corner:
     """ISO Test 4 - agents navigate an L-shaped corridor.
 
     Acceptance: all agents evacuate and no trajectory point penetrates the
-    walkable boundary (walkable polygon buffered by 1 mm contains every point).
+    walkable boundary (every centre lies at least its radius minus 1 mm inside
+    the walkable polygon, so no agent body overlaps a wall by more than 1 mm).
     """
 
     def test_full_evacuation_no_penetration(self):
@@ -216,7 +217,8 @@ class TestIso04Corner:
         try:
             assert result.agents_remaining == 0, "not all agents evacuated"
             df = result.trajectory_dataframe()
-            walkable_with_tol = scenario.walkable_polygon.buffer(0.001)
+            radius = next(iter(scenario.distributions.values()))["parameters"]["radius"]
+            walkable_with_tol = scenario.walkable_polygon.buffer(0.001 - radius)
             outside = sum(
                 1
                 for row in df.itertuples()

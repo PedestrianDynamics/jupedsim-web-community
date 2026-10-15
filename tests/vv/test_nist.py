@@ -240,7 +240,7 @@ class TestNist22StairsDown(_StairSpeedBase):
 
 class TestNist23Corner:
     """NIST Verif.2.3 - 20 agents navigate an L-shaped corridor without
-    penetrating the boundary."""
+    penetrating the boundary (centre at least its radius minus 1 mm inside)."""
 
     def test_full_evacuation(self):
         scenario = _load("Nist-2-3-corner")
@@ -256,7 +256,8 @@ class TestNist23Corner:
         result = run_scenario(scenario, seed=42)
         try:
             df = result.trajectory_dataframe()
-            walkable_with_tol = scenario.walkable_polygon.buffer(0.001)
+            radius = next(iter(scenario.distributions.values()))["parameters"]["radius"]
+            walkable_with_tol = scenario.walkable_polygon.buffer(0.001 - radius)
             outside = sum(
                 1
                 for row in df.itertuples()
