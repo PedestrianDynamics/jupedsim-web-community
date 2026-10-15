@@ -7,23 +7,52 @@ on:
     branches: [main]
   schedule:
     - cron: "0 6 * * 1"  # Weekly Monday 06:00 UTC
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      recompute:
+        description: "Run tests and notebooks (false: build the site from the latest successful main run)"
+        type: boolean
+        default: false
 
 permissions:
+  actions: read
   contents: read
   issues: write
   pages: write
   id-token: write
 
+# A newer pull request or main push supersedes the running one (the deploy
+# uses the newest main). Schedule and dispatch runs have their own groups,
+# queue instead of cancelling, and never cancel a main push run.
 concurrency:
-  group: "pages-${{ github.ref }}"
-  cancel-in-progress: false
+  group: "pages-${{ github.event_name }}-${{ github.ref }}"
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   vv-tests:
+    # A dispatch without recompute reuses the latest main results.
+    if: github.event_name != 'workflow_dispatch' || inputs.recompute
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        # Pull requests diff the merge commit against its first parent.
+        fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
+
+    - name: Select V&V tests
+      id: select
+      # Pull requests run only the tests their changes can affect
+      # (scripts/select_vv_tests.py); every other event runs the full
+      # suite, which is what gets published.
+      run: |
+        if [ "${{ github.event_name }}" = pull_request ]; then
+          git diff --name-only --no-renames HEAD^1 HEAD > "${{ runner.temp }}/changed.txt"
+          tests=$(python3 scripts/select_vv_tests.py HEAD^1 HEAD < "${{ runner.temp }}/changed.txt")
+        else
+          tests=tests/vv
+        fi
+        echo "tests=$tests" >> "$GITHUB_OUTPUT"
+        echo "V&V tests selected: ${tests:-none}" >> "$GITHUB_STEP_SUMMARY"
 
     - uses: astral-sh/setup-uv@v5
       with:
@@ -32,8 +61,13 @@ jobs:
     - name: Sync environment
       run: uv sync --frozen --extra dev
 
+    - name: Run site generator and selector tests
+      if: github.event_name == 'pull_request'
+      run: uv run --frozen --extra dev python -m pytest tests/test_gen_vv_site.py tests/test_select_vv_tests.py -v
+
     - name: Run V&V tests
-      run: uv run --frozen --extra dev python -m pytest tests/vv -v --junitxml=results/vv-tests.xml
+      if: steps.select.outputs.tests != ''
+      run: uv run --frozen --extra dev python -m pytest ${{ steps.select.outputs.tests }} -v --junitxml=results/vv-tests.xml
 
     - name: Upload V&V test results
       if: always()
@@ -43,10 +77,11 @@ jobs:
         path: |
           results/vv-tests.xml
           results/vv-results.json
+          results/vv-results-partial.json
         if-no-files-found: warn
 
     - name: V&V test summary
-      if: always()
+      if: always() && steps.select.outputs.tests != ''
       uses: test-summary/action@v2
       with:
         paths: results/vv-tests.xml
@@ -54,7 +89,7 @@ jobs:
     # Build the standards coverage report (HTML dashboard + Markdown mirror)
     # from the manifest joined to the live JUnit results. Stdlib only.
     - name: Generate standards coverage report
-      if: always()
+      if: always() && steps.select.outputs.tests != ''
       run: |
         python3 scripts/gen_standards_report.py --junit results/vv-tests.xml --outdir site
         cat site/summary.md >> "$GITHUB_STEP_SUMMARY"
@@ -90,7 +125,7 @@ jobs:
   # pull requests (runtime). Drift detection against the latest
   # jupedsim-scenarios lives in notebooks.yml.
   notebooks:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.recompute)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -126,44 +161,114 @@ jobs:
   # Assemble the Pages site (main only): the dashboard plus the executed
   # notebooks from the same run.
   build-pages:
+    # Builds the Hugo site from this run's test results and executed
+    # notebooks. Runs on main pushes (deployed) and on manual dispatch
+    # (artifact only, for previewing a branch; without recompute it uses
+    # the latest successful main run's results).
     needs: [vv-tests, notebooks]
-    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
+    env:
+      HUGO_VERSION: 0.144.0
     steps:
-    - name: Download dashboard
+    - uses: actions/checkout@v4
+
+    - uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+
+    - name: Sync environment
+      run: uv sync --frozen --extra dev
+
+    # A dispatch without recompute previews the dispatched branch's site
+    # over the results of the latest successful push run on main. The
+    # provenance (commit, run ID) is written into those results when they
+    # are computed, so the page names that run, not this one.
+    - name: Find latest main results
+      id: source
+      if: github.event_name == 'workflow_dispatch' && !inputs.recompute
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        out=$(gh api \
+          "repos/${GITHUB_REPOSITORY}/actions/workflows/vv.yml/runs?branch=main&event=push&status=success&per_page=1" \
+          --jq '.workflow_runs[0] | "\(.id) \(.head_sha)"')
+        run_id=${out%% *} sha=${out#* }
+        if [ -z "$run_id" ] || [ "$run_id" = null ]; then
+          echo "no successful main push run of vv.yml found" >&2
+          exit 1
+        fi
+        echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+        echo "Results from main run ${run_id} (commit ${sha})" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Download test results
+      if: steps.source.outputs.run_id == ''
       uses: actions/download-artifact@v4
       with:
-        name: vv-dashboard
-        path: site
+        name: vv-test-results
+        path: results
 
     - name: Download executed notebooks
+      if: steps.source.outputs.run_id == ''
       continue-on-error: true
       uses: actions/download-artifact@v4
       with:
         name: executed-notebooks
-        path: site/notebooks
+        path: results/notebooks
 
-    - name: Link notebooks from the dashboard
+    - name: Download test results (latest main)
+      if: steps.source.outputs.run_id != ''
+      uses: actions/download-artifact@v4
+      with:
+        name: vv-test-results
+        path: results
+        run-id: ${{ steps.source.outputs.run_id }}
+        github-token: ${{ github.token }}
+
+    - name: Download executed notebooks (latest main)
+      if: steps.source.outputs.run_id != ''
+      uses: actions/download-artifact@v4
+      with:
+        name: executed-notebooks
+        path: results/notebooks
+        run-id: ${{ steps.source.outputs.run_id }}
+        github-token: ${{ github.token }}
+
+    - uses: actions/setup-go@v5
+      with:
+        go-version: "1.22"
+
+    - name: Install Hugo
       run: |
-        if [ -f site/notebooks/manifest.json ]; then
-          python3 - <<'PY'
-        import pathlib
-        p = pathlib.Path("site/index.html")
-        link = '<p><a href="notebooks/manifest.json">Executed notebooks (manifest)</a></p>'
-        p.write_text(p.read_text().replace("</body>", link + "</body>", 1))
-        PY
-        fi
+        wget -q -O "${{ runner.temp }}/hugo.deb" \
+          "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb"
+        sudo dpkg -i "${{ runner.temp }}/hugo.deb"
+
+    - name: Generate site content
+      run: |
+        args=(--manifest standards/coverage.json --definitions standards/definitions.json --hugo-content site/content)
+        [ -f results/vv-results.json ] && args+=(--results results/vv-results.json)
+        [ -f results/notebooks/manifest.json ] && args+=(--notebooks results/notebooks)
+        uv run --frozen python scripts/gen_vv_site.py "${args[@]}"
+
+    - name: Build site
+      working-directory: site
+      env:
+        HUGO_ENVIRONMENT: production
+      run: hugo --minify --panicOnWarning
 
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v3
       with:
-        path: site
+        path: site/public
 
-  # Publish the dashboard to GitHub Pages (main only). Requires Pages to be
-  # enabled with "GitHub Actions" as the source (Settings -> Pages).
+  # Publish the site to GitHub Pages (main pushes only), and only when both
+  # the tests and the notebooks succeeded: a failing run never replaces the
+  # live page. Requires Pages to be enabled with "GitHub Actions" as the
+  # source (Settings -> Pages).
   deploy-pages:
-    needs: build-pages
-    if: ${{ !cancelled() && needs.build-pages.result == 'success' }}
+    needs: [vv-tests, notebooks, build-pages]
+    if: ${{ !cancelled() && needs.vv-tests.result == 'success' && needs.notebooks.result == 'success' && needs.build-pages.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
