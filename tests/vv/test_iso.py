@@ -30,7 +30,7 @@ import sys
 import numpy as np
 import pytest
 from shapely.geometry import Point, Polygon
-from vv_helpers import HAS_VV_DEPS
+from vv_helpers import HAS_VV_DEPS, exit_times_by_start_x
 
 STANDARDS_DIR = pathlib.Path(__file__).resolve().parents[2] / "standards"
 SCENARIO_FILES = STANDARDS_DIR / "iso" / "scenario_files"
@@ -362,9 +362,13 @@ class TestIso07MovementDisabilities:
     Two otherwise identical scenarios are compared. In the disability case,
     the Zone-2 occupant has a lower desired speed and a larger radius. In the
     control case, that occupant has the same characteristics as the other
-    occupants. Acceptance: the disability case has a longer total evacuation
-    time than the control case.
+    occupants. Acceptance: the zone-1 occupants (spawned in room 1, x < 4 m)
+    reach the exit later in the disability case than in the control case,
+    for both the last and the mean zone-1 exit time. The total evacuation
+    time is not used, because it also contains the slow occupant's own exit.
     """
+
+    ZONE1_MAX_START_X = 4.0
 
     def test_movement_disability_increases_evacuation_time(self):
         disability = _load("Iso-07-movement-disabilities")
@@ -379,10 +383,25 @@ class TestIso07MovementDisabilities:
             assert control_result.agents_remaining == 0, (
                 "not all agents evacuated in the control scenario"
             )
-            assert disability_result.evacuation_time > control_result.evacuation_time, (
-                "expected the movement-disability scenario to take longer: "
-                f"{disability_result.evacuation_time:.2f}s versus "
-                f"{control_result.evacuation_time:.2f}s"
+            disability_zone1 = exit_times_by_start_x(
+                disability_result, self.ZONE1_MAX_START_X
+            )
+            control_zone1 = exit_times_by_start_x(
+                control_result, self.ZONE1_MAX_START_X
+            )
+            assert len(disability_zone1) == len(control_zone1) == 24, (
+                f"expected 24 zone-1 occupants, got {len(disability_zone1)} "
+                f"and {len(control_zone1)}"
+            )
+            assert max(disability_zone1) > max(control_zone1), (
+                "expected the last zone-1 occupant to exit later with the "
+                f"slow occupant: {max(disability_zone1):.2f}s versus "
+                f"{max(control_zone1):.2f}s"
+            )
+            assert np.mean(disability_zone1) > np.mean(control_zone1), (
+                "expected the mean zone-1 exit time to be later with the "
+                f"slow occupant: {np.mean(disability_zone1):.2f}s versus "
+                f"{np.mean(control_zone1):.2f}s"
             )
         finally:
             disability_result.cleanup()
