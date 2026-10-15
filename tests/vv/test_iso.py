@@ -187,10 +187,14 @@ class TestIso02CorridorSpeed:
 
 
 class TestIso03Stairs:
-    """ISO Test 3 - agent crosses a 10 m stair inside a speed_factor = 0.5 zone.
+    """ISO Test 3 - one occupant at 1 m/s covers a 10 m stair in 10 s.
+
+    The stair is a flat 10 m zone with speed_factor = 0.5, and the
+    scenario's desired speed is 2.0 m/s, so the speed on the stair is
+    2.0 m/s x 0.5 = 1.0 m/s (decision D23).
 
     Acceptance: mean transit speed over the x = 10..20 stair segment is
-    1.0 m/s x 0.5 = 0.5 +/- 0.05 m/s.
+    1.0 +/- 0.05 m/s, i.e. about 10 s for the 10 m stair.
     """
 
     def test_stair_speed(self):
@@ -201,7 +205,10 @@ class TestIso03Stairs:
             speeds = _segment_speed(df, result.frame_rate, 10.0, 20.0)
             assert len(speeds) > 0, "no agent crossed the stair segment"
             observed = speeds.mean()
-            assert abs(observed - 0.5) <= 0.05, f"observed {observed:.3f} m/s"
+            assert abs(observed - 1.0) <= 0.05, (
+                f"observed {observed:.3f} m/s on the stair, "
+                f"{10.0 / observed:.2f} s for 10 m (expected 10 s)"
+            )
         finally:
             result.cleanup()
 
