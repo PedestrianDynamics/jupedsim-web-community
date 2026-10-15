@@ -22,6 +22,7 @@ from typing import ClassVar
 import jupedsim as jps
 import numpy as np
 import pandas as pd
+import pedpy
 import pytest
 from shapely import wkt
 from shapely.geometry import Point, Polygon
@@ -81,6 +82,8 @@ RIMEA05_PREMOVEMENT_SEED = 12345
 RIMEA07_AGENTS = 50
 RIMEA07_ASSIGNED_TOL = 1e-6
 RIMEA07_OBSERVED_TOL = 0.03  # m/s
+RIMEA12_AGENTS = 150  # RiMEA 12a/12b population
+RIMEA12A_MONOTONE_TOL = 2.0  # max drop between consecutive a, s
 RIMEA13_CORBETTA_FLOOR = 0.25
 RIMEA13_DOWN_WINS_MIN = 0.7
 RIMEA13_MIN_SAMPLES = 500
@@ -1278,153 +1281,140 @@ class TestRiMEA11EscapeRouteChoice:
         assert exit_counts[1] > 0, "No agents used the farther alternative exit"
 
 
+def _room1_clearance_time(result, measurement_line):
+    """Time the last agent crosses the bottleneck line out of room 1, in s."""
+    traj = pedpy.TrajectoryData(
+        result.trajectory_dataframe()[["id", "frame", "x", "y"]].copy(),
+        frame_rate=result.frame_rate,
+    )
+    _, crossing_frames = pedpy.compute_n_t(
+        traj_data=traj, measurement_line=measurement_line
+    )
+    assert len(crossing_frames) > 0, "No agent crossed the bottleneck line"
+    return float(crossing_frames["frame"].max() / traj.frame_rate)
+
+
 class TestRiMEA12aGoalPosition:
     """RiMEA Test 12a: Position of goal cells.
 
-    Geometry: Two rooms (10m x 10m + 10m x 10m) connected by 1m bottleneck.
-    Agents: 150 in room 1.
-    Vary distance a (0–10m) between bottleneck and goal.
-    Expected: Evacuation time decreases as goal approaches bottleneck.
+    Scenario: scenario_files/Rimea-12a-goal-position.zip (two rooms joined
+    by a 1m bottleneck, 150 agents in room 1, as specified by RiMEA). Only
+    the goal is changed: a 0.2m-wide strip in room 2 at distance a from the
+    bottleneck. RiMEA's 0 and 10 m are run as 0.2 and 9.8 m so the strip
+    stays inside room 2; the grid is a subset of the notebook's.
+    Measured: room-1 clearance time, i.e. the time the last agent crosses
+    the bottleneck line at x = 10 m (not the total evacuation time).
+    Expected (RiMEA): the time is shortest for a goal directly behind the
+    bottleneck, grows with a and levels off. The plateau may fluctuate, so
+    the sequence may drop by at most RIMEA12A_MONOTONE_TOL between
+    consecutive grid points.
+    Runtime: about 13s per run, about 90s for the sweep.
     """
 
-    WALKABLE_TEMPLATE = "POLYGON ((0 0, 10 0, 10 4.5, 10.2 4.5, 10.2 0, 20.2 0, 20.2 10, 10.2 10, 10.2 5.5, 10 5.5, 10 10, 0 10, 0 0))"
+    SCENARIO = STANDARDS_DIR / "rimea" / "scenario_files" / "Rimea-12a-goal-position.zip"
+    A_GRID = (0.2, 1.0, 2.0, 4.0, 6.0, 8.0, 9.8)  # m
+    MEASUREMENT_LINE = pedpy.MeasurementLine([(10.0, 4.5), (10.0, 5.5)])
 
-    DIST = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0, 0], [5, 0], [5, 10], [0, 10], [0, 0]],
-            "parameters": {
-                "number": 50,
-                "radius": 0.15,
-                "v0": 1.2,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-        }
-    }
-
-    def _make_exit(self, distance_from_bottleneck):
-        """Goal positioned at distance a from the bottleneck in room 2."""
-        x = 10.2 + distance_from_bottleneck
-        x = min(x, 18.2)  # Keep within room 2
+    @staticmethod
+    def _make_exit(distance_a):
+        """Goal strip at distance a from the bottleneck in room 2."""
+        left_x = 10.2 + float(distance_a)
+        right_x = left_x + 0.2
         return {
             "jps-exits_0": {
                 "type": "polygon",
-                "coordinates": [[x, 0], [x + 2, 0], [x + 2, 10], [x, 10], [x, 0]],
+                "coordinates": [
+                    [left_x, 0], [right_x, 0], [right_x, 10], [left_x, 10], [left_x, 0]
+                ],
                 "enable_throughput_throttling": False,
                 "max_throughput": 0,
             }
         }
 
-    def test_closer_goal_faster(self, vv_row):
-        """Goal near bottleneck should yield shorter evacuation than far goal."""
-        metrics_near, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE_TEMPLATE,
-            exits=self._make_exit(0),
-            distributions=self.DIST,
-            max_simulation_time=300.0,
-        )
-        metrics_far, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE_TEMPLATE,
-            exits=self._make_exit(8),
-            distributions=self.DIST,
-            max_simulation_time=300.0,
-        )
+    def _clearance_time(self, base, distance_a):
+        variant = base.copy()
+        variant.raw["exits"] = self._make_exit(distance_a)
+        result = run_scenario(variant, seed=DEFAULT_SEED)
+        try:
+            assert result.metrics["agents_remaining"] == 0, f"agents remaining at a={distance_a}"
+            return _room1_clearance_time(result, self.MEASUREMENT_LINE)
+        finally:
+            result.cleanup()
+
+    def test_room1_clearance_time_grows_with_goal_distance(self, vv_row):
+        """Room-1 clearance time increases with a and levels off."""
+        base = load_scenario(str(self.SCENARIO))
+        n_agents = RIMEA12_AGENTS
+        times = [self._clearance_time(base, a) for a in self.A_GRID]
         vv_row.set(
-            quantity="evacuation_time_near_vs_far_goal", unit="s",
-            measured=[metrics_near["evacuation_time"], metrics_far["evacuation_time"]],
-            n=metrics_near["total_agents"], seed=DEFAULT_SEED,
+            quantity="room1_clearance_time_vs_goal_distance", unit="s",
+            measured=times, n=n_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
             rule=(
-                "bound: agents_remaining = 0 in both runs; comparison: "
-                "evacuation_time(near goal) <= evacuation_time(far goal)"
+                f"comparison: room-1 clearance time at a={self.A_GRID[-1]} m > "
+                f"at a={self.A_GRID[0]} m; each step over a in "
+                f"{list(self.A_GRID)} m drops by at most "
+                f"{RIMEA12A_MONOTONE_TOL} s"
             ),
         )
-        assert metrics_near["agents_remaining"] == 0
-        assert metrics_far["agents_remaining"] == 0
-        assert metrics_near["evacuation_time"] <= metrics_far["evacuation_time"], (
-            f"Near goal ({metrics_near['evacuation_time']:.1f}s) should be <= "
-            f"far goal ({metrics_far['evacuation_time']:.1f}s)"
+        assert times[-1] > times[0], (
+            f"Clearance time at a={self.A_GRID[-1]} m ({times[-1]:.1f}s) should "
+            f"exceed a={self.A_GRID[0]} m ({times[0]:.1f}s)"
+        )
+        drops = [
+            (a, t0 - t1)
+            for a, t0, t1 in zip(self.A_GRID[1:], times, times[1:])
+            if t0 - t1 > RIMEA12A_MONOTONE_TOL
+        ]
+        assert not drops, (
+            f"Clearance time decreased by more than {RIMEA12A_MONOTONE_TOL}s "
+            f"(a, drop): {drops}; times {[round(t, 1) for t in times]}"
         )
 
 
 class TestRiMEA12bBottleneckLength:
     """RiMEA Test 12b: Length of a bottleneck.
 
-    Two rooms connected by 1m-wide bottleneck. Short vs long bottleneck.
-    Agents: 150 in room 1.
-    Expected: Longer bottleneck increases evacuation time.
+    Scenarios: scenario_files/Rimea-12a-goal-position.zip (short, 0.2m wall)
+    and scenario_files/Rimea-12b-bottleneck-length.zip (5m long bottleneck),
+    both 1m wide with 150 agents in room 1 (as specified by RiMEA).
+    Measured: room-1 clearance time, i.e. the time the last agent crosses
+    the bottleneck entrance at x = 10 m.
+    Expected: the clearance time is larger for the long bottleneck.
+    Runtime: about 15s per run.
     """
 
-    # Short bottleneck: 0.2m long
-    WALKABLE_SHORT = "POLYGON ((0 0, 10 0, 10 4.5, 10.2 4.5, 10.2 0, 20.2 0, 20.2 10, 10.2 10, 10.2 5.5, 10 5.5, 10 10, 0 10, 0 0))"
-    # Long bottleneck: 5m long
-    WALKABLE_LONG = "POLYGON ((0 0, 10 0, 10 4.5, 15 4.5, 15 0, 25 0, 25 10, 15 10, 15 5.5, 10 5.5, 10 10, 0 10, 0 0))"
+    SCENARIO_DIR = STANDARDS_DIR / "rimea" / "scenario_files"
+    SHORT_ZIP = SCENARIO_DIR / "Rimea-12a-goal-position.zip"
+    LONG_ZIP = SCENARIO_DIR / "Rimea-12b-bottleneck-length.zip"
+    MEASUREMENT_LINE = pedpy.MeasurementLine([(10.0, 3), (10.0, 7)])
 
-    EXIT_SHORT = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[18, 0], [20.2, 0], [20.2, 10], [18, 10], [18, 0]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        }
-    }
-    EXIT_LONG = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[23, 0], [25, 0], [25, 10], [23, 10], [23, 0]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        }
-    }
-
-    DIST = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0, 0], [5, 0], [5, 10], [0, 10], [0, 0]],
-            "parameters": {
-                "number": 100,
-                "radius": 0.15,
-                "v0": 1.2,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-        }
-    }
+    def _clearance_time(self, zip_path):
+        result = run_scenario(load_scenario(str(zip_path)), seed=DEFAULT_SEED)
+        try:
+            assert result.metrics["agents_remaining"] == 0, f"agents remaining in {zip_path.name}"
+            return _room1_clearance_time(result, self.MEASUREMENT_LINE)
+        finally:
+            result.cleanup()
 
     def test_longer_bottleneck_slower(self, vv_row):
-        """Longer bottleneck should increase evacuation time."""
-        metrics_short, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE_SHORT,
-            exits=self.EXIT_SHORT,
-            distributions=self.DIST,
-            max_simulation_time=600.0,
-        )
-        metrics_long, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE_LONG,
-            exits=self.EXIT_LONG,
-            distributions=self.DIST,
-            max_simulation_time=600.0,
-        )
+        """Longer bottleneck should increase the room-1 clearance time."""
+        t_short = self._clearance_time(self.SHORT_ZIP)
+        t_long = self._clearance_time(self.LONG_ZIP)
         vv_row.set(
-            quantity="evacuation_time_short_vs_long_bottleneck", unit="s",
-            measured=[metrics_short["evacuation_time"], metrics_long["evacuation_time"]],
-            n=metrics_long["total_agents"], seed=DEFAULT_SEED,
+            quantity="room1_clearance_time_short_vs_long_bottleneck", unit="s",
+            measured=[t_short, t_long],
+            n=RIMEA12_AGENTS, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: agents_remaining = 0 in both runs; comparison: "
-                "evacuation_time(long bottleneck) > evacuation_time(short bottleneck)"
+                "room-1 clearance time(long bottleneck) > "
+                "room-1 clearance time(short bottleneck)"
             ),
         )
-        assert metrics_short["agents_remaining"] == 0
-        assert metrics_long["agents_remaining"] == 0
-        assert metrics_long["evacuation_time"] > metrics_short["evacuation_time"], (
-            f"Long bottleneck ({metrics_long['evacuation_time']:.1f}s) should be "
-            f"slower than short ({metrics_short['evacuation_time']:.1f}s)"
+        assert t_long > t_short, (
+            f"Long bottleneck ({t_long:.1f}s) should be slower than short "
+            f"({t_short:.1f}s)"
         )
 
 
