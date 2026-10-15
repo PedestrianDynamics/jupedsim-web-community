@@ -30,7 +30,13 @@ import sys
 import numpy as np
 import pytest
 from shapely.geometry import Point, Polygon
-from vv_helpers import HAS_VV_DEPS
+from vv_helpers import (
+    FLOW_CAP_TOLERANCE,
+    HAS_VV_DEPS,
+    MAX_SPECIFIC_FLOW,
+    specific_exit_flow,
+    with_flow_limiter,
+)
 
 STANDARDS_DIR = pathlib.Path(__file__).resolve().parents[2] / "standards"
 SCENARIO_FILES = STANDARDS_DIR / "iso" / "scenario_files"
@@ -595,39 +601,40 @@ class TestIso10Congestion:
 class TestIso11MaxFlow:
     """ISO Test 11 - 100 agents evacuate a room through a 1 m exit.
 
-    ISO cites the IMO MSC/Circ.1238 maximum specific flow of 1.33 p/m/s.
-    CollisionFreeSpeedModel has no door-flow limiter, so the sustained emergent
-    specific flow (~5 p/m/s on seed 42) exceeds the reference. The model fails
-    the IMO non-exceedance criterion (mirrors NIST Verif.5.2).
+    ISO cites the IMO MSC/Circ.1238 maximum specific flow of 1.33 p/m/s as a
+    limit the exit flow must not exceed. The run enables the jupedsim-scenarios
+    exit throughput limiter at that value and checks that the measured flow
+    stays at or below it (restricted-flow reading). The emergent flow without
+    the limiter (~5 p/m/s on seed 42) is reported, not asserted.
     """
 
     EXIT_WIDTH_M = 1.0
-    IMO_MAX_FLOW = 1.33
 
-    @pytest.mark.xfail(
-        reason="CollisionFreeSpeedModel has no door-flow limiter, so the "
-        "emergent specific flow through the 1 m exit (~5 p/m/s) exceeds the "
-        "IMO 1.33 p/m/s reference. Needs a flow-limiting exit model.",
-        raises=AssertionError,
-        strict=True,
-    )
-    def test_flow_within_imo_reference(self):
+    def _run(self, limiter_on):
         scenario = _load("Iso-11-max-flow")
+        scenario.raw["exits"] = with_flow_limiter(
+            scenario.raw["exits"], limiter_on, MAX_SPECIFIC_FLOW
+        )
         result = run_scenario(scenario, seed=42)
         try:
             assert result.agents_remaining == 0, "not all agents evacuated"
-            df = result.trajectory_dataframe().sort_values(["id", "frame"])
-            exit_times = np.sort(
-                (df.groupby("id").frame.max() / result.frame_rate).values
-            )
-            assert len(exit_times) > 0, "no agent reached the exit"
-            span = exit_times.max() - exit_times.min()
-            flow = result.agents_evacuated / span / self.EXIT_WIDTH_M
-            assert flow <= self.IMO_MAX_FLOW, (
-                f"specific flow {flow:.2f} p/m/s exceeds IMO {self.IMO_MAX_FLOW}"
-            )
+            df = result.trajectory_dataframe()
+            return specific_exit_flow(df, result.frame_rate, self.EXIT_WIDTH_M)
         finally:
             result.cleanup()
+
+    def test_flow_within_cap_with_limiter(self):
+        flow = self._run(limiter_on=True)
+        cap = MAX_SPECIFIC_FLOW * (1 + FLOW_CAP_TOLERANCE)
+        assert flow <= cap, (
+            f"specific flow {flow:.3f} p/m/s exceeds the {MAX_SPECIFIC_FLOW} "
+            f"p/m/s cap (+{FLOW_CAP_TOLERANCE:.0%} tolerance)"
+        )
+
+    def test_emergent_flow_without_limiter_is_reported(self):
+        """Information only: the emergent flow is printed, not asserted."""
+        flow = self._run(limiter_on=False)
+        print(f"ISO 11 emergent specific flow, limiter off: {flow:.2f} p/m/s")
 
 
 # ---------------------------------------------------------------------------

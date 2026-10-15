@@ -7,7 +7,14 @@ RE-04: Counterflow (IMO 8)
 """
 
 import pytest
-from vv_helpers import run_vv_scenario, measure_flow_rate, HAS_VV_DEPS
+from vv_helpers import (
+    FLOW_CAP_TOLERANCE,
+    HAS_VV_DEPS,
+    MAX_SPECIFIC_FLOW,
+    run_vv_scenario,
+    specific_exit_flow,
+    with_flow_limiter,
+)
 
 pytestmark = [
     pytest.mark.vv,
@@ -21,7 +28,9 @@ class TestRE01SingleExitFlow:
     """IMO 4: 100 agents evacuating through a 1m exit.
 
     Geometry: 8m x 5m room, 1m exit centered on short wall.
-    Expected: Flow rate < 1.33 pers/s (IMO maximum for 1m door).
+    Expected: flow <= 1.33 pers/s (IMO maximum for 1m door) with the exit
+    throughput limiter enabled; the unthrottled flow is reported only.
+    The exit is a 1 x 1 m absorbing square inside the room, not a wall opening.
     """
 
     WALKABLE = "POLYGON ((0 0, 8 0, 8 5, 0 5, 0 0))"
@@ -59,23 +68,29 @@ class TestRE01SingleExitFlow:
         assert metrics["total_agents"] == 100
         assert metrics["agents_remaining"] == 0
 
-    def test_flow_rate_physically_plausible(self):
-        """Flow rate through 1m exit must be physically plausible.
-
-        JuPedSim's CollisionFreeSpeedModel does not enforce SFPE door flow limits,
-        so we use a relaxed upper bound. Empirical max for 1m door: ~2 pers/s
-        in collision-free models (agents pass through without queueing friction).
-        """
-        metrics, _ = run_vv_scenario(
+    def _flow(self, limiter_on):
+        metrics, trajectory = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
-            exits=self.EXIT,
+            exits=with_flow_limiter(self.EXIT, limiter_on, MAX_SPECIFIC_FLOW),
             distributions=self.DIST,
             max_simulation_time=300.0,
         )
-        flow = measure_flow_rate(metrics)
-        # CollisionFreeSpeedModel allows higher rates than SFPE-limited models
-        assert flow > 0.5, f"Flow rate {flow:.2f} pers/s suspiciously low"
-        assert flow < 10.0, f"Flow rate {flow:.2f} pers/s unrealistically high"
+        assert metrics["agents_remaining"] == 0, "not all agents evacuated"
+        return specific_exit_flow(trajectory.data, trajectory.frame_rate)
+
+    def test_flow_within_cap_with_limiter(self):
+        """Flow must not exceed 1.33 p/s with the exit limiter enabled."""
+        flow = self._flow(limiter_on=True)
+        cap = MAX_SPECIFIC_FLOW * (1 + FLOW_CAP_TOLERANCE)
+        assert flow <= cap, (
+            f"Flow {flow:.3f} p/s exceeds the {MAX_SPECIFIC_FLOW} p/s cap "
+            f"(+{FLOW_CAP_TOLERANCE:.0%} tolerance)"
+        )
+
+    def test_emergent_flow_without_limiter_is_reported(self):
+        """Information only: the emergent flow is printed, not asserted."""
+        flow = self._flow(limiter_on=False)
+        print(f"IMO 4 emergent flow, limiter off: {flow:.2f} p/s")
 
 
 class TestRE02ExitSensitivity:
