@@ -21,6 +21,7 @@ from typing import ClassVar
 
 import jupedsim as jps
 import numpy as np
+import pandas as pd
 import pytest
 from shapely import wkt
 from shapely.geometry import Point, Polygon
@@ -65,6 +66,7 @@ from scenario_builders.rimea16_loop import (
     compute_density_speed_curve,
     compute_density_speed_samples,
     compute_lap_counts,
+    count_order_changes,
     load_reference_band,
     summarize_reference_fit,
 )
@@ -85,8 +87,13 @@ RIMEA13_MIN_SAMPLES = 500
 RIMEA13_MIN_COMMON_BINS = 5
 RIMEA14_AGENTS = 30
 RIMEA16_MIN_LAPS = 3
-RIMEA16_BASELINE_MIN_INSIDE = 0.75
 RIMEA16_FASTER_MIN_ABOVE_P90 = 0.75
+RIMEA16_SWEEP_AGENTS = (5, 10, 20, 30, 40, 45)
+RIMEA16_SWEEP_TIME = 180.0  # s; congested levels need > 1 lap
+RIMEA16_SWEEP_MIN_LAPS = 1  # first lap is warm-up
+RIMEA16_SWEEP_MIN_INSIDE = 0.75
+RIMEA16_SWEEP_SPEED_TOL = 0.02  # m/s, per-step increase tolerated
+RIMEA16_SWEEP_MIN_DROP = 0.5  # m/s, free-flow minus most congested level
 
 pytestmark = [
     pytest.mark.vv,
@@ -1933,13 +1940,26 @@ class TestRiMEA161DFundamentalDiagram:
     """RiMEA Test 16: 1D fundamental diagram.
 
     Ring or long narrow corridor, measure speed vs 1D density.
-    Expected: Curves lie within 10/90% percentile envelope of empirical data.
+    RiMEA asks to show the influence of the parameters and sets no pass
+    limit; the 10/90% percentile band of empirical data is the reference.
+
+    The ring (26.85 m) is loaded with 5, 10, 20, 30, 40 and 45 agents at
+    v0 = 1.2 m/s, covering about 0.2 to 1.7 1/m (free flow to congested).
+    Gates of the sweep:
+    every agent completes the warm-up lap; no agent overtakes another (the
+    1D density needs single-file order); mean speed does not increase with
+    agent count (tolerance 0.02 m/s per step) and falls by at least 0.5 m/s
+    from the lowest to the highest level; at least 75% of the density-binned
+    speeds (bins with >= 50 samples, per level) lie inside the band.
+    Additionally the v0 = 0.9 m/s run is slower than v0 = 1.2 m/s and the
+    v0 = 1.5 m/s run is mostly above the 90th percentile (10 agents).
     """
 
     def test_1d_fundamental_diagram(self, vv_row):
         reference = load_reference_band()
         runs = {}
         agent_counts = {}
+        geometry_length = None
         for label, desired_speed in {
             "slower": 0.9,
             "baseline": 1.2,
@@ -1970,34 +1990,114 @@ class TestRiMEA161DFundamentalDiagram:
             curve = compute_density_speed_curve(samples)
             runs[label] = summarize_reference_fit(curve, reference)
             agent_counts[label] = result.total_agents
+            geometry_length = geometry.track_length
             result.cleanup()
 
         baseline = runs["baseline"]
         slower = runs["slower"]
         faster = runs["faster"]
+
+        sweep_fits = []
+        sweep_speed = {}
+        sweep_density = {}
+        sweep_order_changes = {}
+        sweep_sample_inside = []
+        for n_agents in RIMEA16_SWEEP_AGENTS:
+            scenario, geometry = build_loop_scenario(
+                label=f"rimea16-sweep-{n_agents}",
+                desired_speed=1.2,
+                num_agents=n_agents,
+                spacing=geometry_length / n_agents,
+                max_simulation_time=RIMEA16_SWEEP_TIME,
+            )
+            with redirect_stdout(io.StringIO()):
+                result = run_scenario(scenario, seed=DEFAULT_SEED)
+            trajectory_df = result.trajectory_dataframe()[["id", "frame", "x", "y"]]
+            lap_counts = compute_lap_counts(
+                trajectory_df=trajectory_df,
+                centerline=geometry.centerline,
+                track_length=geometry.track_length,
+            )
+            assert (lap_counts["completed_laps"] >= RIMEA16_SWEEP_MIN_LAPS).all(), (
+                f"N={n_agents}: every agent should complete a lap, got "
+                f"{lap_counts['completed_laps'].tolist()}"
+            )
+            samples = compute_density_speed_samples(
+                trajectory_df=trajectory_df,
+                frame_rate=result.frame_rate,
+                centerline=geometry.centerline,
+                track_length=geometry.track_length,
+                min_laps=RIMEA16_SWEEP_MIN_LAPS,
+            )
+            assert not samples.empty, f"N={n_agents}: no speed-density samples"
+            sweep_order_changes[n_agents] = count_order_changes(
+                trajectory_df, geometry.centerline
+            )
+            result.cleanup()
+            sweep_speed[n_agents] = float(samples["speed_mps"].mean())
+            sweep_density[n_agents] = float(samples["density_1pm"].mean())
+            sweep_sample_inside.append(
+                summarize_reference_fit(samples, reference)["inside_band"]
+            )
+            sweep_fits.append(
+                summarize_reference_fit(
+                    compute_density_speed_curve(samples, min_samples=50), reference
+                )
+            )
+
+        sweep_bins = pd.concat(sweep_fits)
+        sweep_inside = float(sweep_bins["inside_band"].mean())
+        speeds = [sweep_speed[n] for n in RIMEA16_SWEEP_AGENTS]
+        steps = np.diff(speeds)
         vv_row.set(
-            quantity="baseline_fraction_inside_reference_band", unit="fraction",
-            lower=RIMEA16_BASELINE_MIN_INSIDE,
+            quantity="speed_density_sweep_fraction_inside_reference_band",
+            unit="fraction", lower=RIMEA16_SWEEP_MIN_INSIDE,
             measured={
+                "sweep_inside_band_binned": sweep_inside,
+                "sweep_inside_band_samples": float(
+                    pd.concat(sweep_sample_inside).mean()
+                ),
+                "sweep_agents": list(RIMEA16_SWEEP_AGENTS),
+                "sweep_mean_density_1pm": [
+                    sweep_density[n] for n in RIMEA16_SWEEP_AGENTS
+                ],
+                "sweep_mean_speed_mps": speeds,
+                "sweep_order_changes": [
+                    sweep_order_changes[n] for n in RIMEA16_SWEEP_AGENTS
+                ],
                 "baseline_inside_band": float(baseline["inside_band"].mean()),
                 "slower_mean_speed_mps": float(slower["speed_mps"].mean()),
                 "baseline_mean_speed_mps": float(baseline["speed_mps"].mean()),
                 "faster_above_p90": float(faster["above_p90"].mean()),
             },
-            n=agent_counts["baseline"], seed=DEFAULT_SEED,
+            n=max(RIMEA16_SWEEP_AGENTS), seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
             scenario_file="standards/rimea/scenario_builders/rimea16_loop.py",
             rule=(
-                f"bound: baseline inside_band >= {RIMEA16_BASELINE_MIN_INSIDE}; "
+                f"bound: binned sweep inside_band >= {RIMEA16_SWEEP_MIN_INSIDE} "
+                f"(N = {list(RIMEA16_SWEEP_AGENTS)}, bins >= 50 samples); "
+                f"comparison: mean speed non-increasing with N (tol "
+                f"{RIMEA16_SWEEP_SPEED_TOL} m/s) and drop >= {RIMEA16_SWEEP_MIN_DROP} m/s; "
+                "gate: no order change (no overtaking) at any level; "
                 "comparison: slower mean speed < baseline mean speed; "
                 f"bound: faster above_p90 >= {RIMEA16_FASTER_MIN_ABOVE_P90}; "
-                f"gate: every agent completes >= {RIMEA16_MIN_LAPS} laps in each run"
+                f"gate: every agent completes >= {RIMEA16_MIN_LAPS} laps in each v0 run "
+                f"and >= {RIMEA16_SWEEP_MIN_LAPS} lap in each sweep run"
             ),
         )
 
-        assert baseline["inside_band"].mean() >= RIMEA16_BASELINE_MIN_INSIDE, (
-            f"Baseline curve should mostly lie within the reference band, got "
-            f"{baseline['inside_band'].mean():.2%} inside"
+        assert not any(sweep_order_changes.values()), (
+            f"Agents must stay single-file, order changes: {sweep_order_changes}"
+        )
+        assert (steps <= RIMEA16_SWEEP_SPEED_TOL).all(), (
+            f"Mean speed should not increase with agent count, got {speeds}"
+        )
+        assert speeds[0] - speeds[-1] >= RIMEA16_SWEEP_MIN_DROP, (
+            f"Mean speed should fall from free flow to congestion, got {speeds}"
+        )
+        assert sweep_inside >= RIMEA16_SWEEP_MIN_INSIDE, (
+            f"Binned sweep speeds should mostly lie within the reference band, got "
+            f"{sweep_inside:.2%} inside"
         )
         assert float(slower["speed_mps"].mean()) < float(baseline["speed_mps"].mean()), (
             f"Lower desired speed should shift the curve down, got "
