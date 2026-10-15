@@ -34,6 +34,7 @@ import re
 import shutil
 import sys
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import jinja2
@@ -194,8 +195,10 @@ def derive_status(row, res_rows):
     return "NOT RUN", ["Not run in this build."]
 
 
-def blocking_documented(row) -> bool:
-    return "blocking" in (row.get("note") or "").lower()
+def blocking_documented(row, definition=None) -> bool:
+    """True when the row note or a deviation of its definition documents blocking."""
+    texts = [row.get("note") or ""] + list((definition or {}).get("deviations", []))
+    return any("blocking" in t.lower() for t in texts)
 
 
 def notebook_for(row, std_id, nb_manifest):
@@ -326,6 +329,22 @@ def pick_versions(results, nb_manifest) -> dict:
     return out
 
 
+def format_time(ts) -> dict | None:
+    """Return {"iso": ms-precision ISO string, "text": "YYYY-MM-DD HH:MM UTC"}."""
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(ts))
+    except ValueError:
+        return {"iso": str(ts), "text": str(ts)}
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(UTC)
+    return {
+        "iso": dt.isoformat(timespec="milliseconds"),
+        "text": dt.strftime("%Y-%m-%d %H:%M UTC"),
+    }
+
+
 def pick_run(results, nb_manifest) -> dict:
     nb_prov = (nb_manifest or {}).get("provenance") or {}
     run = {}
@@ -333,6 +352,7 @@ def pick_run(results, nb_manifest) -> dict:
         val = next((r[key] for r in results or [] if r.get(key)), None)
         run[key] = val or nb_prov.get(key)
     run["local"] = not any(run.values())
+    run["time"] = format_time(run["timestamp"])
     return run
 
 
@@ -416,7 +436,7 @@ def build_pages(
                     "group": definition.get("group"),
                     "status": status,
                     "notes": notes,
-                    "blocking": blocking_documented(row),
+                    "blocking": blocking_documented(row, definition),
                     "res_rows": res_rows,
                     "notebook": notebook_for(row, std["id"], nb_manifest),
                 }
@@ -434,7 +454,13 @@ def build_pages(
         r["test_id"] for r in results or [] if r["test_id"] not in matched_ids
     )
     env = make_env()
-    ctx = {"versions": versions, "run": run, "banner": BANNER, "repo_root": repo_root}
+    ctx = {
+        "versions": versions,
+        "run": run,
+        "banner": BANNER,
+        "repo_root": repo_root,
+        "repo": REPO,
+    }
     write_assets(outdir)
     for s in standards:
         write_standard_pages(env, ctx, s, outdir, commit, nb_dir, results is not None)
@@ -609,6 +635,16 @@ CSS = """\
   --local-bg: #e6e9fb; --local-fg: #25318f;
   --pending-bg: #fdf1d3; --pending-fg: #6b4700;
   --notrun-bg: #eceff2; --notrun-fg: #3b434c;
+  --font-body: Arial, Helvetica, "Liberation Sans", sans-serif;
+  --text-sm: 0.875rem;     /* 14px */
+  --text-base: 1rem;       /* 16px */
+  --text-lg: 1.333rem;     /* 16 x 4/3 */
+  --text-xl: 1.778rem;     /* 16 x (4/3)^2 */
+  --text-2xl: 2.370rem;    /* 16 x (4/3)^3 */
+  --leading-body: 1.4;
+  --leading-head: 1.2;
+  --radius: 6px;
+  --gap: 16px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -623,18 +659,26 @@ CSS = """\
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg);
-  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  font-family: var(--font-body); font-size: var(--text-base); line-height: var(--leading-body); }
 a { color: var(--link); }
 header.site, footer.site { background: var(--panel); border-color: var(--line);
   border-style: solid; border-width: 0 0 1px; padding: 12px 16px; }
-footer.site { border-width: 1px 0 0; margin-top: 48px; color: var(--muted); font-size: 0.875rem; }
+footer.site { border-width: 1px 0 0; margin-top: 48px; color: var(--muted); font-size: var(--text-sm); }
+footer.site .bar { align-items: baseline; }
+footer.site time { white-space: nowrap; }
+footer.site .diag { flex-basis: 100%; }
+footer.site .diag summary { cursor: pointer; padding: 6px 0; }
+footer.site .diag p { margin: 4px 0 0; }
 .bar { max-width: 62rem; margin: 0 auto; display: flex; flex-wrap: wrap;
   gap: 8px 24px; align-items: center; justify-content: space-between; }
 .logo { height: 34px; width: auto; display: block; }
-.versions { color: var(--muted); font-size: 0.875rem; margin: 0; }
+.versions { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+@media (prefers-color-scheme: dark) {
+  header.site .logo { background: #fff; border-radius: 4px; padding: 2px 6px; }
+}
 main { max-width: 62rem; margin: 0 auto; padding: 8px 16px; }
 nav.crumbs { font-size: 0.9rem; margin: 16px 0 0; }
-h1 { font-size: 1.6rem; line-height: 1.25; margin: 0.6em 0 0.3em; }
+h1 { font-size: var(--text-xl); line-height: var(--leading-head); margin: 0.6em 0 0.3em; }
 h2 { font-size: 1.2rem; margin: 1.8em 0 0.4em; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
 h3 { font-size: 1.05rem; margin: 1.4em 0 0.3em; }
 .banner { border: 1px solid var(--line); border-left: 4px solid var(--link);
@@ -647,19 +691,47 @@ th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; ver
 th { background: var(--panel); }
 td.num { font-variant-numeric: tabular-nums; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.8rem;
-  font-weight: 700; letter-spacing: 0.03em; border: 2px solid currentColor; white-space: nowrap; }
+  font-weight: 700; letter-spacing: 0.03em; border: 1px solid currentColor; white-space: nowrap; }
 .badge-pass { background: var(--pass-bg); color: var(--pass-fg); }
-.badge-fail { background: var(--fail-bg); color: var(--fail-fg); border-style: dashed; }
-.badge-test-local { background: var(--local-bg); color: var(--local-fg); border-style: double; }
-.badge-pending { background: var(--pending-bg); color: var(--pending-fg); border-style: dotted; }
-.badge-not-run { background: var(--notrun-bg); color: var(--notrun-fg); border-style: dotted; }
+.badge-fail { background: var(--fail-bg); color: var(--fail-fg); }
+.badge-test-local { background: var(--local-bg); color: var(--local-fg); }
+.badge-pending { background: var(--pending-bg); color: var(--pending-fg); }
+.badge-not-run { background: var(--notrun-bg); color: var(--notrun-fg); }
 figure { margin: 12px 0; }
 figure img { max-width: 100%; height: auto; background: #fff; border: 1px solid var(--line); }
 figcaption { font-size: 0.875rem; color: var(--muted); }
 ul.plain { padding-left: 1.2rem; }
 .kv { color: var(--muted); font-size: 0.9rem; }
 code { font-size: 0.9em; background: var(--panel); padding: 0 4px; border-radius: 3px; }
-@media (max-width: 480px) { h1 { font-size: 1.35rem; } th, td { padding: 5px 6px; } }
+@media (max-width: 40rem) { h1 { font-size: var(--text-lg); } }
+@media (max-width: 480px) { th, td { padding: 5px 6px; } }
+.hero { margin: 32px 0 0; }
+.hero h1 { margin: 0; }
+.hero p { color: var(--muted); margin: 8px 0 0; max-width: 46rem; }
+.banner.top { margin: 20px 0 24px; }
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap); margin: 0; }
+@media (max-width: 40rem) {
+  .hero { margin-top: 20px; }
+  .cards { grid-template-columns: minmax(0, 1fr); }
+}
+.card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: var(--gap);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto 1fr auto; gap: 4px 12px; }
+.card h2 { font-size: var(--text-lg); line-height: var(--leading-head); border: 0; margin: 0; padding: 0; }
+.card h2 a { text-decoration: none; }
+.card h2 a:hover { text-decoration: underline; }
+.card .kv { grid-column: 1 / -1; margin: 0; font-size: var(--text-sm); }
+.card .count { grid-column: 2; grid-row: 1; margin: 0; font-size: var(--text-lg); font-weight: 700; line-height: var(--leading-head);
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.card .count span { font-size: var(--text-sm); font-weight: 400; color: var(--muted); }
+.chips { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 12px 0 0; align-content: start; }
+.chips .badge { display: flex; justify-content: space-between; gap: 12px;
+  padding: 3px 10px; font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.chips .zero { background: transparent; color: var(--muted); border-color: var(--line); font-weight: 400; }
+.card .foot { grid-column: 1 / -1; margin: 8px 0 0; font-size: var(--text-sm); color: var(--muted); }
+.legend { display: grid; gap: 8px; margin: 20px 0 0; font-size: var(--text-sm); color: var(--muted); }
+.legend > span { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.legend .badge { text-align: center; }
+.legend b { font-weight: 400; }
 """
 
 BASE = """\
@@ -682,9 +754,12 @@ BASE = """\
 </main>
 <footer class="site"><div class="bar"><span>
 {% if run.local %}local build
-{% else %}Run: commit {{ (run.commit_sha or "unknown")[:12] }}, run ID {{ run.run_id or "unknown" }}, {{ run.timestamp or "time unknown" }}
+{% else %}Run: commit {% if run.commit_sha %}<a href="{{ repo }}/commit/{{ run.commit_sha }}">{{ run.commit_sha[:12] }}</a>{% else %}unknown{% endif %},
+{% if run.run_id %}run <a href="{{ repo }}/actions/runs/{{ run.run_id }}">{{ run.run_id }}</a>{% else %}run ID unknown{% endif %},
+{% if run.time %}<time datetime="{{ run.time.iso }}">{{ run.time.text }}</time>{% else %}time unknown{% endif %}
 {% endif %}</span>
-<span>All numbers and figures on this site come from one run on the locked versions.</span></div></footer>
+<span>All numbers and figures on this site come from one run on the locked versions.</span>
+{% block diagnostics %}{% endblock %}</div></footer>
 </body>
 </html>
 """
@@ -700,33 +775,37 @@ INDEX = (
     + BADGE
     + """\
 {% block body %}
+<section class="hero">
 <h1>JuPedSim verification and validation</h1>
-<p class="banner">{{ banner }}</p>
+<p>Results for each published evacuation standard, from one run on the locked versions.</p>
+</section>
+<p class="banner top">{{ banner }}</p>
 {% if not has_results %}<p class="note">Test results are not available in this run.</p>{% endif %}
 {% if not has_notebooks %}<p class="note">Executed notebooks are not available in this run.</p>{% endif %}
-<div class="table-wrap"><table>
-<caption>Tests per standard, by page status</caption>
-<thead><tr><th scope="col">Standard</th><th scope="col">Tests</th>
-{% for s in order %}<th scope="col">{{ s }}</th>{% endfor %}
-<th scope="col">Blocking documented</th></tr></thead>
-<tbody>
+<div class="cards">
 {% for item in summary %}
-<tr><th scope="row"><a href="standards/{{ item.std.id }}/index.html">{{ item.std.name }}</a><br>
-<span class="kv">{{ item.std.full_name }}</span></th>
-<td class="num">{{ item.total }}</td>
-{% for s in order %}<td class="num">{{ item.counts[s] }}</td>{% endfor %}
-<td class="num">{{ item.blocking }}</td></tr>
+<article class="card">
+<h2><a href="standards/{{ item.std.id }}/index.html">{{ item.std.name }}</a></h2>
+<p class="kv">{{ item.std.full_name }}</p>
+<p class="count">{{ item.total }} <span>tests</span></p>
+<div class="chips">
+{% for st in order %}
+<span class="badge badge-{{ st|badge_class }}{{ " zero" if not item.counts[st] }}">{{ st }} <span>{{ item.counts[st] }}</span></span>
 {% endfor %}
-</tbody></table></div>
-<p class="kv">PENDING: the standard defines the test and the suite does not cover it yet.
-TEST-LOCAL: the test asserts logic in the test file, not simulator output.
-NOT RUN: no result was available in this build.</p>
-<h2>Run</h2>
-<p>{% if run.local %}Local build; no CI run provenance.{% else %}Commit {{ run.commit_sha or "unknown" }}; run ID {{ run.run_id or "unknown" }}; timestamp {{ run.timestamp or "unknown" }}.{% endif %}
- Locked versions:
-{% for name, v in versions.items() %}{{ name }} {{ v or "not available" }}{{ "; " if not loop.last }}{% endfor %}.</p>
+</div>
+<p class="foot">Blocking documented: {{ item.blocking }}</p>
+</article>
+{% endfor %}
+</div>
+<div class="legend" aria-label="Status legend">
+<span><span class="badge badge-pending">PENDING</span> <b>the standard defines the test; the suite does not cover it yet</b></span>
+<span><span class="badge badge-test-local">TEST-LOCAL</span> <b>asserts logic in the test file, not simulator output</b></span>
+<span><span class="badge badge-not-run">NOT RUN</span> <b>no result was available in this build</b></span>
+</div>
+{% endblock %}
+{% block diagnostics %}
 {% if has_results and (orphans or no_results) %}
-<details><summary>Join diagnostics</summary>
+<details class="diag"><summary>Join diagnostics</summary>
 <p>Result rows mapped to no coverage row: {{ orphans|length }}. Covered rows with no result rows: {{ no_results|length }}.</p>
 </details>
 {% endif %}
