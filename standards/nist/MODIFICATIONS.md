@@ -200,7 +200,7 @@ test alone).
   TN 1822 Figure 7: room 1 5 m x 4 m, a 2 m x 1.5 m ramp, room 2 5 m x 4 m
   and a 1 m exit opening. Zone 2 is the last 1 m of room 1.
 - The 24 zone-1 occupants have `v0 = 1.25 m/s` and the model's default
-  `radius = 0.2 m` throughout. The reduced-mobility occupant has
+  `radius = 0.15 m` throughout. The reduced-mobility occupant has
   `radius = 0.4 m` (0.8 m wide, more than half the ramp) and walks at
   0.8 m/s on the flat and 0.4 m/s on the ramp. jupedsim-scenarios 0.7.3
   applies speed zones to every agent, so the builder drives jupedsim

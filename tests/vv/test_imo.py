@@ -163,7 +163,7 @@ class TestIMO02WalkingSpeedUpstairs:
             "coordinates": [[0.0, 0.8], [0.3, 0.8], [0.3, 1.2], [0.0, 1.2], [0.0, 0.8]],
             "parameters": {
                 "number": 1,
-                "radius": 0.08,
+                "radius": 0.15,
                 "v0": 2.0,
                 "use_flow_spawning": False,
                 "distribution_mode": "by_number",
@@ -260,7 +260,7 @@ class TestIMO03WalkingSpeedDownstairs:
             "coordinates": [[0.0, 0.8], [0.3, 0.8], [0.3, 1.2], [0.0, 1.2], [0.0, 0.8]],
             "parameters": {
                 "number": 1,
-                "radius": 0.08,
+                "radius": 0.15,
                 "v0": 1.0 / 0.75,
                 "use_flow_spawning": False,
                 "distribution_mode": "by_number",

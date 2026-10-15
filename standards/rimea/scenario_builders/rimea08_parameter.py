@@ -36,7 +36,7 @@ N_FLOORS        = 3
 STAIR_W         = 2.0   # staircase width [m]
 STAIR_H         = 3.0   # staircase height in 2-D plane [m]
 PERSONS_PER_ROOM = 4
-AGENT_RADIUS    = 0.2   # [m]
+AGENT_RADIUS    = 0.15  # [m]
 
 FLOOR_W      = N_ROOMS_SIDE * ROOM_W          # 15 m
 FLOOR_H      = 2 * ROOM_D + CORRIDOR_W        #  8 m
