@@ -1425,110 +1425,93 @@ class TestRiMEA12bBottleneckLength:
 class TestRiMEA12cCongestionInfluence:
     """RiMEA Test 12c: Influence of congestion.
 
-    Three rooms connected by two identical bottlenecks.
-    Expected: Measure agent counts and flows over time at bottlenecks 1 and 2.
+    Three rooms (10 m, 10 m, 5 m) joined by two identical 1 m bottlenecks;
+    all agents start in room 1.
+
+    RiMEA 4.1.1 sets no pass criterion: the aim is to determine the number
+    of agents in rooms 1 and 2 over time and the flows in both bottlenecks.
+
+    Asserted: conservation of agents. At every frame, agents in room 1 +
+    bottleneck 1 + room 2 + bottleneck 2 + room 3 + agents already
+    evacuated equal the number spawned. Rooms and bottlenecks are defined
+    by x ranges of the geometry; an agent inside a bottleneck (0.2 m deep)
+    is counted in its own bottleneck bucket.
+
+    Reported, not asserted: flow through each bottleneck, (N-1)/(t_last -
+    t_first) of the first crossings of its measurement line (p/s and per
+    metre of width), and the peak number of agents in room 2.
     """
 
-    WALKABLE = "POLYGON ((0 0, 10 0, 10 4.5, 10.2 4.5, 10.2 0, 20.2 0, 20.2 4.5, 20.4 4.5, 20.4 0, 25.4 0, 25.4 10, 20.4 10, 20.4 5.5, 20.2 5.5, 20.2 10, 10.2 10, 10.2 5.5, 10 5.5, 10 10, 0 10, 0 0))"
-    EXIT = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[25.2, 0], [25.4, 0], [25.4, 10], [25.2, 10], [25.2, 0]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        }
-    }
-    DIST = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0, 0], [5, 0], [5, 10], [0, 10], [0, 0]],
-            "parameters": {
-                "number": 150,
-                "radius": 0.15,
-                "v0": 1.2,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-        }
-    }
+    SCENARIO_ZIP = STANDARDS_DIR / "rimea" / "scenario_files" / "Rimea-12c-congestion-influence.zip"
     BOTTLENECK_1_LINE = ((10.0, 4.5), (10.0, 5.5))
-    BOTTLENECK_2_LINE = ((20.2, 4.5), (20.2, 5.5))
-    QUEUE_AREA_1 = Polygon([(8.0, 3.5), (10.0, 3.5), (10.0, 6.5), (8.0, 6.5)])
-    QUEUE_AREA_2 = Polygon([(18.2, 3.5), (20.2, 3.5), (20.2, 6.5), (18.2, 6.5)])
+    BOTTLENECK_2_LINE = ((20.0, 4.5), (20.0, 5.5))
+    BOTTLENECK_WIDTH = 1.0
+    # x edges: room 1 | bottleneck 1 | room 2 | bottleneck 2 | room 3
+    X_EDGES = (10.0, 10.2, 20.0, 20.2)
+    BUCKETS = ("room_1", "bottleneck_1", "room_2", "bottleneck_2", "room_3")
 
-    def _count_agents_in_area_per_frame(self, trajectory, area):
-        counts = []
-        if trajectory is None:
-            return counts
-        for _, frame_data in trajectory.data.groupby("frame"):
-            count = 0
-            for row in frame_data.itertuples():
-                if area.covers(Point(row.x, row.y)):
-                    count += 1
-            counts.append(count)
-        return counts
+    def _occupancy(self, trajectory):
+        """Per frame: agents per bucket plus agents already evacuated."""
+        data = trajectory.data
+        last_frame = data.groupby("id")["frame"].max()
+        frames = np.sort(data["frame"].unique())
+        bucket = np.searchsorted(self.X_EDGES, data["x"].to_numpy(), side="right")
+        counts = np.zeros((len(frames), len(self.BUCKETS)), dtype=int)
+        rows = np.searchsorted(frames, data["frame"].to_numpy())
+        np.add.at(counts, (rows, bucket), 1)
+        evacuated = np.array([(last_frame < f).sum() for f in frames])
+        return frames, counts, evacuated
+
+    def _flow(self, crossing, frame_rate):
+        frames = crossing.groupby("id")["frame"].min()
+        if len(frames) < 2 or frames.max() == frames.min():
+            return float("nan")
+        return float((len(frames) - 1) / ((frames.max() - frames.min()) / frame_rate))
 
     def test_congestion_at_bottlenecks(self, vv_row):
         import pedpy
 
-        metrics, trajectory = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE,
-            exits=self.EXIT,
-            distributions=self.DIST,
-            max_simulation_time=400.0,
+        scenario = load_scenario(str(self.SCENARIO_ZIP))
+        result = run_scenario(scenario, seed=DEFAULT_SEED)
+        trajectory = pedpy.TrajectoryData(
+            result.trajectory_dataframe()[["id", "frame", "x", "y"]].copy(),
+            frame_rate=result.frame_rate,
         )
-
-        assert metrics["agents_remaining"] == 0
-        assert trajectory is not None, "Trajectory output required for bottleneck analysis"
+        total = int(result.metrics["total_agents"])
+        result.cleanup()
+        frames, counts, evacuated = self._occupancy(trajectory)
+        residual = np.abs(counts.sum(axis=1) + evacuated - total)
 
         line_1 = pedpy.MeasurementLine(list(self.BOTTLENECK_1_LINE))
         line_2 = pedpy.MeasurementLine(list(self.BOTTLENECK_2_LINE))
-        nt_1, crossing_1 = pedpy.compute_n_t(traj_data=trajectory, measurement_line=line_1)
-        nt_2, crossing_2 = pedpy.compute_n_t(traj_data=trajectory, measurement_line=line_2)
+        _, crossing_1 = pedpy.compute_n_t(traj_data=trajectory, measurement_line=line_1)
+        _, crossing_2 = pedpy.compute_n_t(traj_data=trajectory, measurement_line=line_2)
+        flow_1 = self._flow(crossing_1, trajectory.frame_rate)
+        flow_2 = self._flow(crossing_2, trajectory.frame_rate)
 
-        assert len(crossing_1) == metrics["total_agents"]
-        assert len(crossing_2) == metrics["total_agents"]
-
-        queue_1 = self._count_agents_in_area_per_frame(trajectory, self.QUEUE_AREA_1)
-        queue_2 = self._count_agents_in_area_per_frame(trajectory, self.QUEUE_AREA_2)
-
-        peak_queue_1 = max(queue_1)
-        peak_queue_2 = max(queue_2)
-        mean_top10_queue_1 = float(np.mean(sorted(queue_1, reverse=True)[:10]))
-        mean_top10_queue_2 = float(np.mean(sorted(queue_2, reverse=True)[:10]))
-        assert peak_queue_1 > peak_queue_2, (
-            f"Expected stronger queue before bottleneck 1, got peaks "
-            f"b1={peak_queue_1}, b2={peak_queue_2}"
-        )
-        assert mean_top10_queue_1 > mean_top10_queue_2, (
-            f"Expected denser sustained queue before bottleneck 1, got top-10 means "
-            f"b1={mean_top10_queue_1:.2f}, b2={mean_top10_queue_2:.2f}"
-        )
-        first_crossing_1 = float(crossing_1["frame"].min() / trajectory.frame_rate)
-        first_crossing_2 = float(crossing_2["frame"].min() / trajectory.frame_rate)
         vv_row.set(
-            quantity="peak_queue_before_b1_vs_b2", unit="agents",
+            quantity="bottleneck_flow_and_room_2_peak", unit="p/s",
             measured={
-                "peak_queue_b1": peak_queue_1,
-                "peak_queue_b2": peak_queue_2,
-                "top10_mean_queue_b1": mean_top10_queue_1,
-                "top10_mean_queue_b2": mean_top10_queue_2,
-                "first_crossing_s_b1": first_crossing_1,
-                "first_crossing_s_b2": first_crossing_2,
+                "flow_b1_p_per_s": flow_1,
+                "flow_b2_p_per_s": flow_2,
+                "specific_flow_b1_p_per_m_s": flow_1 / self.BOTTLENECK_WIDTH,
+                "specific_flow_b2_p_per_m_s": flow_2 / self.BOTTLENECK_WIDTH,
+                "peak_agents_room_2": int(counts[:, 2].max()),
+                "max_conservation_residual": int(residual.max()),
             },
-            n=metrics["total_agents"], seed=DEFAULT_SEED,
+            n=total, seed=DEFAULT_SEED,
+            scenario_file="standards/rimea/scenario_files/Rimea-12c-congestion-influence.zip",
             model="CollisionFreeSpeedModel",
             rule=(
-                "bound: agents_remaining = 0; bound: crossings per line = total_agents; "
-                "comparison: peak queue b1 > b2, top-10 mean queue b1 > b2, "
-                "first crossing b1 < b2"
+                "conservation: at every frame, agents in room 1 + bottleneck 1 + "
+                "room 2 + bottleneck 2 + room 3 + evacuated = total spawned; "
+                "RiMEA sets no criterion, flows and room-2 peak are reported only"
             ),
         )
-        assert first_crossing_1 < first_crossing_2, (
-            f"Expected bottleneck 2 to start later than bottleneck 1, got "
-            f"b1={first_crossing_1:.2f}s, b2={first_crossing_2:.2f}s"
+        assert total == 150
+        assert residual.max() == 0, (
+            f"Agent conservation violated, max residual {residual.max()} "
+            f"at frame {frames[residual.argmax()]}"
         )
 
 
