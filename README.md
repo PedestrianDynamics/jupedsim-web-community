@@ -1,5 +1,4 @@
-[![IMO Tests](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/imo.yml/badge.svg)](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/imo.yml)
-[![RiMEA Tests](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/rimea.yml/badge.svg)](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/rimea.yml)
+[![V&V Tests](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/vv.yml/badge.svg)](https://github.com/PedestrianDynamics/jupedsim-web-community/actions/workflows/vv.yml)
 [![ISO Tests](https://img.shields.io/badge/ISO%20Tests-planned-lightgrey)](https://github.com/PedestrianDynamics/jupedsim-web-community/issues)
 [![V&V Coverage](https://img.shields.io/badge/V%26V-coverage%20dashboard-005676)](https://pedestriandynamics.org/jupedsim-web-community/)
 [![Docker Pulls](https://img.shields.io/docker/pulls/jupedsim/jupedsim-web)](https://hub.docker.com/r/jupedsim/jupedsim-web)

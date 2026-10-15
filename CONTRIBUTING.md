@@ -60,8 +60,10 @@ Always run the relevant subset locally before pushing.
    `standards/rimea/`.
 3. Add a programmatic test module at `tests/vv/test_<name>.py` using
    `vv_helpers.py`.
-4. Add a CI workflow at `.github/workflows/<name>.yml` mirroring
-   `rimea.yml` / `imo.yml`.
+4. `vv.yml` runs every module in `tests/vv`. Add the module to
+   `STANDARD_FILES` in `tests/vv/conftest.py`, and map
+   `standards/<name>/` to it in `scripts/select_vv_tests.py` so pull
+   requests that touch the standard run it.
 5. Register the new tests in `tests/vv/test_registry.py` if applicable.
 
 ## Scenarios
