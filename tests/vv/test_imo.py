@@ -114,7 +114,11 @@ class TestIMO01WalkingSpeedCorridor:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_outside_polygon(trajectory, self.WALKABLE)
+        violations = agents_outside_polygon(
+            trajectory,
+            self.WALKABLE,
+            radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
+        )
         assert not violations, "Agent left corridor:\n" + "\n".join(violations[:5])
 
 
@@ -463,12 +467,15 @@ class TestIMO05ResponseTime:
             f"Observed movement after expected window: {observed}"
         )
 
-        expected_sorted = np.sort(expected_times)
-        observed_sorted = np.sort(observed)
-        deltas = np.abs(observed_sorted - expected_sorted)
+        # ScenarioResult does not expose the per-agent assignment. The runner
+        # adds agents in spawn order (ids ascend with the spawn index) and
+        # gives spawn index i the i-th draw of the uniform premovement
+        # sample, so the i-th smallest agent id owns expected_times[i].
+        deltas = np.abs(observed - expected_times)
         assert np.all(deltas <= 0.5), (
-            "Observed movement start times do not match sampled premovement delays. "
-            f"Expected={expected_sorted}, observed={observed_sorted}, deltas={deltas}"
+            "Observed movement start times do not match each agent's own "
+            f"premovement delay. Expected={expected_times}, observed={observed}, "
+            f"deltas={deltas}"
         )
 
 
@@ -523,7 +530,11 @@ class TestIMO06RoundingCorners:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_outside_polygon(trajectory, self.WALKABLE)
+        violations = agents_outside_polygon(
+            trajectory,
+            self.WALKABLE,
+            radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
+        )
         assert not violations, "Agents left L-corridor:\n" + "\n".join(violations[:10])
 
 

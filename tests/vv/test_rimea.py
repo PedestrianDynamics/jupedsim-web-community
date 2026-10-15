@@ -170,7 +170,11 @@ class TestRiMEA01SpeedCorridor:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_outside_polygon(trajectory, self.WALKABLE)
+        violations = agents_outside_polygon(
+            trajectory,
+            self.WALKABLE,
+            radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
+        )
         vv_row.set(
             quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
             measured=len(violations), n=metrics["total_agents"], seed=DEFAULT_SEED,
@@ -612,7 +616,7 @@ class TestRiMEA05PremovementTime:
             model="CollisionFreeSpeedModel",
             rule=(
                 f"bound: {RIMEA05_LOWER} <= measured <= {RIMEA05_UPPER}; comparison: "
-                f"sorted measured vs sorted premovement samples (premovement_seed), "
+                f"per-agent measured vs that agent's premovement sample (premovement_seed), "
                 f"max abs delta <= {RIMEA05_DELTA_TOL} s"
             ),
         )
@@ -621,12 +625,15 @@ class TestRiMEA05PremovementTime:
             f"Observed movement after expected window: {observed}"
         )
 
-        expected_sorted = np.sort(expected_times)
-        observed_sorted = np.sort(observed)
-        deltas = np.abs(observed_sorted - expected_sorted)
+        # ScenarioResult does not expose the per-agent assignment. The runner
+        # adds agents in spawn order (ids ascend with the spawn index) and
+        # gives spawn index i the i-th draw of the uniform premovement
+        # sample, so the i-th smallest agent id owns expected_times[i].
+        deltas = np.abs(observed - expected_times)
         assert np.all(deltas <= RIMEA05_DELTA_TOL), (
-            "Observed movement start times do not match sampled premovement delays. "
-            f"Expected={expected_sorted}, observed={observed_sorted}, deltas={deltas}"
+            "Observed movement start times do not match each agent's own "
+            f"premovement delay. Expected={expected_times}, observed={observed}, "
+            f"deltas={deltas}"
         )
 
 
@@ -690,7 +697,11 @@ class TestRiMEA06Corner:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_outside_polygon(trajectory, self.WALKABLE)
+        violations = agents_outside_polygon(
+            trajectory,
+            self.WALKABLE,
+            radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
+        )
         vv_row.set(
             quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
             measured=len(violations), n=metrics["total_agents"], seed=DEFAULT_SEED,
