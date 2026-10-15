@@ -103,7 +103,10 @@ jobs:
       run: uv sync --frozen --extra dev
 
     - name: Execute notebooks
-      run: uv run --frozen python scripts/run_notebooks.py
+      # Two at a time: on the 4-vCPU runner, four heavy notebooks side by side
+      # (RiMEA 4 and 12a, ISO 6 and 15) each exceeded 30 min. The runtime work
+      # item in the V&V plan removes the double computation behind this.
+      run: uv run --frozen python scripts/run_notebooks.py --jobs 2 --timeout 3600
 
     - name: Notebook summary
       if: always()
