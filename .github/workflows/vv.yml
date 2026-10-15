@@ -27,6 +27,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        # Pull requests diff the merge commit against its first parent.
+        fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
+
+    - name: Select V&V tests
+      id: select
+      # Pull requests run only the tests their changes can affect
+      # (scripts/select_vv_tests.py); every other event runs the full
+      # suite, which is what gets published.
+      run: |
+        if [ "${{ github.event_name }}" = pull_request ]; then
+          git diff --name-only --no-renames HEAD^1 HEAD > "${{ runner.temp }}/changed.txt"
+          tests=$(python3 scripts/select_vv_tests.py < "${{ runner.temp }}/changed.txt")
+        else
+          tests=tests/vv
+        fi
+        echo "tests=$tests" >> "$GITHUB_OUTPUT"
+        echo "V&V tests selected: ${tests:-none}" >> "$GITHUB_STEP_SUMMARY"
 
     - uses: astral-sh/setup-uv@v5
       with:
@@ -35,8 +53,13 @@ jobs:
     - name: Sync environment
       run: uv sync --frozen --extra dev
 
+    - name: Run site generator tests
+      if: github.event_name == 'pull_request'
+      run: uv run --frozen --extra dev python -m pytest tests/test_gen_vv_site.py -v
+
     - name: Run V&V tests
-      run: uv run --frozen --extra dev python -m pytest tests/vv -v --junitxml=results/vv-tests.xml
+      if: steps.select.outputs.tests != ''
+      run: uv run --frozen --extra dev python -m pytest ${{ steps.select.outputs.tests }} -v --junitxml=results/vv-tests.xml
 
     - name: Upload V&V test results
       if: always()
@@ -46,10 +69,11 @@ jobs:
         path: |
           results/vv-tests.xml
           results/vv-results.json
+          results/vv-results-partial.json
         if-no-files-found: warn
 
     - name: V&V test summary
-      if: always()
+      if: always() && steps.select.outputs.tests != ''
       uses: test-summary/action@v2
       with:
         paths: results/vv-tests.xml
@@ -57,7 +81,7 @@ jobs:
     # Build the standards coverage report (HTML dashboard + Markdown mirror)
     # from the manifest joined to the live JUnit results. Stdlib only.
     - name: Generate standards coverage report
-      if: always()
+      if: always() && steps.select.outputs.tests != ''
       run: |
         python3 scripts/gen_standards_report.py --junit results/vv-tests.xml --outdir site
         cat site/summary.md >> "$GITHUB_STEP_SUMMARY"
