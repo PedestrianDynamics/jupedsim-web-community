@@ -20,6 +20,8 @@ except ImportError:
 # Backward-compatible alias for older imports.
 HAS_JUPEDSIM = HAS_VV_DEPS
 
+DEFAULT_SEED = 42
+
 
 def run_vv_scenario(
     walkable_area_wkt: str,
@@ -27,7 +29,7 @@ def run_vv_scenario(
     distributions: dict,
     model_type: str = "CollisionFreeSpeedModel",
     max_simulation_time: float = 300.0,
-    seed: int = 42,
+    seed: int = DEFAULT_SEED,
     checkpoints: dict | None = None,
     journeys_v2: list | None = None,
     model_params: dict | None = None,
