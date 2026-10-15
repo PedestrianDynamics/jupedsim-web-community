@@ -137,20 +137,6 @@ def measure_flow_rate(metrics: dict) -> float:
     return metrics["agents_evacuated"] / evac_time
 
 
-def exit_times_by_start_x(result, max_start_x: float) -> list[float]:
-    """Exit time of each agent whose first position has x < max_start_x.
-
-    The exit time is the agent's last recorded frame divided by the frame
-    rate.
-    """
-    df = result.trajectory_dataframe().sort_values(["id", "frame"])
-    per_agent = df.groupby("id").agg(
-        start_x=("x", "first"), last_frame=("frame", "last")
-    )
-    selected = per_agent[per_agent.start_x < max_start_x]
-    return (selected.last_frame / result.frame_rate).tolist()
-
-
 def agents_within_bounds(
     trajectory: "pedpy.TrajectoryData",
     min_x: float,
