@@ -206,7 +206,20 @@ def blocking_documented(row, definition=None) -> bool:
     return any("blocking" in t.lower() for t in texts)
 
 
+def notebook_ran(nb) -> bool:
+    """True when the notebook executed to the end in this run."""
+    return bool(nb) and nb["status"] not in ("error", "not_run")
+
+
 def notebook_for(row, std_id, nb_manifest):
+    """Manifest entry of the row's notebook; a stub when a covered notebook has none."""
+    nb = find_notebook(row, std_id, nb_manifest)
+    if nb or not row.get("notebook"):
+        return nb
+    return {"path": row["notebook"], "status": "not_run", "error_summary": None}
+
+
+def find_notebook(row, std_id, nb_manifest):
     for nb in (nb_manifest or {}).get("notebooks", []):
         if row.get("notebook") and nb["path"] == row["notebook"]:
             return nb
@@ -646,7 +659,9 @@ def copy_notebook(std_id, e, nb_dir, static_dir: Path, commit):
     nb, row = e["notebook"], e["row"]
     if not nb:
         return None
-    html_src = Path(nb_dir) / nb["html"] if nb.get("html") else None
+    html_src = (
+        Path(nb_dir) / nb["html"] if notebook_ran(nb) and nb.get("html") else None
+    )
     html_path = None
     if html_src and html_src.is_file():
         html_path = f"notebooks/{std_id}/{e['slug']}/notebook.html"
@@ -662,7 +677,7 @@ def copy_notebook(std_id, e, nb_dir, static_dir: Path, commit):
 
 
 def bundle_figures(nb, nb_dir, pdir: Path):
-    if not nb:
+    if not notebook_ran(nb):
         return [], [], []
     figs = nb.get("figures", {})
     return tuple(
@@ -773,9 +788,12 @@ def notebook_section(nb) -> list[str]:
             f"{status_chip('FAIL')} The acceptance check of this notebook failed in this run.",
             "",
         ]
-    elif nb["status"] == "error":
+    elif not notebook_ran(nb):
         detail = f": {md(nb['error'])}" if nb["error"] else ""
-        lines += [f"{status_chip('FAIL')} The notebook did not execute{detail}.", ""]
+        lines += [
+            f"{status_chip('NOT RUN')} The notebook did not execute in this run{detail}.",
+            "",
+        ]
     if nb["html_path"]:
         link = f'{{{{< static-link {shortcode_arg(nb["html_path"])} "Executed notebook (HTML)" >}}}}'
         lines.append(f"- {link}")

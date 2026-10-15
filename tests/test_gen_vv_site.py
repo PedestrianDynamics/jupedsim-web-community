@@ -213,6 +213,60 @@ def test_missing_results_and_notebooks(gen, inputs, content):
     assert "not available" in (content / "diagnostics.md").read_text()
 
 
+def notebook_inputs(tmp_path, inputs, status):
+    nb_dir = tmp_path / "nb"
+    (nb_dir / "html").mkdir(parents=True)
+    (nb_dir / "html" / "a.html").write_text("<html></html>")
+    (nb_dir / "figs").mkdir()
+    (nb_dir / "figs" / "r.png").write_bytes(b"png")
+    manifest = {
+        "notebooks": [
+            {
+                "path": "nb/a.ipynb",
+                "status": status,
+                "error_summary": "ValueError: boom",
+                "html": "html/a.html",
+                "figures": {"result": ["figs/r.png"]},
+            }
+        ]
+    }
+    if status is not None:
+        (nb_dir / "manifest.json").write_text(json.dumps(manifest))
+    cov = json.loads(inputs["coverage"].read_text())
+    cov["standards"][0]["tests"][0]["notebook"] = "nb/a.ipynb"
+    inputs["coverage"].write_text(json.dumps(cov))
+    return nb_dir
+
+
+@pytest.mark.parametrize("status", ["error", None])
+def test_unexecuted_notebook_is_not_run(gen, inputs, content, tmp_path, status):
+    nb_dir = notebook_inputs(tmp_path, inputs, status)
+    argv = [
+        "--manifest",
+        str(inputs["coverage"]),
+        "--definitions",
+        str(inputs["definitions"]),
+        "--results",
+        str(inputs["results"]),
+        "--hugo-content",
+        str(content),
+        "--notebooks",
+        str(nb_dir),
+    ]
+    if status is None:
+        (nb_dir / "manifest.json").write_text(json.dumps({"notebooks": []}))
+    assert gen.main(argv) == 0
+    text = page(content, "std-t1")
+    section = text.split("## 6. Our notebook")[1]
+    assert "NOT RUN" in section
+    assert "did not execute in this run" in section
+    assert "FAIL" not in section
+    assert "static-link" not in section
+    assert "No notebook for this test yet" not in section
+    assert "figures/" not in text
+    assert not list((content.parent / "static").rglob("*.html"))
+
+
 def test_footer_data_and_diagnostics(gen, inputs, content):
     build(gen, inputs, content)
     run = json.loads((content.parent / "data" / "run.json").read_text())
