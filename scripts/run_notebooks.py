@@ -3,10 +3,10 @@
 
 Usage:
     uv run --frozen python scripts/run_notebooks.py [NOTEBOOK ...]
-        [--outdir results/notebooks] [--timeout 1800]
+        [--outdir results/notebooks] [--timeout 1800] [--jobs N]
 
 Without arguments every ``standards/**/*.ipynb`` is executed. Each notebook
-runs in its own directory (so relative paths resolve), in a fresh kernel, with
+runs in its own directory (up to --jobs in parallel) (so relative paths resolve), in a fresh kernel, with
 errors allowed: a failing cell does not stop the notebook.
 
 Per notebook ``<outdir>/<std>/<name>/`` receives the executed ``<name>.ipynb``,
@@ -38,9 +38,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import concurrent.futures
 import datetime
 import importlib.metadata
 import json
+import multiprocessing
 import os
 import pathlib
 import platform
@@ -177,13 +179,27 @@ def execute(path: pathlib.Path, timeout: int):
         kernel_name="python3",
         resources={"metadata": {"path": str(path.parent)}},
     )
-    try:
-        asyncio.run(asyncio.wait_for(client.async_execute(), timeout))
-    except TimeoutError:
-        return client.nb, f"timeout after {timeout} s"
-    except Exception as exc:  # noqa: BLE001 - kernel death or startup failure becomes status error
-        return client.nb, f"{type(exc).__name__}: {exc}"
-    return client.nb, None
+    failure = asyncio.run(_run_with_deadline(client, timeout))
+    return client.nb, failure
+
+
+async def _run_with_deadline(client: NotebookClient, timeout: int) -> str | None:
+    """Run the client; return a failure text, or None on completion.
+
+    The deadline is tracked explicitly so that the kernel death caused by our
+    own cancellation is reported as a timeout, while a kernel that dies before
+    the deadline is reported as such.
+    """
+    task = asyncio.ensure_future(client.async_execute())
+    done, _ = await asyncio.wait({task}, timeout=timeout)
+    if not done:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return f"timeout after {timeout} s"
+    exc = task.exception()
+    if exc is None:
+        return None
+    return f"{type(exc).__name__}: {exc}"
 
 
 def extract_figures(nb, outdir: pathlib.Path, rel_base: pathlib.Path) -> dict:
@@ -322,6 +338,13 @@ def main() -> int:
     parser.add_argument(
         "--timeout", type=int, default=1800, help="seconds per notebook"
     )
+    parser.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=os.cpu_count() or 1,
+        help="notebooks executed in parallel (default: CPU count)",
+    )
     args = parser.parse_args()
 
     outdir = pathlib.Path(args.outdir)
@@ -329,18 +352,24 @@ def main() -> int:
     outdir.mkdir(parents=True, exist_ok=True)
     by_nb, missing = load_coverage()
 
-    entries = []
-    for path in discover(args.notebooks):
-        print(f"::group::{path.relative_to(REPO_ROOT)}", flush=True)
-        entry = process(path, outdir, args.timeout)
-        entry["tests"] = by_nb.get(entry["path"], [])
-        entries.append(entry)
-        print(
-            f"{entry['status']} in {entry['duration_s']} s "
-            f"{entry['error_summary'] or ''}",
-            flush=True,
-        )
-        print("::endgroup::", flush=True)
+    paths = sorted(discover(args.notebooks))
+    jobs = max(1, min(args.jobs, len(paths) or 1))
+    by_path = {}
+    ctx = multiprocessing.get_context("spawn")
+    with concurrent.futures.ProcessPoolExecutor(jobs, mp_context=ctx) as pool:
+        futures = {
+            pool.submit(process, path, outdir, args.timeout): path for path in paths
+        }
+        for future in concurrent.futures.as_completed(futures):
+            entry = future.result()
+            entry["tests"] = by_nb.get(entry["path"], [])
+            by_path[entry["path"]] = entry
+            print(
+                f"{entry['path']}: {entry['status']} in {entry['duration_s']} s "
+                f"{entry['error_summary'] or ''}",
+                flush=True,
+            )
+    entries = [by_path[p] for p in sorted(by_path)]
 
     prov = provenance()
     prov["timeout_s"] = args.timeout
