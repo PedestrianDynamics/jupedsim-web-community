@@ -9,13 +9,12 @@ This module ports the acceptance criteria encoded in the notebooks under
 ones). Each notebook carries an "## Acceptance" cell that is authoritative for
 the criterion and thresholds reproduced here.
 
-Five scenarios exercise a genuine ISO criterion that CollisionFreeSpeedModel
+Three scenarios exercise a genuine ISO criterion that CollisionFreeSpeedModel
 cannot satisfy and are therefore strict xfails (they assert the real criterion
 and fail with AssertionError):
 
 * Test 6  - counter-flow: no lane formation, the primary crowd deadlocks.
 * Test 11 - maximum flow: no door-flow limiter, emergent flow >> IMO 1.33 p/m/s.
-* Test 13 - corridor fundamental diagram: zone-2 speed exceeds the free speed.
 * Test 15 - social influence: no social-influence model.
 
 Runtime-reducing deviations from the notebooks are noted in the relevant
@@ -665,9 +664,9 @@ class TestIso12StairFlow:
                     result.cleanup()
         widths = np.array([r["width"] for r in rows])
         flows = np.array([r["flow_p_s"] for r in rows])
-        valid = ~np.isnan(flows)
-        widths, flows = widths[valid], flows[valid]
-        assert len(flows) >= 2, "not enough valid flow measurements"
+        assert not np.isnan(flows).any(), (
+            f"no flow measured at widths {widths[np.isnan(flows)]}"
+        )
         slope = np.polyfit(widths, flows, 1)[0]
         assert slope > 0, f"flow-vs-width slope {slope:.3f} not positive"
         assert flows[-1] > flows[0], (
@@ -684,24 +683,14 @@ class TestIso13CorridorFd:
     """ISO Test 13 - corridor speed/flow/density fundamental diagram.
 
     ISO expects the zone-2 speed-density relationship to be consistent with the
-    model's own assumptions. It is not: every measured mean zone-2 speed
-    exceeds the 1.0 m/s free speed assigned to the crowd, so the model does not
-    reproduce a valid fundamental diagram and fails ISO Test 13. A 3-density
-    subset {60, 120, 240} of the notebook's 5-point sweep is used for runtime;
-    the free-speed violation holds at every density.
+    model's own assumptions. The mean zone-2 speed of agents that cross line A
+    must not exceed the 1.0 m/s free speed assigned to the crowd. A 3-density
+    subset {60, 120, 240} of the notebook's 5-point sweep is used for runtime.
     """
 
     FREE_SPEED = 1.0
     DENSITIES = [60, 120, 240]
 
-    @pytest.mark.xfail(
-        reason="CollisionFreeSpeedModel does not reproduce an empirical "
-        "fundamental diagram: measured zone-2 speeds (1.9-3.1 m/s) exceed the "
-        "1.0 m/s free speed assigned to the crowd, contradicting the model's "
-        "own assumptions.",
-        raises=AssertionError,
-        strict=True,
-    )
     def test_zone2_speed_within_free_speed(self):
         import json
         import tempfile

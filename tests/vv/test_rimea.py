@@ -27,7 +27,7 @@ from shapely.geometry import Point, Polygon
 from vv_helpers import (
     DEFAULT_SEED,
     HAS_VV_DEPS,
-    agents_within_bounds,
+    agents_outside_polygon,
     measure_flow_rate,
     run_vv_scenario,
 )
@@ -119,7 +119,9 @@ class TestRiMEA01SpeedCorridor:
     EXIT = {
         "jps-exits_0": {
             "type": "polygon",
-            "coordinates": [[38, 0], [40, 0], [40, 2], [38, 2], [38, 0]],
+            # Thin exit strip and start strip at the two ends, so the agent
+            # walks close to the full 40 m that the 26-34 s window is based on.
+            "coordinates": [[39.9, 0], [40, 0], [40, 2], [39.9, 2], [39.9, 0]],
             "enable_throughput_throttling": False,
             "max_throughput": 0,
         }
@@ -127,7 +129,7 @@ class TestRiMEA01SpeedCorridor:
     DIST = {
         "jps-distributions_0": {
             "type": "polygon",
-            "coordinates": [[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]],
+            "coordinates": [[0, 0], [0.4, 0], [0.4, 2], [0, 2], [0, 0]],
             "parameters": {
                 "number": 1,
                 "radius": 0.15,
@@ -168,12 +170,12 @@ class TestRiMEA01SpeedCorridor:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_within_bounds(trajectory, 0, 0, 40, 2)
+        violations = agents_outside_polygon(trajectory, self.WALKABLE)
         vv_row.set(
             quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
             measured=len(violations), n=metrics["total_agents"], seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
-            rule="bound: 0 <= measured <= 0 (samples outside the corridor box)",
+            rule="bound: 0 <= measured <= 0 (samples outside the walkable area)",
         )
         assert not violations, "Agent left corridor:\n" + "\n".join(violations[:5])
 
@@ -376,8 +378,8 @@ class TestRiMEA04FundamentalDiagram:
     Geometry: 200m x 10m corridor with three 2m x 2m measuring areas.
     Sweep densities: 0.5, 1, 2 and 3 P/m².
     Measurement window: 10s to 60s, after discarding the transient.
-    Expected: Local density increases with population, speed does not increase
-    with density, and flow equals speed multiplied by density.
+    Expected: Local density increases with population and speed does not
+    increase with density. Flow is computed as speed multiplied by density.
     """
 
     SCENARIO_ZIP = (
@@ -512,9 +514,6 @@ class TestRiMEA04FundamentalDiagram:
 
             assert np.all(np.diff(speeds) <= SPEED_TOLERANCE), (
                 f"{name}: speed increased with density beyond tolerance: {speeds}"
-            )
-            assert np.allclose(flows, densities * speeds), (
-                f"{name}: flow is not speed multiplied by density"
             )
 
 
@@ -691,12 +690,12 @@ class TestRiMEA06Corner:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_within_bounds(trajectory, 0, -2, 12, 10)
+        violations = agents_outside_polygon(trajectory, self.WALKABLE)
         vv_row.set(
             quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
             measured=len(violations), n=metrics["total_agents"], seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
-            rule="bound: 0 <= measured <= 0 (samples outside the geometry box)",
+            rule="bound: 0 <= measured <= 0 (samples outside the walkable area)",
         )
         assert not violations, "Agents left geometry:\n" + "\n".join(violations[:10])
 
@@ -1048,7 +1047,9 @@ class TestRiMEA09LargePublicSpace:
 class TestRiMEA10RouteAllocation:
     """RiMEA Test 10: Allocation of escape routes.
 
-    Geometry: Corridor with 12 adjacent rooms, 23 agents.
+    Geometry: Corridor with 12 adjacent rooms, 13 agents (1 per room, 2 in
+    room 3). RiMEA specifies 23 (2 per room, 1 in room 3), so the population
+    deviates from the standard.
     Expected: Agents go to their assigned exits.
     """
 
@@ -1415,7 +1416,6 @@ class TestRiMEA12cCongestionInfluence:
 
     Three rooms connected by two identical bottlenecks.
     Expected: Measure agent counts and flows over time at bottlenecks 1 and 2.
-              No congestion in bottleneck 2 should be observed.
     """
 
     WALKABLE = "POLYGON ((0 0, 10 0, 10 4.5, 10.2 4.5, 10.2 0, 20.2 0, 20.2 4.5, 20.4 4.5, 20.4 0, 25.4 0, 25.4 10, 20.4 10, 20.4 5.5, 20.2 5.5, 20.2 10, 10.2 10, 10.2 5.5, 10 5.5, 10 10, 0 10, 0 0))"

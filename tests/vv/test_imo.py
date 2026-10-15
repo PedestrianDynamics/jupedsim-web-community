@@ -25,6 +25,7 @@ from jupedsim_scenarios import load_scenario, run_scenario
 from shapely.geometry import Point, Polygon
 from vv_helpers import (
     HAS_VV_DEPS,
+    agents_outside_polygon,
     agents_within_bounds,
     measure_flow_rate,
     run_vv_scenario,
@@ -113,7 +114,7 @@ class TestIMO01WalkingSpeedCorridor:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_within_bounds(trajectory, 0, 0, 40, 2)
+        violations = agents_outside_polygon(trajectory, self.WALKABLE)
         assert not violations, "Agent left corridor:\n" + "\n".join(violations[:5])
 
 
@@ -514,7 +515,7 @@ class TestIMO06RoundingCorners:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_within_bounds(trajectory, 0, -2, 12, 10)
+        violations = agents_outside_polygon(trajectory, self.WALKABLE)
         assert not violations, "Agents left L-corridor:\n" + "\n".join(violations[:10])
 
 

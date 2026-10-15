@@ -166,3 +166,28 @@ def agents_within_bounds(
             f"[{min_x}, {max_x}] x [{min_y}, {max_y}]"
         )
     return violations
+
+
+def agents_outside_polygon(
+    trajectory: "pedpy.TrajectoryData",
+    walkable_area_wkt: str,
+    tolerance: float = 0.001,
+) -> list[str]:
+    """Check every agent centre lies in the walkable area. Returns violations.
+
+    Unlike agents_within_bounds, this detects cutting through an inner wall
+    of a non-convex geometry such as a corner.
+    """
+    from shapely import wkt
+    from shapely.geometry import Point
+
+    if trajectory is None:
+        return []
+    walkable = wkt.loads(walkable_area_wkt).buffer(tolerance)
+    df = trajectory.data
+    return [
+        f"Frame {int(row.frame)}, agent {int(row.id)}: "
+        f"({row.x:.4f}, {row.y:.4f}) outside the walkable area"
+        for row in df.itertuples()
+        if not walkable.covers(Point(row.x, row.y))
+    ]
