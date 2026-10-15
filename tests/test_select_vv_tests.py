@@ -4,6 +4,7 @@ import copy
 import importlib.util
 import json
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 
 import pytest
@@ -164,6 +165,13 @@ def std(manifest, std_id):
 )
 def test_paths(sel, paths, expected):
     assert run(sel, paths) == expected
+
+
+@pytest.mark.parametrize("path", ["uv.lock", "pyproject.toml"])
+def test_dependency_change_is_an_explicit_full_suite_rule(sel, path):
+    # A jupedsim or jupedsim-scenarios bump changes these files and must
+    # run everything by rule, not only through the unknown-path fallback.
+    assert any(fnmatch(path, pattern) for pattern in sel.FULL_SUITE)
 
 
 def test_one_standard_selects_no_other(sel):
