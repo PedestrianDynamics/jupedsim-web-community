@@ -8,8 +8,8 @@
       "verification": "pytest",
       "tests": [
         {"id": "IMO 1", "name": "Walking speed in a corridor", "criterion": "Evacuation time ~ d/v +/- 20%", "status": "covered", "test": "TestIMO01WalkingSpeedCorridor"},
-        {"id": "IMO 2", "name": "Walking speed up stairs", "criterion": "Maintain assigned speed upstairs", "status": "covered", "test": "TestIMO02WalkingSpeedUpstairs"},
-        {"id": "IMO 3", "name": "Walking speed down stairs", "criterion": "Maintain assigned speed downstairs", "status": "covered", "test": "TestIMO03WalkingSpeedDownstairs"},
+        {"id": "IMO 2", "name": "Walking speed up stairs", "criterion": "1 m/s on a 10 m stair (along the incline) gives 10 s (+/- 0.5 s)", "status": "covered", "test": "TestIMO02WalkingSpeedUpstairs", "note": "The stair is a flat speed-factor zone; the desired speed is set so that v0 * factor = 1 m/s. Up and down use the same mechanism, so direction is not modelled."},
+        {"id": "IMO 3", "name": "Walking speed down stairs", "criterion": "1 m/s on a 10 m stair (along the incline) gives 10 s (+/- 0.5 s)", "status": "covered", "test": "TestIMO03WalkingSpeedDownstairs", "note": "The stair is a flat speed-factor zone; the desired speed is set so that v0 * factor = 1 m/s. Up and down use the same mechanism, so direction is not modelled."},
         {"id": "IMO 4", "name": "Exit flow rate", "criterion": "Mean flow N/t_evac through a 1 m exit within (0.5, 10) p/s (IMO: <= 1.33 p/s)", "status": "covered", "test": "TestIMO04ExitFlowRate"},
         {"id": "IMO 5", "name": "Response time", "criterion": "Agents respect an assigned pre-movement distribution", "status": "covered", "test": "TestIMO05ResponseTime"},
         {"id": "IMO 6", "name": "Rounding corners", "criterion": "Navigate a 90-degree corner, stay in geometry", "status": "covered", "test": "TestIMO06RoundingCorners"},
