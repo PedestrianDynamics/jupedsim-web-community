@@ -299,7 +299,7 @@ class TestNist25ReducedVisibility:
     """NIST Verif.2.5 - smoke extinction reduces walking speed.
 
     CollisionFreeSpeedModel has no native smoke field.  The V&V adapter uses
-    NIST Equation 1, ``v_smoke = v_clear * c(K_s)``, and maps the resulting
+    NIST Equation 2, ``v_smoke = max(v_min, v_clear * c(K_s))``, and maps the resulting
     factor to a zone covering the smoky corridor.  The selected model-specific
     correlation is declared explicitly below so that the expected travel time
     is calculated independently from the trajectory.
@@ -453,7 +453,7 @@ class TestNist26OccupantIncapacitation:
     """NIST Verif.2.6 - simulated and hand-calculated FED=1 times agree.
 
     A single occupant is held at the centre of the specified 10 m x 10 m room
-    by an indefinite waiting stage, equivalent to NIST's >1,000,000 s
+    by an indefinite waiting stage, equivalent to NIST's >10,000,000 s
     pre-evacuation time. Constant CO, CO2, and O2 conditions are sampled at the
     occupant position. A small V&V adapter accumulates the FDS+Evac/Purser FED
     equations on every JuPedSim timestep and sets desired speed to zero at
@@ -697,9 +697,9 @@ class TestNist31RouteAllocation:
     1-4 and 7-10, secondary exit serves rooms 5, 6, 11, 12.
 
     Population is 13 agents (one per room, plus one). NIST TN 1822 section
-    3.1.3 states "23 persons", but that is a typo in the guideline - the
-    Figure 8 layout has 12 rooms, so 13 is the faithful count. The allocation
-    split (8 rooms -> main, 4 -> secondary) matches the standard.
+    3.1.3 and Figure 8 specify 23 persons (two per room, one in room 3), so
+    the population deviates from the standard. The allocation split
+    (8 rooms -> main, 4 -> secondary) matches the standard.
 
     Acceptance: every agent must end at the exit allocated by its journey.
     The walkable polygon is rebuilt parametrically; see MODIFICATIONS.md
@@ -993,9 +993,9 @@ class TestNist41DynamicExitAvailability:
 class TestNist51Congestion:
     """NIST Verif.5.1 - 100 agents in an 8 m x 5 m room with a 2 m corridor.
 
-    Acceptance: peak density at the room exit > peak density in the corridor
-    midsection (i.e. congestion forms at the room exit; flow is steadier in
-    the corridor).
+    Acceptance: peak density at the room exit > peak density in the
+    downstream corridor window (y 15-17 m), i.e. congestion forms at the
+    room exit and flow is steadier in the corridor.
 
     NIST also expects congestion at the base of the stairs, but this ZIP models
     a plain room -> corridor -> exit with no stair speed-factor zone, so that

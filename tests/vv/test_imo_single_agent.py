@@ -8,7 +8,7 @@ Note: SA-03 (pre-movement delay) deferred to later phase.
 """
 
 import pytest
-from vv_helpers import run_vv_scenario, agents_within_bounds, HAS_VV_DEPS
+from vv_helpers import run_vv_scenario, agents_outside_polygon, HAS_VV_DEPS
 
 pytestmark = [
     pytest.mark.vv,
@@ -77,7 +77,7 @@ class TestSA01SpeedInCorridor:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        violations = agents_within_bounds(trajectory, 0, 0, 40, 2)
+        violations = agents_outside_polygon(trajectory, self.WALKABLE)
         assert not violations, "Agent left corridor:\n" + "\n".join(violations[:5])
 
 
@@ -193,6 +193,5 @@ class TestSA04Cornering:
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
-        # Use bounding box of the L-shape: x∈[0,12], y∈[-2,10]
-        violations = agents_within_bounds(trajectory, 0, -2, 12, 10)
+        violations = agents_outside_polygon(trajectory, self.WALKABLE)
         assert not violations, "Agents left L-corridor:\n" + "\n".join(violations[:10])

@@ -101,7 +101,9 @@ def measure_zone2(traj_df, frame_rate: float) -> dict:
     for _, sub in traj_df.sort_values(["id", "frame"]).groupby("id"):
         a_rows = sub[sub.x >= LINE_A_X]
         b_rows = sub[sub.x >= LINE_B_X]
-        if a_rows.empty or b_rows.empty:
+        # Agents spawned at or past line A never cross it; timing them from
+        # their first frame would overstate their zone-2 speed.
+        if sub.iloc[0].x >= LINE_A_X or a_rows.empty or b_rows.empty:
             continue
         t_a = a_rows.iloc[0].frame / frame_rate
         t_b = b_rows.iloc[0].frame / frame_rate

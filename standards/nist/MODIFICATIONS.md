@@ -108,9 +108,9 @@ See `_staging/convert.py::clean_config` for the synthesis code.
   U(10, 100) case as default.
 - **Reuse**: the three additional NIST distributions (gamma, lognormal,
   weibull) come from `standards/utils/premovement_distributions`'s
-  `PREMOVEMENT_PRESETS`, which already encode the canonical NIST
-  parameters (Gamma a=1.291 b=103.901, Lognormal a=4.586 b=0.967,
-  Weibull a=139.285 b=1.195). The local reference CSV that previously held
+  `PREMOVEMENT_PRESETS`, which encode these parameters (the suite's choice;
+  TN 1822 does not specify them) (Gamma a=1.291 b=103.901, Lognormal
+  a=4.586 b=0.967, Weibull a=139.285 b=1.195). The local reference CSV that previously held
   these values was removed as redundant.
 - `scenario_builders/nist1_1_premovement.build_variants(base)` deep-copies
   the base scenario and applies each case via `set_agent_params(..., 
@@ -167,7 +167,7 @@ See `_staging/convert.py::clean_config` for the synthesis code.
   FDS+Evac section 3.3 (equations 11--14) on every JuPedSim timestep.
 - One occupant is held at `(5, 5)` by an indefinite waiting stage inside the
   NIST 10 m x 10 m room. This is equivalent to the specified pre-evacuation
-  time greater than 1,000,000 s without requiring the test to run that long.
+  time greater than 10,000,000 s without requiring the test to run that long.
 - Constant conditions are `CO=5000 ppm`, `CO2=2%`, and `O2=18%`. When FED
   reaches one, the adapter sets the agent's desired speed to zero. The observed
   threshold time must be within one simulation timestep of a separate
@@ -228,8 +228,8 @@ test alone).
   parametrically — see `_staging/replace_s12_with_rimea10.py` for the
   one-line `shutil.copy` that wires rimea-10 in.
 - Agent count: 13 (one per room, plus a second in one room; rimea-10's
-  value). NIST TN 1822 §3.1.3 says "23 persons", but that is a typo in the
-  guideline — the Figure 8 layout has 12 rooms, so 13 is the faithful count.
+  value). NIST TN 1822 §3.1.3 and Figure 8 specify 23 persons (two per
+  room, one in room 3), so the population deviates from the standard.
   The allocation split (8 rooms → main, 4 → secondary) matches the standard.
 
 ### B13. Verif.3.2 — Social influence (S13.x)

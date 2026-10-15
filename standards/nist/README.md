@@ -21,19 +21,19 @@ For deviations from the NIST original specifications see
 | Verif.2.2  | Speed on stairs (upward)               | covered  | `Nist-2-2-stairs-up.zip` |
 | Verif.2.2  | Speed on stairs (downward)             | covered  | `Nist-2-2-stairs-down.zip` |
 | Verif.2.3  | Movement around a corner               | covered  | `Nist-2-3-corner.zip` |
-| Verif.2.4  | Assigned agent demographics            | covered  | `Nist-2-4-demographics.zip` |
+| Verif.2.4  | Assigned agent demographics            | test-local | `Nist-2-4-demographics.zip` (checks the configured distribution; no simulation) |
 | Verif.2.5  | Reduced visibility vs walking speed    | test-local | |
 | Verif.2.6  | Agent incapacitation (FED)             | test-local | |
 | Verif.2.7  | Elevator usage                         | pending  | requires elevator component |
 | Verif.2.8  | Horizontal counter-flows               | covered  | `Nist-2-8-counterflow-{0,10,50,100}.zip` + `scenario_files/nist2_8_counterflow_reference.csv` |
-| Verif.2.9  | Group behaviours                       | covered* | `Nist-2-9-groups.zip` |
+| Verif.2.9  | Group behaviours                       | xfail*   | `Nist-2-9-groups.zip` |
 | Verif.2.10 | Agents with movement disabilities      | covered  |  |
 | Verif.3.1  | Exit route allocation                  | covered  | `Nist-3-1-route-allocation.zip` |
-| Verif.3.2  | Social influence                       | covered* | `Nist-3-2-social-influence-{1,2}.zip` (strict xfail: no social-influence model) |
+| Verif.3.2  | Social influence                       | xfail*   | `Nist-3-2-social-influence-{1,2}.zip` (strict xfail: no social-influence model) |
 | Verif.3.3  | Affiliation                            | test-local | `Nist-3-3-familiar-exits.zip` (affiliation represented by journey weights) |
-| Verif.4.1  | Dynamic availability of exits          | xfail    | `Nist-4-1-dynamic-exits.zip` (no public runtime exit closure; test not run) |
+| Verif.4.1  | Dynamic availability of exits          | pending  | `Nist-4-1-dynamic-exits.zip` (no public runtime exit closure; test not run) |
 | Verif.5.1  | Congestion                             | covered  | `Nist-5-1-congestion.zip` |
-| Verif.5.2  | Maximum flow rates                     | covered* | `Nist-5-2-max-flow.zip` (emergent-flow non-exceedance check) |
+| Verif.5.2  | Maximum flow rates                     | xfail*   | `Nist-5-2-max-flow.zip` (emergent-flow non-exceedance check) |
 
 \* **Verif.2.9**, **Verif.3.2**, and **Verif.5.2** run and produce trajectories,
 but their NIST criteria need capabilities the model lacks, so each is a
@@ -70,8 +70,8 @@ See [`MODIFICATIONS.md`](MODIFICATIONS.md) for the full audit trail. Summary:
 - **Verif.3.1 (S12)** geometry was rebuilt to NIST Figure 8 (12 rooms around a
   1 m corridor + vestibule); the previous tree had a bare 18 m x 11 m
   rectangle. Population is **13 agents** (one per room, plus one). NIST TN 1822
-  §3.1.3 says "23 persons", but that is a typo in the guideline — the Figure 8
-  layout has 12 rooms, so 13 is the faithful count. The allocation split
+  §3.1.3 and Figure 8 specify 23 persons (two per room, one in room 3), so the
+  population deviates from the standard. The allocation split
   (8 rooms → main exit, 4 → secondary) matches the standard.
 - **Verif.5.2 (S17)** uses the emergent-flow non-exceedance interpretation of
   NIST §3.1.5, because the JuPedSim CollisionFreeSpeedModel has no built-in
