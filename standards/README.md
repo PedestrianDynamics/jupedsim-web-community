@@ -358,3 +358,21 @@ for model in models:
 | `general/scenario_files/` | Shared scenario fixtures used by the API tests |
 | `<standard>/scenario_files/` | Example scenario directories and exported inputs for local runs |
 | `../pyproject.toml` | Root Python project and shared dependency definition managed with `uv` |
+
+------------------------------------------------------------------------
+
+## Notebook figure tags
+
+CI executes every notebook with `scripts/run_notebooks.py` and publishes the
+PNG figures it finds in the cell outputs. The role of a figure comes from the
+tags of the cell that produced it (Jupyter: View > Cell Toolbar > Tags):
+
+| Cell tag | Role | Meaning |
+|----------|------|---------|
+| `vv-scenario` | scenario | Picture of the geometry / setup |
+| `vv-result` | result | Plot of the simulated result against the expectation |
+| (none) | other | Any other figure |
+
+Notebooks run in their own directory. A cell that raises `AssertionError` marks
+the notebook `acceptance_failed` (a published failing result); any other
+exception, kernel death or timeout marks it `error`.

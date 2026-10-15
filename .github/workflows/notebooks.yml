@@ -1,4 +1,9 @@
-name: Execute Notebooks
+name: Execute Notebooks (drift)
+
+# Drift detection only: runs against the LATEST jupedsim-scenarios, not the
+# locked version. Its output never feeds the published V&V site; the
+# published results come from the notebooks job in vv.yml (locked
+# environment).
 
 on:
   schedule:
@@ -20,7 +25,7 @@ jobs:
           enable-cache: true
 
       - name: Sync environment
-        run: uv sync
+        run: uv sync --frozen --extra dev
 
       - name: Upgrade jupedsim-scenarios to latest release
         # The notebook CI exists to catch API drift in jupedsim-scenarios;
@@ -29,40 +34,23 @@ jobs:
         run: uv sync --upgrade-package jupedsim-scenarios
 
       - name: Execute notebooks
+        # --no-sync keeps the upgraded environment from the previous step.
+        run: uv run --no-sync python scripts/run_notebooks.py
+
+      - name: Notebook summary
+        if: always()
         run: |
-          set -e
-          mkdir -p results/notebooks
-          failed=()
-          # `set -e` is intentionally disabled inside the `if`: we want to
-          # record each failing notebook and continue, then fail at the end.
-          while IFS= read -r nb; do
-            echo "::group::Executing $nb"
-            if uv run jupyter nbconvert \
-                 --to html \
-                 --execute \
-                 --ExecutePreprocessor.timeout=1800 \
-                 --output-dir="results/notebooks/$(dirname "$nb")" \
-                 "$nb"; then
-              echo "OK: $nb"
-            else
-              echo "FAIL: $nb"
-              failed+=("$nb")
-            fi
-            echo "::endgroup::"
-          done < <(find standards -name "*.ipynb" -not -path "*/.ipynb_checkpoints/*" | sort)
-          if [ ${#failed[@]} -gt 0 ]; then
-            echo "Failed notebooks:"
-            printf '  %s\n' "${failed[@]}"
-            printf '%s\n' "${failed[@]}" > results/failed-notebooks.txt
-            exit 1
+          if [ -f results/notebooks/summary.md ]; then
+            cat results/notebooks/summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Upload rendered HTML
+      - name: Upload executed notebooks
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: executed-notebooks
+          name: drift-notebooks
           path: results/notebooks
+          if-no-files-found: warn
 
       - name: Open issue on failure
         if: failure() && github.event_name == 'schedule'
@@ -72,7 +60,7 @@ jobs:
             const fs = require('fs');
             let failedList = '(see workflow logs)';
             try {
-              failedList = fs.readFileSync('results/failed-notebooks.txt', 'utf8')
+              failedList = fs.readFileSync('results/notebooks/failed-notebooks.txt', 'utf8')
                 .trim()
                 .split('\n')
                 .map(l => `- \`${l}\``)
