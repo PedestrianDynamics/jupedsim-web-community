@@ -126,9 +126,13 @@ class TestIMO01WalkingSpeedCorridor:
 class TestIMO02WalkingSpeedUpstairs:
     """IMO Test 2: Maintaining the specified walking speed up stairs.
 
-    Geometry: 2m x 10m staircase (measured along slope).
-    Expected: Travel time consistent with defined stair speed.
+    IMO MSC.1/Circ.1533 Annex 3: one person on a stair 2 m wide and 10 m
+    long along the incline, walking at 1 m/s, covers the distance in 10 s.
+    The stair is a flat speed-factor zone (0.5), so the desired speed is
+    set to 1 / 0.5 to give 1 m/s on the stair. Direction is not modelled.
     """
+
+    STAIR_SPEED_FACTOR = 0.5
 
     WALKABLE = "POLYGON ((0 0, 10.4 0, 10.4 2, 0 2, 0 0))"
     EXIT: ClassVar[dict] = {
@@ -153,7 +157,7 @@ class TestIMO02WalkingSpeedUpstairs:
             "parameters": {
                 "number": 1,
                 "radius": 0.08,
-                "v0": 1.0,
+                "v0": 2.0,
                 "use_flow_spawning": False,
                 "distribution_mode": "by_number",
                 "radius_distribution": "constant",
@@ -165,7 +169,7 @@ class TestIMO02WalkingSpeedUpstairs:
     ZONES: ClassVar[dict] = {
         "jps-zones_0": {
             "coordinates": [[0, 0], [10.4, 0], [10.4, 2], [0, 2], [0, 0]],
-            "speed_factor": 0.5,
+            "speed_factor": STAIR_SPEED_FACTOR,
         }
     }
     JOURNEYS_V2: ClassVar[list] = [
@@ -178,7 +182,7 @@ class TestIMO02WalkingSpeedUpstairs:
     ]
 
     def test_travel_time(self):
-        """Zone-based stair approximation should keep the slowed 10 m run near 20 s."""
+        """1 m/s on the 10 m stair gives about 10 s."""
         raw = {
             "config": {
                 "simulation_settings": {
@@ -205,9 +209,9 @@ class TestIMO02WalkingSpeedUpstairs:
             evac = result.evacuation_time
             result.cleanup()
 
-        # ~10 m corridor at v0 * speed_factor = 0.5 m/s -> ~20 s.
-        assert 19.5 <= evac <= 20.5, (
-            f"Stair-zone travel time {evac:.2f}s outside expected range [19.5, 20.5]"
+        # ~10 m at v0 * speed_factor = 1 m/s -> ~10 s.
+        assert 9.5 <= evac <= 10.5, (
+            f"Stair travel time {evac:.2f}s outside expected range [9.5, 10.5]"
         )
 
 
@@ -219,9 +223,13 @@ class TestIMO02WalkingSpeedUpstairs:
 class TestIMO03WalkingSpeedDownstairs:
     """IMO Test 3: Maintaining the specified walking speed down stairs.
 
-    Geometry: 2m x 10m staircase (measured along slope).
-    Expected: Travel time consistent with defined stair speed.
+    IMO MSC.1/Circ.1533 Annex 3: one person on a stair 2 m wide and 10 m
+    long along the incline, walking at 1 m/s, covers the distance in 10 s.
+    The stair is a flat speed-factor zone (0.75), so the desired speed is
+    set to 1 / 0.75 to give 1 m/s on the stair. Direction is not modelled.
     """
+
+    STAIR_SPEED_FACTOR = 0.75
 
     WALKABLE = "POLYGON ((0 0, 10.4 0, 10.4 2, 0 2, 0 0))"
     EXIT: ClassVar[dict] = {
@@ -246,7 +254,7 @@ class TestIMO03WalkingSpeedDownstairs:
             "parameters": {
                 "number": 1,
                 "radius": 0.08,
-                "v0": 1.0,
+                "v0": 1.0 / 0.75,
                 "use_flow_spawning": False,
                 "distribution_mode": "by_number",
                 "radius_distribution": "constant",
@@ -258,7 +266,7 @@ class TestIMO03WalkingSpeedDownstairs:
     ZONES: ClassVar[dict] = {
         "jps-zones_0": {
             "coordinates": [[0, 0], [10.4, 0], [10.4, 2], [0, 2], [0, 0]],
-            "speed_factor": 0.75,
+            "speed_factor": STAIR_SPEED_FACTOR,
         }
     }
     JOURNEYS_V2: ClassVar[list] = [
@@ -271,7 +279,7 @@ class TestIMO03WalkingSpeedDownstairs:
     ]
 
     def test_travel_time(self):
-        """Zone-based stair approximation should keep downstairs travel near 13 s."""
+        """1 m/s on the 10 m stair gives about 10 s."""
         raw = {
             "config": {
                 "simulation_settings": {
@@ -298,9 +306,9 @@ class TestIMO03WalkingSpeedDownstairs:
             evac = result.evacuation_time
             result.cleanup()
 
-        # ~10 m corridor at v0 * speed_factor = 0.75 m/s -> ~13.3 s.
-        assert 13.0 <= evac <= 13.7, (
-            f"Stair-zone travel time {evac:.2f}s outside expected range [13.0, 13.7]"
+        # ~10 m at v0 * speed_factor = 1 m/s -> ~10 s.
+        assert 9.5 <= evac <= 10.5, (
+            f"Stair travel time {evac:.2f}s outside expected range [9.5, 10.5]"
         )
 
 
