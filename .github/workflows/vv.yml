@@ -47,7 +47,7 @@ jobs:
       run: |
         if [ "${{ github.event_name }}" = pull_request ]; then
           git diff --name-only --no-renames HEAD^1 HEAD > "${{ runner.temp }}/changed.txt"
-          tests=$(python3 scripts/select_vv_tests.py < "${{ runner.temp }}/changed.txt")
+          tests=$(python3 scripts/select_vv_tests.py HEAD^1 HEAD < "${{ runner.temp }}/changed.txt")
         else
           tests=tests/vv
         fi
