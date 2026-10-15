@@ -1183,8 +1183,8 @@
       "definition": "A stair 2 m wide and 10 m long, measured along the incline, is walked by one occupant with an assigned speed of 1 m/s, upwards or downwards. Models may use a speed factor or other input to change movement on stairs. The tester reports how the destination is set and documents how stair movement is represented.",
       "expected": "The occupant covers the stair in 10 s, upwards or downwards. ISO gives no numeric tolerance.",
       "deviations": [
-        "The stair is a flat 10 m zone inside a 2 m wide, 30 m long corridor, with a speed factor of 0.5. The agent has an assigned speed of 1 m/s, so it crosses the zone at 0.5 m/s in 20 s, not in 10 s as ISO expects. The test checks the speed-factor arithmetic, not a stair model.",
-        "The pass rule is the suite's own: the mean speed over the zone is 0.5 m/s within 0.05 m/s.",
+        "The stair is a flat 10 m zone inside a 2 m wide, 30 m long corridor, with a speed factor of 0.5. The desired speed is 2.0 m/s, so the occupant crosses the zone at 1 m/s and takes 10 s, as ISO expects (decision D23). The test checks the speed-factor arithmetic, not a stair model.",
+        "The pass rule is the suite's own: the mean speed over the 10 m stair segment is 1.0 m/s within 0.05 m/s.",
         "Up and down use the same flat zone, so the direction is not modelled and a single run stands for both. The effect of tread and width is not modelled."
       ],
       "scenario_files": [
