@@ -1442,35 +1442,12 @@ class TestRiMEA12cCongestionInfluence:
     metre of width), and the peak number of agents in room 2.
     """
 
-    WALKABLE = "POLYGON ((0 0, 10 0, 10 4.5, 10.2 4.5, 10.2 0, 20.2 0, 20.2 4.5, 20.4 4.5, 20.4 0, 25.4 0, 25.4 10, 20.4 10, 20.4 5.5, 20.2 5.5, 20.2 10, 10.2 10, 10.2 5.5, 10 5.5, 10 10, 0 10, 0 0))"
-    EXIT = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[25.2, 0], [25.4, 0], [25.4, 10], [25.2, 10], [25.2, 0]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        }
-    }
-    DIST = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0, 0], [5, 0], [5, 10], [0, 10], [0, 0]],
-            "parameters": {
-                "number": 150,
-                "radius": 0.15,
-                "v0": 1.2,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-        }
-    }
+    SCENARIO_ZIP = STANDARDS_DIR / "rimea" / "scenario_files" / "Rimea-12c-congestion-influence.zip"
     BOTTLENECK_1_LINE = ((10.0, 4.5), (10.0, 5.5))
-    BOTTLENECK_2_LINE = ((20.2, 4.5), (20.2, 5.5))
+    BOTTLENECK_2_LINE = ((20.0, 4.5), (20.0, 5.5))
     BOTTLENECK_WIDTH = 1.0
     # x edges: room 1 | bottleneck 1 | room 2 | bottleneck 2 | room 3
-    X_EDGES = (10.0, 10.2, 20.2, 20.4)
+    X_EDGES = (10.0, 10.2, 20.0, 20.2)
     BUCKETS = ("room_1", "bottleneck_1", "room_2", "bottleneck_2", "room_3")
 
     def _occupancy(self, trajectory):
@@ -1494,15 +1471,14 @@ class TestRiMEA12cCongestionInfluence:
     def test_congestion_at_bottlenecks(self, vv_row):
         import pedpy
 
-        metrics, trajectory = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE,
-            exits=self.EXIT,
-            distributions=self.DIST,
-            max_simulation_time=400.0,
+        scenario = load_scenario(str(self.SCENARIO_ZIP))
+        result = run_scenario(scenario, seed=DEFAULT_SEED)
+        trajectory = pedpy.TrajectoryData(
+            result.trajectory_dataframe()[["id", "frame", "x", "y"]].copy(),
+            frame_rate=result.frame_rate,
         )
-        assert trajectory is not None, "Trajectory output required for occupancy analysis"
-
-        total = metrics["total_agents"]
+        total = int(result.metrics["total_agents"])
+        result.cleanup()
         frames, counts, evacuated = self._occupancy(trajectory)
         residual = np.abs(counts.sum(axis=1) + evacuated - total)
 
@@ -1524,6 +1500,7 @@ class TestRiMEA12cCongestionInfluence:
                 "max_conservation_residual": int(residual.max()),
             },
             n=total, seed=DEFAULT_SEED,
+            scenario_file="standards/rimea/scenario_files/Rimea-12c-congestion-influence.zip",
             model="CollisionFreeSpeedModel",
             rule=(
                 "conservation: at every frame, agents in room 1 + bottleneck 1 + "
