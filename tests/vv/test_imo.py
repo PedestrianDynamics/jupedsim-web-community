@@ -160,10 +160,10 @@ class TestIMO02WalkingSpeedUpstairs:
     DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
-            "coordinates": [[0.0, 0.8], [0.3, 0.8], [0.3, 1.2], [0.0, 1.2], [0.0, 0.8]],
+            "coordinates": [[0.0, 0.75], [0.5, 0.75], [0.5, 1.25], [0.0, 1.25], [0.0, 0.75]],
             "parameters": {
                 "number": 1,
-                "radius": 0.08,
+                "radius": 0.15,
                 "v0": 2.0,
                 "use_flow_spawning": False,
                 "distribution_mode": "by_number",
@@ -257,10 +257,10 @@ class TestIMO03WalkingSpeedDownstairs:
     DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
-            "coordinates": [[0.0, 0.8], [0.3, 0.8], [0.3, 1.2], [0.0, 1.2], [0.0, 0.8]],
+            "coordinates": [[0.0, 0.75], [0.5, 0.75], [0.5, 1.25], [0.0, 1.25], [0.0, 0.75]],
             "parameters": {
                 "number": 1,
-                "radius": 0.08,
+                "radius": 0.15,
                 "v0": 1.0 / 0.75,
                 "use_flow_spawning": False,
                 "distribution_mode": "by_number",

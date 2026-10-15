@@ -90,7 +90,7 @@ def build_raw_scenario(direction: str, seed: int = 42, max_simulation_time: floa
             "coordinates": spec["coordinates"],
             "parameters": {
                 "number": 1,
-                "radius": 0.12,
+                "radius": 0.15,
                 "v0": spec["assigned_speed"],
                 "distribution_mode": "by_number",
                 "radius_distribution": "constant",
