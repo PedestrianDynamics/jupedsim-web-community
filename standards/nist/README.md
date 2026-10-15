@@ -69,9 +69,8 @@ See [`MODIFICATIONS.md`](MODIFICATIONS.md) for the full audit trail. Summary:
   specifies.
 - **Verif.3.1 (S12)** geometry was rebuilt to NIST Figure 8 (12 rooms around a
   1 m corridor + vestibule); the previous tree had a bare 18 m x 11 m
-  rectangle. Population is **13 agents** (one per room, plus one). NIST TN 1822
-  §3.1.3 and Figure 8 specify 23 persons (two per room, one in room 3), so the
-  population deviates from the standard. The allocation split
+  rectangle. Population is **23 agents** (two per room, one in room 3), as
+  NIST TN 1822 §3.1.3 and Figure 8 specify. The allocation split
   (8 rooms → main exit, 4 → secondary) matches the standard.
 - **Verif.5.2 (S17)** uses the emergent-flow non-exceedance interpretation of
   NIST §3.1.5, because the JuPedSim CollisionFreeSpeedModel has no built-in

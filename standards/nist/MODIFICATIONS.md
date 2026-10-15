@@ -227,9 +227,9 @@ test alone).
 - This supersedes earlier attempts that rebuilt the geometry
   parametrically — see `_staging/replace_s12_with_rimea10.py` for the
   one-line `shutil.copy` that wires rimea-10 in.
-- Agent count: 13 (one per room, plus a second in one room; rimea-10's
-  value). NIST TN 1822 §3.1.3 and Figure 8 specify 23 persons (two per
-  room, one in room 3), so the population deviates from the standard.
+- Agent count: 23 (two per room, one in room 3), as NIST TN 1822 §3.1.3
+  and Figure 8 specify. Rimea-10 originally shipped 13 (one per room, two
+  in room 3).
   The allocation split (8 rooms → main, 4 → secondary) matches the standard.
 
 ### B13. Verif.3.2 — Social influence (S13.x)

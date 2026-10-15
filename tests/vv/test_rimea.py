@@ -1047,9 +1047,8 @@ class TestRiMEA09LargePublicSpace:
 class TestRiMEA10RouteAllocation:
     """RiMEA Test 10: Allocation of escape routes.
 
-    Geometry: Corridor with 12 adjacent rooms, 13 agents (1 per room, 2 in
-    room 3). RiMEA specifies 23 (2 per room, 1 in room 3), so the population
-    deviates from the standard.
+    Geometry: Corridor with 12 adjacent rooms, 23 agents (2 per room, 1 in
+    room 3), as in RiMEA Abb. 9.
     Expected: Agents go to their assigned exits.
     """
 
