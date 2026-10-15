@@ -178,3 +178,51 @@ def test_missing_results_and_notebooks(gen, inputs, tmp_path):
     assert "local build" in index
     assert "No notebook for this test yet" in page(out, "std-t1")
     assert "Scenario picture not available" in page(out, "std-t1")
+
+
+def test_footer_links_on_every_page(gen, inputs, tmp_path):
+    out = tmp_path / "site"
+    build(gen, inputs, out)
+    pages = [out / "index.html", out / "standards" / "std" / "index.html"]
+    pages += list((out / "standards" / "std").glob("*/index.html"))
+    for f in pages:
+        text = f.read_text()
+        assert f"{gen.REPO}/commit/abc123def456" in text
+        assert f'{gen.REPO}/actions/runs/42">42</a>' in text
+        assert '<time datetime="2026-01-01T00:00:00.000+00:00">' in text
+        assert "2026-01-01 00:00 UTC" in text
+        assert "come from one run on the locked versions" in text
+    assert "Join diagnostics" in (out / "index.html").read_text()
+    assert "Join diagnostics" not in page(out, "std-t1")
+
+
+def test_footer_without_run_ids(gen):
+    run = gen.pick_run([{"commit_sha": "a" * 40}], None)
+    assert run["time"] is None and not run["local"]
+    assert gen.format_time("2026-10-15T10:38:07.421947+00:00") == {
+        "iso": "2026-10-15T10:38:07.421+00:00",
+        "text": "2026-10-15 10:38 UTC",
+    }
+
+
+def test_summary_cards_and_blocking_count(gen, inputs, tmp_path):
+    rows = json.loads(inputs["coverage"].read_text())
+    rows["standards"][0]["tests"][0]["note"] = (
+        "Counterflow 50 blocks; blocking documented."
+    )
+    inputs["coverage"].write_text(json.dumps(rows))
+    out = tmp_path / "site"
+    build(gen, inputs, out)
+    index = (out / "index.html").read_text()
+    assert "Blocking documented: 1" in index
+    order = [m for m in ("PASS", "FAIL", "TEST-LOCAL", "PENDING", "NOT RUN")]
+    positions = [index.index(f"{n} <span>") for n in order]
+    assert positions == sorted(positions)
+    assert "blocking documented" in page(out, "std-t1")
+
+
+def test_blocking_from_definition_deviation(gen):
+    row = {"id": "X", "note": "Seed 42: 0 -> 46 s."}
+    assert not gen.blocking_documented(row)
+    definition = {"deviations": ["Level N is reported as blocking documented."]}
+    assert gen.blocking_documented(row, definition)
