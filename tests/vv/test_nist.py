@@ -120,7 +120,7 @@ class TestNist11Premovement:
         assert params["premovement_distribution"] == "uniform"
 
     @pytest.mark.parametrize("case_id", ["uniform", "gamma", "lognormal", "weibull"])
-    def test_distribution_fits(self, case_id):
+    def test_distribution_fits(self, case_id, vv_row):
         build_variants = _load_builder("nist1_1_premovement").build_variants
         from scipy import stats as _stats
 
@@ -146,6 +146,16 @@ class TestNist11Premovement:
             else:
                 pytest.fail(f"unknown distribution: {case.name}")
             p = _stats.kstest(observed, cdf).pvalue
+            vv_row.set(
+                quantity="premovement_ks_pvalue", unit="1", lower=0.05,
+                measured=p, n=len(observed), seed=42,
+                model="CollisionFreeSpeedModel",
+                scenario_file="standards/nist/scenario_files/Nist-1-1-premovement.zip",
+                rule=(
+                    f"bound: measured > 0.05 (Kolmogorov-Smirnov, {case_id} "
+                    "distribution)"
+                ),
+            )
             assert p > 0.05, f"{case_id}: KS p={p:.3f} below alpha=0.05"
         finally:
             result.cleanup()
@@ -168,7 +178,7 @@ class TestNist21CorridorSpeed:
     TARGET_SPEED = 1.0
     TOL = 0.05
 
-    def test_walking_speed(self):
+    def test_walking_speed(self, vv_row):
         scenario = _load("Nist-2-1-corridor-speed")
         result = run_scenario(scenario, seed=42)
         try:
@@ -180,6 +190,18 @@ class TestNist21CorridorSpeed:
             t_in = sub.loc[t_in_idx, "frame"] / result.frame_rate
             t_out = sub.loc[t_out_idx, "frame"] / result.frame_rate
             speed = (self.MEAS_END_X - self.MEAS_START_X) / (t_out - t_in)
+            vv_row.set(
+                quantity="corridor_speed", unit="m/s",
+                lower=self.TARGET_SPEED - self.TOL,
+                upper=self.TARGET_SPEED + self.TOL,
+                measured=speed, n=result.total_agents, seed=42,
+                model="CollisionFreeSpeedModel",
+                scenario_file="standards/nist/scenario_files/Nist-2-1-corridor-speed.zip",
+                rule=(
+                    f"bound: {self.TARGET_SPEED} - {self.TOL} <= measured <= "
+                    f"{self.TARGET_SPEED} + {self.TOL}"
+                ),
+            )
             assert abs(speed - self.TARGET_SPEED) <= self.TOL, (
                 f"observed {speed:.3f} m/s, target {self.TARGET_SPEED} +/- {self.TOL}"
             )
@@ -200,7 +222,7 @@ class _StairSpeedBase:
     TARGET_SPEED = 1.0
     TOL = 0.05
 
-    def test_walking_speed(self):
+    def test_walking_speed(self, vv_row):
         scenario = _load(self.SCENARIO)
         result = run_scenario(scenario, seed=42)
         try:
@@ -217,6 +239,18 @@ class _StairSpeedBase:
             t_out = sub.loc[t_out_idx, "frame"] / result.frame_rate
             distance = abs(self.MEAS_END_X - self.MEAS_START_X)
             speed = distance / (t_out - t_in)
+            vv_row.set(
+                quantity="stair_speed", unit="m/s",
+                lower=self.TARGET_SPEED - self.TOL,
+                upper=self.TARGET_SPEED + self.TOL,
+                measured=speed, n=result.total_agents, seed=42,
+                model="CollisionFreeSpeedModel",
+                scenario_file=f"standards/nist/scenario_files/{self.SCENARIO}.zip",
+                rule=(
+                    f"bound: {self.TARGET_SPEED} - {self.TOL} <= measured <= "
+                    f"{self.TARGET_SPEED} + {self.TOL}"
+                ),
+            )
             assert abs(speed - self.TARGET_SPEED) <= self.TOL, (
                 f"observed {speed:.3f} m/s, target {self.TARGET_SPEED} +/- {self.TOL}"
             )
@@ -251,16 +285,23 @@ class TestNist23Corner:
     """NIST Verif.2.3 - 20 agents navigate an L-shaped corridor without
     penetrating the boundary (centre at least its radius minus 1 mm inside)."""
 
-    def test_full_evacuation(self):
+    def test_full_evacuation(self, vv_row):
         scenario = _load("Nist-2-3-corner")
         result = run_scenario(scenario, seed=42)
         try:
+            vv_row.set(
+                quantity="evacuation_time", unit="s", upper=60.0,
+                measured=result.evacuation_time, n=result.total_agents,
+                seed=42, model="CollisionFreeSpeedModel",
+                scenario_file="standards/nist/scenario_files/Nist-2-3-corner.zip",
+                rule="bound: agents_remaining = 0; measured < 60.0",
+            )
             assert result.agents_remaining == 0
             assert result.evacuation_time < 60.0
         finally:
             result.cleanup()
 
-    def test_no_boundary_penetration(self):
+    def test_no_boundary_penetration(self, vv_row):
         scenario = _load("Nist-2-3-corner")
         result = run_scenario(scenario, seed=42)
         try:
@@ -271,6 +312,16 @@ class TestNist23Corner:
                 1
                 for row in df.itertuples()
                 if not walkable_with_tol.contains(Point(row.x, row.y))
+            )
+            vv_row.set(
+                quantity="boundary_penetration_samples", unit="count",
+                lower=0, upper=0, measured=outside, n=result.total_agents,
+                seed=42, model="CollisionFreeSpeedModel",
+                scenario_file="standards/nist/scenario_files/Nist-2-3-corner.zip",
+                rule=(
+                    "bound: 0 <= measured <= 0 (trajectory points more than "
+                    "1 mm beyond the radius-shrunk walkable area)"
+                ),
             )
             assert outside == 0, (
                 f"{outside} / {len(df)} trajectory points outside walkable area"
@@ -342,7 +393,7 @@ class TestNist25ReducedVisibility:
         minimum_factor = cls.MINIMUM_SPEED_M_S / cls.CLEAR_SPEED_M_S
         return max(minimum_factor, linear_factor)
 
-    def test_smoke_reduced_travel_time(self):
+    def test_smoke_reduced_travel_time(self, vv_row):
         speed_factor = self.smoke_speed_factor(self.EXTINCTION_COEFFICIENT_PER_M)
         expected_speed = self.CLEAR_SPEED_M_S * speed_factor
         expected_time = (self.MEAS_END_X - self.MEAS_START_X) / expected_speed
@@ -440,6 +491,17 @@ class TestNist25ReducedVisibility:
             finally:
                 result.cleanup()
 
+        vv_row.set(
+            quantity="smoke_travel_time_100m", unit="s",
+            lower=expected_time - self.TIME_TOLERANCE_S,
+            upper=expected_time + self.TIME_TOLERANCE_S,
+            measured=observed_time, n=1, seed=42,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: expected - 0.5 <= measured <= expected + 0.5, "
+                "expected = 100 m / (1.25 m/s * c(K_s = 1/m)) = 160 s"
+            ),
+        )
         assert observed_time == pytest.approx(
             expected_time, abs=self.TIME_TOLERANCE_S
         ), (
@@ -493,7 +555,7 @@ class TestNist26OccupantIncapacitation:
         """FDS+Evac equation 14, dimensionless CO2 multiplier."""
         return math.exp(0.1930 * co2_percent + 2.0004) / 7.1
 
-    def test_time_to_fed_one(self):
+    def test_time_to_fed_one(self, vv_row):
         simulation = jps.Simulation(
             model=jps.CollisionFreeSpeedModel(),
             geometry=Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]),
@@ -536,18 +598,28 @@ class TestNist26OccupantIncapacitation:
                 incapacitation_time = simulation.elapsed_time()
                 break
 
-        assert incapacitation_time is not None, (
-            f"FED reached only {total_fed:.3f} by {self.MAX_TIME_S}s"
-        )
-        assert simulation.agent(agent_id).model.desired_speed == 0.0
-        assert simulation.agent(agent_id).position == pytest.approx(self.CENTRE)
-
         # Independent closed-form calculation for constant concentrations.
         # It intentionally does not call the timestep adapter methods above.
         expected_rate = 4.607e-7 * self.CO_PPM**1.036 * math.exp(
             0.1930 * self.CO2_PERCENT + 2.0004
         ) / 7.1 + 1.0 / (60.0 * math.exp(8.13 - 0.54 * (20.9 - self.O2_PERCENT)))
         expected_time = 1.0 / expected_rate
+
+        vv_row.set(
+            quantity="time_to_fed_one", unit="s", lower=expected_time,
+            upper=expected_time + simulation.delta_time(),
+            measured=incapacitation_time, n=1, seed=None,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: expected <= measured <= expected + dt, expected = "
+                "1 / closed-form FED rate (dt = 0.05 s, deterministic run)"
+            ),
+        )
+        assert incapacitation_time is not None, (
+            f"FED reached only {total_fed:.3f} by {self.MAX_TIME_S}s"
+        )
+        assert simulation.agent(agent_id).model.desired_speed == 0.0
+        assert simulation.agent(agent_id).position == pytest.approx(self.CENTRE)
 
         # A discrete integrator crosses FED=1 on the first timestep at or
         # after the analytical value, so one simulation step is the limit.
@@ -583,7 +655,7 @@ class TestNist28Counterflow:
     BUDGET_S = 200
     ROOM2_X = 20.0
 
-    def test_last_room2_entry_increases_with_counterflow(self):
+    def test_last_room2_entry_increases_with_counterflow(self, vv_row):
         load_branches = _load_builder("nist2_8_counterflow").load_branches
 
         levels = {}
@@ -599,6 +671,17 @@ class TestNist28Counterflow:
                 result.cleanup()
 
         print(f"last room-2 entry [s] by counterflow (None = blocked): {levels}")
+        vv_row.set(
+            quantity="last_room2_entry_time_by_counterflow", unit="s",
+            measured={f"counterflow_{c}": levels[c] for c in sorted(levels)},
+            n=100, seed=42, model="CollisionFreeSpeedModel",
+            scenario_file="standards/nist/scenario_files/Nist-2-8-counterflow-0.zip",
+            rule=(
+                "bound: level 0 completes (not null); comparison: finite "
+                "times strictly increase with the counterflow count and no "
+                "finite level follows a blocked (null) level"
+            ),
+        )
         assert_last_entry_increases(levels)
 
 
@@ -632,7 +715,7 @@ class TestNist29Groups:
         raises=AssertionError,
         strict=True,
     )
-    def test_group1_arrives_together(self):
+    def test_group1_arrives_together(self, vv_row):
         scenario = _load("Nist-2-9-groups")
         result = run_scenario(scenario, seed=42)
         try:
@@ -645,6 +728,17 @@ class TestNist29Groups:
             # (y ~8-12), so the five highest spawn-y agents are exactly Group 1.
             group1 = first_y.sort_values(ascending=False).head(self.GROUP1_SIZE).index
             spread = exit_time[group1].max() - exit_time[group1].min()
+            vv_row.set(
+                quantity="group1_arrival_spread", unit="s",
+                upper=self.MAX_SPREAD_S, measured=spread,
+                n=result.total_agents, seed=42,
+                model="CollisionFreeSpeedModel",
+                scenario_file="standards/nist/scenario_files/Nist-2-9-groups.zip",
+                rule=(
+                    "bound: measured <= 10.0 (exit-time spread of the 5 "
+                    "Group 1 agents; expected failure)"
+                ),
+            )
             assert spread <= self.MAX_SPREAD_S, (
                 f"Group 1 arrival spread {spread:.1f} s exceeds {self.MAX_SPREAD_S} s"
             )
@@ -673,7 +767,7 @@ class TestNist210Disabilities:
     the disability case, for both the last and the mean zone-1 exit time.
     """
 
-    def test_movement_disability_increases_evacuation_time(self):
+    def test_movement_disability_increases_evacuation_time(self, vv_row):
         disability = movement_disability.run("nist", disabled=True, seed=42)
         control = movement_disability.run("nist", disabled=False, seed=42)
         for result in (disability, control):
@@ -683,6 +777,23 @@ class TestNist210Disabilities:
             )
         disability_zone1 = disability.zone1_exit_times()
         control_zone1 = control.zone1_exit_times()
+        vv_row.set(
+            quantity="zone1_exit_time_disability_vs_control", unit="s",
+            measured=[
+                max(disability_zone1),
+                max(control_zone1),
+                float(np.mean(disability_zone1)),
+                float(np.mean(control_zone1)),
+            ],
+            n=movement_disability.N_ZONE1 + 1, seed=42,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: all 25 occupants evacuate in both runs; comparison: "
+                "measured[0] (last zone-1 exit, disability) > measured[1] "
+                "(last, control) and measured[2] (mean zone-1 exit, "
+                "disability) > measured[3] (mean, control)"
+            ),
+        )
         assert max(disability_zone1) > max(control_zone1), (
             "expected the last zone-1 occupant to exit later with the "
             f"slow occupant: {max(disability_zone1):.2f}s versus "
@@ -713,7 +824,7 @@ class TestNist31RouteAllocation:
     section B12.
     """
 
-    def test_each_agent_reaches_allocated_exit(self):
+    def test_each_agent_reaches_allocated_exit(self, vv_row):
         """Every agent must end at the exit allocated by its journey. The
         ZIP carries both the legacy `journeys`/`stages` block (web-app
         export shape) and a derived `journeys_v2` + `journey_weights`
@@ -777,6 +888,16 @@ class TestNist31RouteAllocation:
                         f"expected {expected}, got {actual}"
                     )
             match_rate = matches / total if total else 0.0
+            vv_row.set(
+                quantity="route_allocation_match_rate", unit="fraction",
+                lower=1.0, measured=match_rate, n=total, seed=42,
+                model="CollisionFreeSpeedModel",
+                scenario_file="standards/nist/scenario_files/Nist-3-1-route-allocation.zip",
+                rule=(
+                    "bound: agents_remaining = 0; measured >= 1.0 (share of "
+                    "agents ending at the exit allocated by their journey)"
+                ),
+            )
             assert match_rate == 1.0, (
                 f"allocation match rate {match_rate:.1%} below 100%\n"
                 + "\n".join(mismatches[:5])
@@ -844,11 +965,22 @@ class TestNist32SocialInfluence:
         raises=AssertionError,
         strict=True,
     )
-    def test_social_influence_raises_exit2_usage(self):
+    def test_social_influence_raises_exit2_usage(self, vv_row):
         scenario_1 = _load("Nist-3-2-social-influence-1")
         scenario_2 = _load("Nist-3-2-social-influence-2")
         baseline = self._exit2_fraction(scenario_1, self.SEEDS)
         behind = self._exit2_fraction(scenario_2, self.SEEDS, track="behind")
+        vv_row.set(
+            quantity="free_occupant_exit2_fraction", unit="fraction",
+            measured=[behind, baseline], n=2, seed=list(self.SEEDS),
+            model="CollisionFreeSpeedModel",
+            scenario_file="standards/nist/scenario_files/Nist-3-2-social-influence-2.zip",
+            rule=(
+                "comparison: measured[0] (free occupants with an exit-2 "
+                "occupant present) > measured[1] (baseline, "
+                "Nist-3-2-social-influence-1.zip); expected failure"
+            ),
+        )
         assert behind > baseline, (
             f"free-occupant exit-2 usage {behind:.3f} not increased over "
             f"baseline {baseline:.3f}"
@@ -896,12 +1028,29 @@ class TestNist33Affiliation:
         finally:
             sweep.cleanup()
 
-    def test_affiliation_biases_exit_choice(self):
+    def test_affiliation_biases_exit_choice(self, vv_row):
         balanced = _load("Nist-3-3-familiar-exits")
         e1_balanced, e2_balanced = self._exit_counts(balanced)
         total_balanced = e1_balanced + e2_balanced
         assert total_balanced > 0, "no agent reached an exit in the balanced case"
         fraction_difference = abs(e1_balanced - e2_balanced) / total_balanced
+        vv_row.set(
+            quantity="balanced_exit_fraction_difference", unit="fraction",
+            upper=0.10,
+            measured={
+                "balanced_fraction_difference": fraction_difference,
+                "balanced_exit_counts": [e1_balanced, e2_balanced],
+                "affiliated_exit_counts": None,
+            },
+            n=total_balanced, seed=list(self.SEEDS),
+            model="CollisionFreeSpeedModel",
+            scenario_file="standards/nist/scenario_files/Nist-3-3-familiar-exits.zip",
+            rule=(
+                "bound: measured <= 0.10 (|exit1 - exit2| / total, 50/50 "
+                "weights); comparison: affiliated_exit_counts[1] > "
+                "affiliated_exit_counts[0] with 20/80 weights"
+            ),
+        )
         assert fraction_difference <= 0.10, (
             f"50/50 weights not balanced: {e1_balanced} vs {e2_balanced}"
         )
@@ -910,6 +1059,13 @@ class TestNist33Affiliation:
         self._set_weight(affiliated, self.JOURNEY_EXIT1, 20)
         self._set_weight(affiliated, self.JOURNEY_EXIT2, 80)
         e1_affiliated, e2_affiliated = self._exit_counts(affiliated)
+        vv_row.set(
+            measured={
+                "balanced_fraction_difference": fraction_difference,
+                "balanced_exit_counts": [e1_balanced, e2_balanced],
+                "affiliated_exit_counts": [e1_affiliated, e2_affiliated],
+            },
+        )
         assert e2_affiliated > e1_affiliated, (
             "exit 2 not preferred under affiliation: "
             f"{e1_affiliated} vs {e2_affiliated}"
@@ -1010,7 +1166,7 @@ class TestNist51Congestion:
     supports it) is scope-deferred; see issue #151.
     """
 
-    def test_peak_density_higher_at_room_exit(self):
+    def test_peak_density_higher_at_room_exit(self, vv_row):
         scenario = _load("Nist-5-1-congestion")
         result = run_scenario(scenario, seed=42)
         try:
@@ -1028,6 +1184,14 @@ class TestNist51Congestion:
                 ).sum()
                 peak_room_exit = max(peak_room_exit, room_count / area_room_exit)
                 peak_corridor = max(peak_corridor, corr_count / area_corridor)
+            vv_row.set(
+                quantity="peak_density_room_exit_vs_corridor", unit="1/m^2",
+                measured=[peak_room_exit, peak_corridor],
+                n=result.total_agents, seed=42,
+                model="CollisionFreeSpeedModel",
+                scenario_file="standards/nist/scenario_files/Nist-5-1-congestion.zip",
+                rule="comparison: measured[0] (room exit) > measured[1] (corridor)",
+            )
             assert peak_room_exit > peak_corridor, (
                 f"peak room-exit density {peak_room_exit:.2f} <= "
                 f"peak corridor density {peak_corridor:.2f}"
@@ -1067,15 +1231,30 @@ class TestNist52MaxFlow:
         finally:
             result.cleanup()
 
-    def test_flow_within_cap_with_limiter(self):
+    def test_flow_within_cap_with_limiter(self, vv_row):
         flow = self._run(limiter_on=True)
         cap = MAX_SPECIFIC_FLOW * (1 + FLOW_CAP_TOLERANCE)
+        vv_row.set(
+            quantity="specific_exit_flow_limiter_on", unit="p/m/s", upper=cap,
+            measured=flow, n=100, seed=42, model="CollisionFreeSpeedModel",
+            scenario_file="standards/nist/scenario_files/Nist-5-2-max-flow.zip",
+            rule=(
+                f"bound: measured <= {MAX_SPECIFIC_FLOW} * (1 + "
+                f"{FLOW_CAP_TOLERANCE}); exit limiter on, 1 m exit"
+            ),
+        )
         assert flow <= cap, (
             f"specific flow {flow:.3f} p/m/s exceeds the {MAX_SPECIFIC_FLOW} "
             f"p/m/s cap (+{FLOW_CAP_TOLERANCE:.0%} tolerance)"
         )
 
-    def test_emergent_flow_without_limiter_is_reported(self):
+    def test_emergent_flow_without_limiter_is_reported(self, vv_row):
         """Information only: the emergent flow is printed, not asserted."""
         flow = self._run(limiter_on=False)
+        vv_row.set(
+            quantity="specific_exit_flow_limiter_off", unit="p/m/s",
+            measured=flow, n=100, seed=42, model="CollisionFreeSpeedModel",
+            scenario_file="standards/nist/scenario_files/Nist-5-2-max-flow.zip",
+            rule="information only: emergent flow, not asserted",
+        )
         print(f"NIST 5.2 emergent specific flow, limiter off: {flow:.2f} p/m/s")
