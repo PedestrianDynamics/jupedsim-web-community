@@ -403,6 +403,32 @@ def compute_lap_counts(
     return lap_counts
 
 
+def count_order_changes(
+    trajectory_df: pd.DataFrame,
+    centerline: LineString,
+    frame_step: int = DEFAULT_FRAME_STEP,
+) -> int:
+    """Count sampled frames whose cyclic agent order differs from the first.
+
+    Zero means no agent overtook another on the ring (single-file motion).
+    """
+    df = trajectory_df[trajectory_df["frame"] % frame_step == 0].copy()
+    df["projected_distance"] = [
+        centerline.project(Point(x, y)) for x, y in zip(df["x"], df["y"])
+    ]
+    baseline = None
+    changes = 0
+    for _, frame_df in df.groupby("frame"):
+        ids = frame_df.sort_values("projected_distance")["id"].tolist()
+        start = ids.index(min(ids))
+        order = tuple(ids[start:] + ids[:start])
+        if baseline is None:
+            baseline = order
+        elif order != baseline:
+            changes += 1
+    return changes
+
+
 def compute_density_speed_curve(
     samples: pd.DataFrame,
     density_bin_size: float = 0.2,
