@@ -83,7 +83,8 @@ RIMEA07_AGENTS = 50
 RIMEA07_ASSIGNED_TOL = 1e-6
 RIMEA07_OBSERVED_TOL = 0.03  # m/s
 RIMEA12_AGENTS = 150  # RiMEA 12a/12b population
-RIMEA12A_MONOTONE_TOL = 2.0  # max drop between consecutive a, s
+RIMEA12A_NEAR_A = 1.0  # first goal distance of the rising branch, m
+RIMEA12A_PLATEAU_A = 4.0  # goal distances from here on form the plateau, m
 RIMEA13_CORBETTA_FLOOR = 0.25
 RIMEA13_DOWN_WINS_MIN = 0.7
 RIMEA13_MIN_SAMPLES = 500
@@ -1301,18 +1302,20 @@ class TestRiMEA12aGoalPosition:
     by a 1m bottleneck, 150 agents in room 1, as specified by RiMEA). Only
     the goal is changed: a 0.2m-wide strip in room 2 at distance a from the
     bottleneck. RiMEA's 0 and 10 m are run as 0.2 and 9.8 m so the strip
-    stays inside room 2; the grid is a subset of the notebook's.
+    stays inside room 2; the grid is the notebook's.
     Measured: room-1 clearance time, i.e. the time the last agent crosses
     the bottleneck line at x = 10 m (not the total evacuation time).
     Expected (RiMEA): the time is shortest for a goal directly behind the
-    bottleneck, grows with a and levels off. The plateau may fluctuate, so
-    the sequence may drop by at most RIMEA12A_MONOTONE_TOL between
-    consecutive grid points.
-    Runtime: about 13s per run, about 90s for the sweep.
+    bottleneck, grows with a and levels off. Suite criterion (shape
+    check, no step-by-step monotonicity because the plateau fluctuates):
+    (1) every a >= 1 m has a larger clearance time than a = 0.2 m;
+    (2) the mean over the plateau (all a >= 4 m) is not below the value
+    at a = 1 m.
+    Runtime: about 13s per run, about 140s for the 11-point sweep.
     """
 
     SCENARIO = STANDARDS_DIR / "rimea" / "scenario_files" / "Rimea-12a-goal-position.zip"
-    A_GRID = (0.2, 1.0, 2.0, 4.0, 6.0, 8.0, 9.8)  # m
+    A_GRID = (0.2, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 9.8)  # m
     MEASUREMENT_LINE = pedpy.MeasurementLine([(10.0, 4.5), (10.0, 5.5)])
 
     @staticmethod
@@ -1346,29 +1349,30 @@ class TestRiMEA12aGoalPosition:
         base = load_scenario(str(self.SCENARIO))
         n_agents = RIMEA12_AGENTS
         times = [self._clearance_time(base, a) for a in self.A_GRID]
+        by_a = dict(zip(self.A_GRID, times))
+        near = by_a[RIMEA12A_NEAR_A]
+        plateau = [t for a, t in by_a.items() if a >= RIMEA12A_PLATEAU_A]
+        plateau_mean = float(np.mean(plateau))
         vv_row.set(
             quantity="room1_clearance_time_vs_goal_distance", unit="s",
             measured=times, n=n_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
             rule=(
-                f"comparison: room-1 clearance time at a={self.A_GRID[-1]} m > "
-                f"at a={self.A_GRID[0]} m; each step over a in "
-                f"{list(self.A_GRID)} m drops by at most "
-                f"{RIMEA12A_MONOTONE_TOL} s"
+                f"comparison over a in {list(self.A_GRID)} m: "
+                f"time(a >= {RIMEA12A_NEAR_A} m) > time(a = {self.A_GRID[0]} m) "
+                f"for every a; mean time(a >= {RIMEA12A_PLATEAU_A} m) >= "
+                f"time(a = {RIMEA12A_NEAR_A} m)"
             ),
         )
-        assert times[-1] > times[0], (
-            f"Clearance time at a={self.A_GRID[-1]} m ({times[-1]:.1f}s) should "
-            f"exceed a={self.A_GRID[0]} m ({times[0]:.1f}s)"
+        later = {a: t for a, t in by_a.items() if a >= RIMEA12A_NEAR_A}
+        not_above = {a: t for a, t in later.items() if t <= times[0]}
+        assert not not_above, (
+            f"Clearance time at a={self.A_GRID[0]} m ({times[0]:.1f}s) should be "
+            f"the smallest; not exceeded at {not_above}"
         )
-        drops = [
-            (a, t0 - t1)
-            for a, t0, t1 in zip(self.A_GRID[1:], times, times[1:])
-            if t0 - t1 > RIMEA12A_MONOTONE_TOL
-        ]
-        assert not drops, (
-            f"Clearance time decreased by more than {RIMEA12A_MONOTONE_TOL}s "
-            f"(a, drop): {drops}; times {[round(t, 1) for t in times]}"
+        assert plateau_mean >= near, (
+            f"Plateau mean ({plateau_mean:.1f}s) is below the value at "
+            f"a={RIMEA12A_NEAR_A} m ({near:.1f}s)"
         )
 
 
