@@ -41,6 +41,7 @@ if str(STANDARDS_DIR) not in sys.path:
     sys.path.insert(0, str(STANDARDS_DIR))
 
 from scenario_builders.rimea16_loop import (
+    DEFAULT_AGENT_COUNT,
     build_loop_scenario,
     compute_density_speed_curve,
     compute_density_speed_samples,
@@ -90,7 +91,7 @@ class TestIMO01WalkingSpeedCorridor:
         }
     }
 
-    def test_evacuation_time(self):
+    def test_evacuation_time(self, vv_row):
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
@@ -101,6 +102,17 @@ class TestIMO01WalkingSpeedCorridor:
         expected_time = 38.0 / 1.2
         tolerance = 0.20
         evacuation_time = metrics["evacuation_time"]
+        vv_row.set(
+            quantity="evacuation_time", unit="s",
+            lower=expected_time * (1 - tolerance),
+            upper=expected_time * (1 + tolerance),
+            measured=evacuation_time, n=metrics["total_agents"], seed=42,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: agents_remaining = 0; 38/1.2 * (1 - 0.20) <= measured "
+                "<= 38/1.2 * (1 + 0.20)"
+            ),
+        )
         assert (
             expected_time * (1 - tolerance)
             <= evacuation_time
@@ -110,8 +122,8 @@ class TestIMO01WalkingSpeedCorridor:
             f"{expected_time:.1f}s +/- {tolerance * 100}%"
         )
 
-    def test_agent_stays_in_corridor(self):
-        _, trajectory = run_vv_scenario(
+    def test_agent_stays_in_corridor(self, vv_row):
+        metrics, trajectory = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
             distributions=self.DIST,
@@ -121,6 +133,12 @@ class TestIMO01WalkingSpeedCorridor:
             trajectory,
             self.WALKABLE,
             radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
+        )
+        vv_row.set(
+            quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
+            measured=len(violations), n=metrics["total_agents"], seed=42,
+            model="CollisionFreeSpeedModel",
+            rule="bound: 0 <= measured <= 0 (samples outside the walkable area)",
         )
         assert not violations, "Agent left corridor:\n" + "\n".join(violations[:5])
 
@@ -188,7 +206,7 @@ class TestIMO02WalkingSpeedUpstairs:
         }
     ]
 
-    def test_travel_time(self):
+    def test_travel_time(self, vv_row):
         """1 m/s on the 10 m stair gives about 10 s."""
         raw = {
             "config": {
@@ -214,8 +232,15 @@ class TestIMO02WalkingSpeedUpstairs:
             scenario = load_scenario(str(scenario_dir))
             result = run_scenario(scenario, seed=42)
             evac = result.evacuation_time
+            total_agents = result.total_agents
             result.cleanup()
 
+        vv_row.set(
+            quantity="stair_travel_time", unit="s", lower=9.5, upper=10.5,
+            measured=evac, n=total_agents, seed=42,
+            model="CollisionFreeSpeedModel",
+            rule="bound: 9.5 <= measured <= 10.5",
+        )
         # ~10 m at v0 * speed_factor = 1 m/s -> ~10 s.
         assert 9.5 <= evac <= 10.5, (
             f"Stair travel time {evac:.2f}s outside expected range [9.5, 10.5]"
@@ -285,7 +310,7 @@ class TestIMO03WalkingSpeedDownstairs:
         }
     ]
 
-    def test_travel_time(self):
+    def test_travel_time(self, vv_row):
         """1 m/s on the 10 m stair gives about 10 s."""
         raw = {
             "config": {
@@ -311,8 +336,15 @@ class TestIMO03WalkingSpeedDownstairs:
             scenario = load_scenario(str(scenario_dir))
             result = run_scenario(scenario, seed=42)
             evac = result.evacuation_time
+            total_agents = result.total_agents
             result.cleanup()
 
+        vv_row.set(
+            quantity="stair_travel_time", unit="s", lower=9.5, upper=10.5,
+            measured=evac, n=total_agents, seed=42,
+            model="CollisionFreeSpeedModel",
+            rule="bound: 9.5 <= measured <= 10.5",
+        )
         # ~10 m at v0 * speed_factor = 1 m/s -> ~10 s.
         assert 9.5 <= evac <= 10.5, (
             f"Stair travel time {evac:.2f}s outside expected range [9.5, 10.5]"
@@ -357,12 +389,18 @@ class TestIMO04ExitFlowRate:
         }
     }
 
-    def test_all_evacuate(self):
+    def test_all_evacuate(self, vv_row):
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
             distributions=self.DIST,
             max_simulation_time=300.0,
+        )
+        vv_row.set(
+            quantity="agents_remaining", unit="count", lower=0, upper=0,
+            measured=metrics["agents_remaining"], n=metrics["total_agents"],
+            seed=42, model="CollisionFreeSpeedModel",
+            rule="bound: total_agents = 100; 0 <= measured <= 0",
         )
         assert metrics["total_agents"] == 100
         assert metrics["agents_remaining"] == 0
@@ -377,18 +415,31 @@ class TestIMO04ExitFlowRate:
         assert metrics["agents_remaining"] == 0, "not all agents evacuated"
         return specific_exit_flow(trajectory.data, trajectory.frame_rate)
 
-    def test_flow_within_cap_with_limiter(self):
+    def test_flow_within_cap_with_limiter(self, vv_row):
         """Flow must not exceed 1.33 p/s with the exit limiter enabled."""
         flow = self._flow(limiter_on=True)
         cap = MAX_SPECIFIC_FLOW * (1 + FLOW_CAP_TOLERANCE)
+        vv_row.set(
+            quantity="specific_exit_flow_limiter_on", unit="p/m/s", upper=cap,
+            measured=flow, n=100, seed=42, model="CollisionFreeSpeedModel",
+            rule=(
+                f"bound: measured <= {MAX_SPECIFIC_FLOW} * (1 + "
+                f"{FLOW_CAP_TOLERANCE}); exit limiter on, 1 m exit"
+            ),
+        )
         assert flow <= cap, (
             f"Flow {flow:.3f} p/s exceeds the {MAX_SPECIFIC_FLOW} p/s cap "
             f"(+{FLOW_CAP_TOLERANCE:.0%} tolerance)"
         )
 
-    def test_emergent_flow_without_limiter_is_reported(self):
+    def test_emergent_flow_without_limiter_is_reported(self, vv_row):
         """Information only: the emergent flow is printed, not asserted."""
         flow = self._flow(limiter_on=False)
+        vv_row.set(
+            quantity="specific_exit_flow_limiter_off", unit="p/m/s",
+            measured=flow, n=100, seed=42, model="CollisionFreeSpeedModel",
+            rule="information only: emergent flow, not asserted",
+        )
         print(f"IMO 4 emergent flow, limiter off: {flow:.2f} p/s")
 
 
@@ -441,7 +492,7 @@ class TestIMO05ResponseTime:
         }
     ]
 
-    def test_premovement_respected(self):
+    def test_premovement_respected(self, vv_row):
         raw = {
             "config": {
                 "simulation_settings": {
@@ -483,6 +534,16 @@ class TestIMO05ResponseTime:
             movement_start[agent_id] = float(moved.iloc[0]["frame"]) / frame_rate
 
         observed = np.array([movement_start[agent_id] for agent_id in agent_ids])
+        vv_row.set(
+            quantity="movement_start_time", unit="s", lower=9.9, upper=101.0,
+            measured=observed.tolist(), n=len(agent_ids), seed=42,
+            premovement_seed=12345, model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: 9.9 <= measured <= 101.0; comparison: per-agent measured "
+                "vs that agent's premovement sample (premovement_seed), "
+                "max abs delta <= 0.5 s"
+            ),
+        )
         assert np.all(observed >= 9.9), f"Observed movement before 10s: {observed}"
         assert np.all(observed <= 101.0), (
             f"Observed movement after expected window: {observed}"
@@ -533,19 +594,25 @@ class TestIMO06RoundingCorners:
         }
     }
 
-    def test_all_evacuate(self):
+    def test_all_evacuate(self, vv_row):
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
             distributions=self.DIST,
             max_simulation_time=120.0,
         )
+        vv_row.set(
+            quantity="agents_remaining", unit="count", lower=0, upper=0,
+            measured=metrics["agents_remaining"], n=metrics["total_agents"],
+            seed=42, model="CollisionFreeSpeedModel",
+            rule="bound: 0 <= measured <= 0",
+        )
         assert metrics["agents_remaining"] == 0, (
             f"{metrics['agents_remaining']} agents stuck at corner"
         )
 
-    def test_agents_stay_in_geometry(self):
-        _, trajectory = run_vv_scenario(
+    def test_agents_stay_in_geometry(self, vv_row):
+        metrics, trajectory = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
             distributions=self.DIST,
@@ -555,6 +622,12 @@ class TestIMO06RoundingCorners:
             trajectory,
             self.WALKABLE,
             radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
+        )
+        vv_row.set(
+            quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
+            measured=len(violations), n=metrics["total_agents"], seed=42,
+            model="CollisionFreeSpeedModel",
+            rule="bound: 0 <= measured <= 0 (samples outside the walkable area)",
         )
         assert not violations, "Agents left L-corridor:\n" + "\n".join(violations[:10])
 
@@ -592,19 +665,25 @@ class TestIMO07PopulationDemographics:
         }
     }
 
-    def test_all_evacuate(self):
+    def test_all_evacuate(self, vv_row):
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
             distributions=self.DIST,
             max_simulation_time=300.0,
         )
+        vv_row.set(
+            quantity="agents_remaining", unit="count", lower=0, upper=0,
+            measured=metrics["agents_remaining"], n=metrics["total_agents"],
+            seed=42, model="CollisionFreeSpeedModel",
+            rule="bound: total_agents = 50; 0 <= measured <= 0",
+        )
         assert metrics["total_agents"] == 50
         assert metrics["agents_remaining"] == 0, (
             f"{metrics['agents_remaining']} agents did not evacuate"
         )
 
-    def test_evacuation_time_reasonable(self):
+    def test_evacuation_time_reasonable(self, vv_row):
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
@@ -612,6 +691,12 @@ class TestIMO07PopulationDemographics:
             max_simulation_time=300.0,
         )
         evacuation_time = metrics["evacuation_time"]
+        vv_row.set(
+            quantity="evacuation_time", unit="s", lower=25, upper=120,
+            measured=evacuation_time, n=metrics["total_agents"], seed=42,
+            model="CollisionFreeSpeedModel",
+            rule="bound: 25 <= measured <= 120",
+        )
         assert 25 <= evacuation_time <= 120, (
             f"Evacuation time {evacuation_time:.2f}s outside [25, 120]"
         )
@@ -692,7 +777,7 @@ class TestIMO08Counterflow:
         },
     }
 
-    def test_counterflow_increases_time(self):
+    def test_counterflow_increases_time(self, vv_row):
         metrics_without, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT_RIGHT,
@@ -719,6 +804,20 @@ class TestIMO08Counterflow:
             distributions=self.DIST_COUNTERFLOW,
             journeys_v2=journeys,
             max_simulation_time=300.0,
+        )
+        vv_row.set(
+            quantity="evacuation_time_counterflow_vs_one_way", unit="s",
+            measured=[
+                metrics_counterflow["evacuation_time"],
+                metrics_without["evacuation_time"],
+            ],
+            n=metrics_counterflow["total_agents"], seed=42,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: agents_remaining = 0 in both runs; comparison: "
+                "measured[0] (counterflow, 40 agents) > measured[1] "
+                "(one-way, 20 agents)"
+            ),
         )
         assert metrics_without["agents_remaining"] == 0
         assert metrics_counterflow["agents_remaining"] == 0
@@ -812,7 +911,7 @@ class TestIMO09ExitCountSensitivity:
             )
         return distributions, journeys
 
-    def test_time_ratio(self):
+    def test_time_ratio(self, vv_row):
         distributions_4, journeys_4 = self._make_distributions_and_journeys(
             self.EXITS_4
         )
@@ -832,6 +931,16 @@ class TestIMO09ExitCountSensitivity:
             distributions=distributions_2,
             journeys_v2=journeys_2,
             max_simulation_time=600.0,
+        )
+        vv_row.set(
+            quantity="evacuation_time_4_exits_vs_2_exits", unit="s",
+            measured=[metrics_4["evacuation_time"], metrics_2["evacuation_time"]],
+            n=metrics_4["total_agents"], seed=42,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: agents_remaining = 0 in both runs; comparison: "
+                "measured[1] (2 exits) > measured[0] (4 exits)"
+            ),
         )
         assert metrics_4["agents_remaining"] == 0, "4-exit: not all evacuated"
         assert metrics_2["agents_remaining"] == 0, "2-exit: not all evacuated"
@@ -897,7 +1006,7 @@ class TestIMO10ExitRouteAllocation:
             )
         return agent_to_exit
 
-    def test_agents_use_assigned_exits(self):
+    def test_agents_use_assigned_exits(self, vv_row):
         import pedpy
 
         raw = self._load_raw()
@@ -936,6 +1045,13 @@ class TestIMO10ExitRouteAllocation:
             for agent_id in expected_agent_exit
             if expected_agent_exit[agent_id] != actual_agent_exit[agent_id]
         }
+        vv_row.set(
+            quantity="wrong_exit_agents", unit="count", lower=0, upper=0,
+            measured=len(mismatches), n=result.total_agents, seed=42,
+            model="CollisionFreeSpeedModel",
+            scenario_file="standards/rimea/scenario_files/Rimea-10.zip",
+            rule="bound: 0 <= measured <= 0 (agents at a non-assigned exit)",
+        )
         assert not mismatches, f"Agents reached wrong exits: {mismatches}"
 
         result.cleanup()
@@ -956,7 +1072,7 @@ class TestIMO11RingFundamentalDiagram:
     This is a consistency check against a reference band, not a validation.
     """
 
-    def test_1d_fundamental_diagram(self):
+    def test_1d_fundamental_diagram(self, vv_row):
         reference = load_reference_band()
         runs = {}
         for label, desired_speed in {
@@ -994,6 +1110,22 @@ class TestIMO11RingFundamentalDiagram:
         slower = runs["slower"]
         faster = runs["faster"]
 
+        vv_row.set(
+            quantity="baseline_fraction_inside_reference_band", unit="fraction",
+            lower=0.75,
+            measured={
+                "baseline_inside_band": float(baseline["inside_band"].mean()),
+                "slower_mean_speed_mps": float(slower["speed_mps"].mean()),
+                "baseline_mean_speed_mps": float(baseline["speed_mps"].mean()),
+                "faster_above_p90": float(faster["above_p90"].mean()),
+            },
+            n=DEFAULT_AGENT_COUNT, seed=42, model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: baseline_inside_band >= 0.75; comparison: "
+                "slower_mean_speed_mps < baseline_mean_speed_mps; bound: "
+                "faster_above_p90 >= 0.75"
+            ),
+        )
         assert baseline["inside_band"].mean() >= 0.75, (
             f"Baseline curve should mostly lie within the reference band, got "
             f"{baseline['inside_band'].mean():.2%} inside"
