@@ -460,6 +460,14 @@ def build_pages(
         "banner": BANNER,
         "repo_root": repo_root,
         "repo": REPO,
+        "nav": [
+            {
+                "id": s["std"]["id"],
+                "name": s["std"]["name"],
+                "full_name": s["std"]["full_name"],
+            }
+            for s in standards
+        ],
     }
     write_assets(outdir)
     for s in standards:
@@ -477,9 +485,21 @@ def build_pages(
             orphans=orphans,
             no_results=no_results,
             order=STATUS_ORDER,
+            refs=[reference_of(s) for s in standards],
         ),
     )
     return standards, orphans, no_results
+
+
+def reference_of(s) -> dict:
+    d = s["std_def"]
+    doi = d.get("doi")
+    link = f"https://doi.org/{doi}" if doi else d.get("url")
+    return {
+        "citation": d.get("citation") or s["std"]["full_name"],
+        "link": link,
+        "link_text": doi or link,
+    }
 
 
 def summarize(standards) -> list[dict]:
@@ -672,7 +692,13 @@ footer.site .diag p { margin: 4px 0 0; }
 .bar { max-width: 62rem; margin: 0 auto; display: flex; flex-wrap: wrap;
   gap: 8px 24px; align-items: center; justify-content: space-between; }
 .logo { height: 34px; width: auto; display: block; }
-.versions { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+.versions { color: var(--muted); font-size: var(--text-sm); line-height: var(--leading-body); margin: 2px 0 0; }
+header.site { padding: 8px 16px; }
+header.site .bar { align-items: flex-start; }
+nav.main { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--text-sm); padding-top: 6px; }
+nav.main a { text-decoration: none; padding: 2px 0; border-bottom: 2px solid transparent; }
+nav.main a:hover { text-decoration: underline; }
+nav.main a[aria-current="page"] { color: var(--fg); font-weight: 700; border-bottom-color: currentColor; }
 @media (prefers-color-scheme: dark) {
   header.site .logo { background: #fff; border-radius: 4px; padding: 2px 6px; }
 }
@@ -705,7 +731,8 @@ ul.plain { padding-left: 1.2rem; }
 code { font-size: 0.9em; background: var(--panel); padding: 0 4px; border-radius: 3px; }
 @media (max-width: 40rem) { h1 { font-size: var(--text-lg); } }
 @media (max-width: 480px) { th, td { padding: 5px 6px; } }
-.hero { margin: 32px 0 0; }
+.hero { margin: 32px 0 24px; }
+ul.refs { overflow-wrap: anywhere; }
 .hero h1 { margin: 0; }
 .hero p { color: var(--muted); margin: 8px 0 0; max-width: 46rem; }
 .banner.top { margin: 20px 0 24px; }
@@ -745,9 +772,16 @@ BASE = """\
 </head>
 <body>
 <header class="site"><div class="bar">
+<div class="brand">
 <a href="{{ root }}index.html"><img class="logo" src="{{ root }}assets/jupedsim_logo.svg" alt="JuPedSim"></a>
-<p class="versions">Versions used:
-{% for name, v in versions.items() %}{{ name }} {{ v or "not available" }}{{ "; " if not loop.last }}{% endfor %}</p>
+<p class="versions">{% for name, v in versions.items() %}{{ name }} {{ v or "not available" }}{{ " · " if not loop.last }}{% endfor %}</p>
+</div>
+<nav class="main" aria-label="Standards">
+<a href="{{ root }}index.html"{% if std is not defined %} aria-current="page"{% endif %}>Summary</a>
+{% for n in nav %}
+<a href="{{ root }}standards/{{ n.id }}/index.html" title="{{ n.full_name }}"{% if std is defined and std.id == n.id %} aria-current="page"{% endif %}>{{ n.name.split()[0] }}</a>
+{% endfor %}
+</nav>
 </div></header>
 <main>
 {% block body %}{% endblock %}
@@ -776,10 +810,9 @@ INDEX = (
     + """\
 {% block body %}
 <section class="hero">
-<h1>JuPedSim verification and validation</h1>
-<p>Results for each published evacuation standard, from one run on the locked versions.</p>
+<h1>JuPedSim verification</h1>
+<p>This page shows the live verification status of <a href="https://www.jupedsim.org">JuPedSim</a> against four published test suites for evacuation models: IMO MSC.1/Circ.1533, RiMEA 4.1.1, NIST TN 1822 and ISO 20414:2020. Each test is rebuilt from the standard's description, run on every change to the main branch with the versions shown above, and checked against the standard's expected result. Every test has its own page with the definition, the scenario, our result and the notebook. Failures are shown as they are. Code and scenarios: <a href="https://github.com/PedestrianDynamics/jupedsim-web-community">jupedsim-web-community on GitHub</a>.</p>
 </section>
-<p class="banner top">{{ banner }}</p>
 {% if not has_results %}<p class="note">Test results are not available in this run.</p>{% endif %}
 {% if not has_notebooks %}<p class="note">Executed notebooks are not available in this run.</p>{% endif %}
 <div class="cards">
@@ -802,6 +835,12 @@ INDEX = (
 <span><span class="badge badge-test-local">TEST-LOCAL</span> <b>asserts logic in the test file, not simulator output</b></span>
 <span><span class="badge badge-not-run">NOT RUN</span> <b>no result was available in this build</b></span>
 </div>
+<h2 id="references">References</h2>
+<ul class="plain refs">
+{% for r in refs %}
+<li>{{ r.citation }}{% if r.link %} <a href="{{ r.link }}">{{ r.link_text }}</a>{% endif %}</li>
+{% endfor %}
+</ul>
 {% endblock %}
 {% block diagnostics %}
 {% if has_results and (orphans or no_results) %}

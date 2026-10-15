@@ -226,3 +226,29 @@ def test_blocking_from_definition_deviation(gen):
     assert not gen.blocking_documented(row)
     definition = {"deviations": ["Level N is reported as blocking documented."]}
     assert gen.blocking_documented(row, definition)
+
+
+def test_header_nav_on_every_page(gen, inputs, tmp_path):
+    out = tmp_path / "site"
+    build(gen, inputs, out)
+    test_page = page(out, "std-t1")
+    assert 'href="../../../index.html" aria-current' not in test_page
+    assert 'href="../../../index.html">Summary' in test_page
+    assert 'href="../../../standards/std/index.html"' in test_page
+    assert 'aria-current="page">Std<' in test_page
+    assert 'aria-current="page">Summary<' in (out / "index.html").read_text()
+    assert "Versions used" not in test_page
+
+
+def test_summary_intro_and_references(gen, inputs, tmp_path):
+    defs = json.loads(inputs["definitions"].read_text())
+    defs["standards"]["std"].update(citation="Cite A (2020).", doi="10.1/x")
+    inputs["definitions"].write_text(json.dumps(defs))
+    out = tmp_path / "site"
+    build(gen, inputs, out)
+    index = (out / "index.html").read_text()
+    assert "Verification only" not in index
+    assert "<h1>JuPedSim verification</h1>" in index
+    assert "https://www.jupedsim.org" in index
+    assert "Cite A (2020)." in index
+    assert 'href="https://doi.org/10.1/x"' in index
