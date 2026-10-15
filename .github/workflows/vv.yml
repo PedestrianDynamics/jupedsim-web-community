@@ -30,17 +30,20 @@ jobs:
         enable-cache: true
 
     - name: Sync environment
-      run: uv sync --extra dev
+      run: uv sync --frozen --extra dev
 
     - name: Run V&V tests
-      run: uv run --extra dev python -m pytest tests/vv -v --junitxml=results/vv-tests.xml
+      run: uv run --frozen --extra dev python -m pytest tests/vv -v --junitxml=results/vv-tests.xml
 
     - name: Upload V&V test results
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: vv-test-results
-        path: results/vv-tests.xml
+        path: |
+          results/vv-tests.xml
+          results/vv-results.json
+        if-no-files-found: warn
 
     - name: V&V test summary
       if: always()
@@ -74,8 +77,84 @@ jobs:
               "https://api.github.com/repos/PedestrianDynamics/jupedsim-web-community/issues/67"
         fi
 
+    - name: Upload dashboard
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: vv-dashboard
+        path: site
+        if-no-files-found: warn
+
+  # Execute every standards notebook on the locked environment (uv.lock) so
+  # that the published numbers and figures come from this one run. Skipped on
+  # pull requests (runtime). Drift detection against the latest
+  # jupedsim-scenarios lives in notebooks.yml.
+  notebooks:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+
+    - name: Sync environment
+      run: uv sync --frozen --extra dev
+
+    - name: Execute notebooks
+      # Two at a time: on the 4-vCPU runner, four heavy notebooks side by side
+      # (RiMEA 4 and 12a, ISO 6 and 15) each exceeded 30 min. The runtime work
+      # item in the V&V plan removes the double computation behind this.
+      run: uv run --frozen python scripts/run_notebooks.py --jobs 2 --timeout 3600
+
+    - name: Notebook summary
+      if: always()
+      run: |
+        if [ -f results/notebooks/summary.md ]; then
+          cat results/notebooks/summary.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload executed notebooks
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: executed-notebooks
+        path: results/notebooks
+        if-no-files-found: warn
+
+  # Assemble the Pages site (main only): the dashboard plus the executed
+  # notebooks from the same run.
+  build-pages:
+    needs: [vv-tests, notebooks]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download dashboard
+      uses: actions/download-artifact@v4
+      with:
+        name: vv-dashboard
+        path: site
+
+    - name: Download executed notebooks
+      continue-on-error: true
+      uses: actions/download-artifact@v4
+      with:
+        name: executed-notebooks
+        path: site/notebooks
+
+    - name: Link notebooks from the dashboard
+      run: |
+        if [ -f site/notebooks/manifest.json ]; then
+          python3 - <<'PY'
+        import pathlib
+        p = pathlib.Path("site/index.html")
+        link = '<p><a href="notebooks/manifest.json">Executed notebooks (manifest)</a></p>'
+        p.write_text(p.read_text().replace("</body>", link + "</body>", 1))
+        PY
+        fi
+
     - name: Upload Pages artifact
-      if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: actions/upload-pages-artifact@v3
       with:
         path: site
@@ -83,8 +162,8 @@ jobs:
   # Publish the dashboard to GitHub Pages (main only). Requires Pages to be
   # enabled with "GitHub Actions" as the source (Settings -> Pages).
   deploy-pages:
-    needs: vv-tests
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-pages
+    if: ${{ !cancelled() && needs.build-pages.result == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
