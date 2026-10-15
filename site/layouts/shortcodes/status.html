@@ -1,0 +1,2 @@
+{{- $s := .Get 0 -}}
+<span class="vv-badge vv-badge-{{ $s | lower | replaceRE "[^a-z0-9]+" "-" }}">{{ $s }}</span>

@@ -1,0 +1,13 @@
+{{- $order := slice "PASS" "FAIL" "TEST-LOCAL" "PENDING" "NOT RUN" -}}
+<article class="vv-card">
+  <h2><a href="{{ .Get "url" | relURL }}">{{ .Get "name" }}</a></h2>
+  <p class="vv-count">{{ .Get "total" }} <span>tests</span></p>
+  <p class="vv-full">{{ .Get "full" }}</p>
+  <div class="vv-chips">
+    {{- range $order }}
+    {{- $n := int ($.Get (. | lower | replaceRE "[^a-z0-9]+" "_")) }}
+    <span class="vv-badge vv-badge-{{ . | lower | replaceRE "[^a-z0-9]+" "-" }}{{ if not $n }} vv-zero{{ end }}">{{ . }} <span>{{ $n }}</span></span>
+    {{- end }}
+  </div>
+  <p class="vv-foot">Blocking documented: {{ .Get "blocking" }}</p>
+</article>

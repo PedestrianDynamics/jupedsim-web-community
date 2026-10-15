@@ -1,0 +1,67 @@
+baseURL: https://pedestriandynamics.org/jupedsim-web-community/
+languageCode: en-us
+title: JuPedSim verification
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+
+module:
+  imports:
+    - path: github.com/imfing/hextra
+
+menu:
+  main:
+    - name: Summary
+      pageRef: /
+      weight: 1
+    - name: IMO
+      pageRef: /standards/imo
+      weight: 2
+    - name: RiMEA
+      pageRef: /standards/rimea
+      weight: 3
+    - name: NIST
+      pageRef: /standards/nist
+      weight: 4
+    - name: ISO
+      pageRef: /standards/iso
+      weight: 5
+    - name: Search
+      weight: 6
+      params:
+        type: search
+    - name: GitHub
+      weight: 7
+      url: "https://github.com/PedestrianDynamics/jupedsim-web-community"
+      params:
+        icon: github
+
+params:
+  navbar:
+    displayTitle: false
+    displayLogo: true
+    logo:
+      path: images/jupedsim_logo.svg
+      width: 120
+      height: 29
+    width: wide
+
+  page:
+    width: wide
+
+  footer:
+    displayCopyright: false
+    displayPoweredBy: false
+    width: wide
+
+  theme:
+    default: system
+    displayToggle: true
+
+  search:
+    enable: true
+    type: flexsearch
+
+  displayUpdatedDate: false
