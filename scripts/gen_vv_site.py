@@ -863,7 +863,7 @@ TEST = (
 {% endif %}
 <p class="kv">Reference: {{ std_def.citation or std.full_name }}
 {% if std_def.url %}<a href="{{ std_def.url }}">{{ std_def.doi or std_def.url }}</a>{% endif %}
-{% if std_def.page_note %}({{ std_def.page_note }}){% endif %}</p>
+{% if std_def.page_note %} ({{ std_def.page_note }}){% endif %}</p>
 
 <h2 id="scenario">2. Scenario</h2>
 {% if scenario_imgs %}
