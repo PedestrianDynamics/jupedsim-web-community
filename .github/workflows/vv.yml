@@ -126,44 +126,70 @@ jobs:
   # Assemble the Pages site (main only): the dashboard plus the executed
   # notebooks from the same run.
   build-pages:
+    # Builds the Hugo site from this run's test results and executed
+    # notebooks. Runs on main pushes (deployed) and on manual dispatch
+    # (artifact only, for previewing a branch).
     needs: [vv-tests, notebooks]
-    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
+    env:
+      HUGO_VERSION: 0.144.0
     steps:
-    - name: Download dashboard
+    - uses: actions/checkout@v4
+
+    - uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+
+    - name: Sync environment
+      run: uv sync --frozen --extra dev
+
+    - name: Download test results
       uses: actions/download-artifact@v4
       with:
-        name: vv-dashboard
-        path: site
+        name: vv-test-results
+        path: results
 
     - name: Download executed notebooks
       continue-on-error: true
       uses: actions/download-artifact@v4
       with:
         name: executed-notebooks
-        path: site/notebooks
+        path: results/notebooks
 
-    - name: Link notebooks from the dashboard
+    - uses: actions/setup-go@v5
+      with:
+        go-version: "1.22"
+
+    - name: Install Hugo
       run: |
-        if [ -f site/notebooks/manifest.json ]; then
-          python3 - <<'PY'
-        import pathlib
-        p = pathlib.Path("site/index.html")
-        link = '<p><a href="notebooks/manifest.json">Executed notebooks (manifest)</a></p>'
-        p.write_text(p.read_text().replace("</body>", link + "</body>", 1))
-        PY
-        fi
+        wget -q -O "${{ runner.temp }}/hugo.deb" \
+          "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb"
+        sudo dpkg -i "${{ runner.temp }}/hugo.deb"
+
+    - name: Generate site content
+      run: |
+        args=(--manifest standards/coverage.json --definitions standards/definitions.json --hugo-content site/content)
+        [ -f results/vv-results.json ] && args+=(--results results/vv-results.json)
+        [ -f results/notebooks/manifest.json ] && args+=(--notebooks results/notebooks)
+        uv run --frozen python scripts/gen_vv_site.py "${args[@]}"
+
+    - name: Build site
+      working-directory: site
+      env:
+        HUGO_ENVIRONMENT: production
+      run: hugo --minify --panicOnWarning
 
     - name: Upload Pages artifact
       uses: actions/upload-pages-artifact@v3
       with:
-        path: site
+        path: site/public
 
-  # Publish the dashboard to GitHub Pages (main only). Requires Pages to be
+  # Publish the site to GitHub Pages (main pushes only). Requires Pages to be
   # enabled with "GitHub Actions" as the source (Settings -> Pages).
   deploy-pages:
     needs: build-pages
-    if: ${{ !cancelled() && needs.build-pages.result == 'success' }}
+    if: ${{ !cancelled() && needs.build-pages.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
