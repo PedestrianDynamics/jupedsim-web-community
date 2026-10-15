@@ -328,8 +328,8 @@
       "definition": "A room of 8 m by 6 m is connected by a corridor 2 m wide and 12 m long to a stair going up (Fig. 5, p. 13). The population is 150 persons with instant response and Table 3.4 speeds, filling the room. Congestion is identified by local densities above 4 p/m2 for a significant duration (Section 3.1, p. 1), and it is significant if it lasts longer than 10 % of the total assembly time (Section 3.2).",
       "expected": "Congestion forms at the exit from the room. This produces a steady flow in the corridor and congestion at the base of the stairs. IMO gives no numeric limits.",
       "deviations": [
-        "The Test 11 scenario is not implemented. There is no room, no corridor, no stair and no density or flow measurement for these locations.",
-        "The test runs the RiMEA Test 16 ring instead, with the same builder (standards/rimea/scenario_builders/rimea16_loop.py) and the same reference band file as RiMEA 16: 10 agents on a closed oval ring of 26.85 m (about 0.37 agents per metre) at desired speeds 0.9, 1.2 and 1.5 m/s.",
+        "Status is PENDING: the Test 11 scenario is not implemented, so this row is not counted as an IMO pass. There is no room, no corridor, no stair and no density or flow measurement for these locations.",
+        "The test that exists is a substitute: it runs the RiMEA Test 16 ring instead, with the same builder (standards/rimea/scenario_builders/rimea16_loop.py) and the same reference band file as RiMEA 16: 10 agents on a closed oval ring of 26.85 m (about 0.37 agents per metre) at desired speeds 0.9, 1.2 and 1.5 m/s.",
         "The checks are the suite's own and come from RiMEA 16, not from IMO: every agent completes at least 3 laps; at least 75 % of the baseline (1.2 m/s) speed-density samples lie inside the RiMEA 10 %/90 % percentile band; the 0.9 m/s run is slower than the baseline; at least 75 % of the 1.5 m/s samples lie above the 90 % percentile.",
         "The RiMEA 16 test also sweeps the agent count to high densities. This test does not.",
         "Default body radius 0.15 m; one seed (42). The ring is built in code."
