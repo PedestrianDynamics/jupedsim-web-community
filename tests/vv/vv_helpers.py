@@ -137,6 +137,42 @@ def measure_flow_rate(metrics: dict) -> float:
     return metrics["agents_evacuated"] / evac_time
 
 
+# Exit flow limit of the maximum-flow tests (ISO 20414 Test 11, NIST TN 1822
+# Verif.5.2, IMO MSC.1/Circ.1533 Test 4), in persons per metre of exit width
+# per second; for a 1 m exit it equals the limiter's `max_throughput` in p/s.
+MAX_SPECIFIC_FLOW = 1.33
+# Relative slack on the cap. The exit times come from the trajectory file
+# (0.1 s sampling) and the egress span is ~75 s, so quantisation moves the
+# measured flow by well under 1 %. The limiter's tick discretisation only
+# lowers the flow.
+FLOW_CAP_TOLERANCE = 0.01
+
+
+def specific_exit_flow(
+    trajectory_df, frame_rate: float, exit_width_m: float = 1.0
+) -> float:
+    """Specific exit flow in p/m/s: (N - 1) / (t_last - t_first) / width.
+
+    A fully evacuated run is required: an agent's last recorded frame is then
+    its exit time, and the N exit crossings enclose N - 1 intervals.
+    """
+    exit_times = (trajectory_df.groupby("id").frame.max() / frame_rate).sort_values()
+    span = exit_times.iloc[-1] - exit_times.iloc[0]
+    return (len(exit_times) - 1) / span / exit_width_m
+
+
+def with_flow_limiter(exits: dict, enabled: bool, max_throughput: float) -> dict:
+    """Copy of `exits` with the exit throughput limiter switched on or off."""
+    return {
+        key: {
+            **exit_data,
+            "enable_throughput_throttling": enabled,
+            "max_throughput": max_throughput,
+        }
+        for key, exit_data in exits.items()
+    }
+
+
 def agents_within_bounds(
     trajectory: "pedpy.TrajectoryData",
     min_x: float,

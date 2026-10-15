@@ -24,11 +24,14 @@ import pytest
 from jupedsim_scenarios import load_scenario, run_scenario
 from shapely.geometry import Point, Polygon
 from vv_helpers import (
+    FLOW_CAP_TOLERANCE,
     HAS_VV_DEPS,
+    MAX_SPECIFIC_FLOW,
     agents_outside_polygon,
     agents_within_bounds,
-    measure_flow_rate,
     run_vv_scenario,
+    specific_exit_flow,
+    with_flow_limiter,
 )
 
 STANDARDS_DIR = pathlib.Path(__file__).resolve().parents[2] / "standards"
@@ -322,7 +325,12 @@ class TestIMO03WalkingSpeedDownstairs:
 
 
 class TestIMO04ExitFlowRate:
-    """One hundred agents evacuate through a 1 m exit."""
+    """One hundred agents evacuate through a 1 m exit.
+
+    IMO: the exit flow must not exceed 1.33 p/s. The run enables the exit
+    throughput limiter at that value; the unthrottled flow is reported only.
+    The exit is a 1 x 1 m absorbing square inside the room, not a wall opening.
+    """
 
     WALKABLE = "POLYGON ((0 0, 8 0, 8 5, 0 5, 0 0))"
     EXIT: ClassVar[dict] = {
@@ -359,16 +367,29 @@ class TestIMO04ExitFlowRate:
         assert metrics["total_agents"] == 100
         assert metrics["agents_remaining"] == 0
 
-    def test_flow_rate_physically_plausible(self):
-        metrics, _ = run_vv_scenario(
+    def _flow(self, limiter_on):
+        metrics, trajectory = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
-            exits=self.EXIT,
+            exits=with_flow_limiter(self.EXIT, limiter_on, MAX_SPECIFIC_FLOW),
             distributions=self.DIST,
             max_simulation_time=300.0,
         )
-        flow = measure_flow_rate(metrics)
-        assert flow > 0.5, f"Flow rate {flow:.2f} pers/s suspiciously low"
-        assert flow < 10.0, f"Flow rate {flow:.2f} pers/s unrealistically high"
+        assert metrics["agents_remaining"] == 0, "not all agents evacuated"
+        return specific_exit_flow(trajectory.data, trajectory.frame_rate)
+
+    def test_flow_within_cap_with_limiter(self):
+        """Flow must not exceed 1.33 p/s with the exit limiter enabled."""
+        flow = self._flow(limiter_on=True)
+        cap = MAX_SPECIFIC_FLOW * (1 + FLOW_CAP_TOLERANCE)
+        assert flow <= cap, (
+            f"Flow {flow:.3f} p/s exceeds the {MAX_SPECIFIC_FLOW} p/s cap "
+            f"(+{FLOW_CAP_TOLERANCE:.0%} tolerance)"
+        )
+
+    def test_emergent_flow_without_limiter_is_reported(self):
+        """Information only: the emergent flow is printed, not asserted."""
+        flow = self._flow(limiter_on=False)
+        print(f"IMO 4 emergent flow, limiter off: {flow:.2f} p/s")
 
 
 # ---------------------------------------------------------------------------
