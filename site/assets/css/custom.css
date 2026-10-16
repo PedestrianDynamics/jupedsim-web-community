@@ -68,10 +68,11 @@ html.dark .vv-logo { filter: brightness(0) invert(1) opacity(0.9); }
 .vv-cases-wrap { container-type: inline-size; margin: 1rem 0; }
 .content table.vv-cases { display: table; width: 100%; table-layout: fixed; margin: 0; overflow-wrap: anywhere; }
 .vv-cases th, .vv-cases td { vertical-align: top; text-align: left; }
-.vv-cases th:nth-child(1) { width: 26%; }
+.vv-cases th:nth-child(1) { width: 30%; }
 .vv-cases th:nth-child(2) { width: 6.5rem; }
-.vv-cases th:nth-child(4) { width: 9rem; }
-.vv-cases code { word-break: break-word; }
+.vv-cases th:nth-child(4) { width: 10rem; }
+.vv-cases code, .vv-rules code { word-break: normal; overflow-wrap: normal; }
+.vv-cases .vv-nw { white-space: nowrap; }
 .vv-cases .vv-range { color: var(--vv-muted); font-size: 0.875rem; }
 .vv-rules { margin: 0.5rem 0 1rem; padding-left: 1.25rem; list-style: disc; font-size: 0.875rem; color: var(--vv-muted); }
 @container (max-width: 40rem) {

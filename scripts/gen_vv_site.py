@@ -778,17 +778,45 @@ def result_cell(v) -> str:
 def run_cell(v) -> str:
     parts = []
     if v["n"]:
-        parts.append(f"n = {esc(v['n'])}")
+        parts.append(f'<span class="vv-nw">n = {esc(v["n"])}</span>')
     if v["seed"]:
-        parts.append(f"seed {esc(v['seed'])}")
+        parts.append(f'<span class="vv-nw">seed {esc(v["seed"])}</span>')
     return " &middot; ".join(parts) or "&mdash;"
+
+
+NUM = r"-?\d+(?:\.\d+)?"
+BOUND_ONLY = re.compile(
+    rf"bound: (?:(?P<lo>{NUM}) <= measured(?: <= (?P<hi>{NUM}))?"
+    rf"|measured (?:<=|<) (?P<hi2>{NUM})|measured (?:>=|>) (?P<lo2>{NUM}))"
+)
+
+
+def same_number(text, shown) -> bool:
+    if not text or not shown:
+        return not text and not shown
+    return float(text) == float(shown)
+
+
+def restates_bounds(v) -> bool:
+    """True when the rule only repeats the accepted range shown in the row."""
+    m = BOUND_ONLY.fullmatch(v["rule"])
+    if not m:
+        return False
+    lo = m["lo"] or m["lo2"]
+    hi = m["hi"] or m["hi2"]
+    return same_number(lo, v["lower"]) and same_number(hi, v["upper"])
+
+
+def wrap_name(name: str) -> str:
+    """Escape a test name and allow line breaks after underscores only."""
+    return esc(name).replace("_", "_<wbr>")
 
 
 def case_row(v) -> str:
     status = status_chip(v["status"]) if v["status"] != "SKIP" else "SKIP"
     return (
         "<tr>"
-        f'<td data-label="Case"><code title="{esc(v["test_id"])}">{esc(v["test"])}</code></td>'
+        f'<td data-label="Case"><code title="{esc(v["test_id"])}">{wrap_name(v["test"])}</code></td>'
         f'<td data-label="Status">{status}</td>'
         f'<td data-label="Result">{result_cell(v)}</td>'
         f'<td data-label="Run">{run_cell(v)}</td>'
@@ -808,11 +836,12 @@ def case_table(res_views) -> list[str]:
     ]
     lines += [case_row(v) for v in res_views]
     lines += ["</tbody>", "</table>", "</div>", ""]
-    rules = [v for v in res_views if v["rule"]]
+    rules = [v for v in res_views if v["rule"] and not restates_bounds(v)]
     if rules:
         lines += ['<ul class="vv-rules">']
         lines += [
-            f"<li><code>{esc(v['test'])}</code>: {esc(v['rule'])}</li>" for v in rules
+            f"<li><code>{wrap_name(v['test'])}</code>: {esc(v['rule'])}</li>"
+            for v in rules
         ]
         lines += ["</ul>", ""]
     return lines

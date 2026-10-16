@@ -373,8 +373,11 @@ def test_result_cell_missing_values(gen):
     assert gen.result_cell(view(gen)) == "&mdash;"
     assert gen.result_cell(view(gen, quantity="q")) == "q: not reported"
     assert gen.run_cell(view(gen)) == "&mdash;"
-    assert gen.run_cell(view(gen, n=1.0, seed=42.0)) == "n = 1 &middot; seed 42"
-    assert gen.run_cell(view(gen, seed=7.0)) == "seed 7"
+    assert (
+        gen.run_cell(view(gen, n=1.0, seed=42.0))
+        == '<span class="vv-nw">n = 1</span> &middot; <span class="vv-nw">seed 42</span>'
+    )
+    assert gen.run_cell(view(gen, seed=7.0)) == '<span class="vv-nw">seed 7</span>'
 
 
 def test_result_cell_dict_and_list_measured(gen):
@@ -391,7 +394,7 @@ def test_case_table_has_four_columns_and_rule_notes(gen):
     views = [view(gen, rule="Needs <b> & more", quantity="q", measured=1.0)]
     text = "\n".join(gen.case_table(views))
     assert "<th>Case</th><th>Status</th><th>Result</th><th>Run</th>" in text
-    assert 'title="t.py::TestA::test_x">test_x</code>' in text
+    assert 'title="t.py::TestA::test_x">test_<wbr>x</code>' in text
     assert "Needs &lt;b&gt; &amp; more" in text
     assert "\n\n<" not in text.split("</table>")[0].split("<table")[1]
 
@@ -400,3 +403,21 @@ def test_dimensionless_unit_is_not_printed(gen):
     cell = gen.result_cell(view(gen, quantity="p", measured=0.5, unit="1", lower=0.05))
     assert cell.startswith("p = 0.5<br>")
     assert "accepted \u2265 0.05<" in cell
+
+
+def test_rule_note_omitted_only_when_it_restates_bounds(gen):
+    same = view(gen, lower=9.5, upper=10.5, rule="bound: 9.50 <= measured <= 10.5")
+    one = view(gen, lower=0.05, rule="bound: measured > 0.05")
+    more = view(gen, lower=0.05, rule="bound: measured > 0.05 (KS test)")
+    other = view(gen, lower=1.0, rule="bound: 0.9 <= measured")
+    assert gen.restates_bounds(same)
+    assert gen.restates_bounds(one)
+    assert not gen.restates_bounds(more)
+    assert not gen.restates_bounds(other)
+    text = "\n".join(gen.case_table([same]))
+    assert "vv-rules" not in text
+    assert "vv-rules" in "\n".join(gen.case_table([more]))
+
+
+def test_case_names_break_after_underscores(gen):
+    assert gen.wrap_name("test_down_faster") == "test_<wbr>down_<wbr>faster"
