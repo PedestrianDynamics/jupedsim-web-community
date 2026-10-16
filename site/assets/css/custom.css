@@ -19,7 +19,7 @@ html.dark {
 /* Header: logo with the versions line beneath it */
 .vv-brand { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
 .vv-logo { display: block; height: 29px; width: auto; }
-html.dark .vv-logo { background: #fff; border-radius: 4px; padding: 2px 6px; }
+html.dark .vv-logo { filter: brightness(0) invert(1) opacity(0.9); }
 .vv-versions { margin: 2px 0 0; font-size: 0.7rem; line-height: 1.2; color: var(--vv-muted); white-space: nowrap; }
 @media (max-width: 480px) { .vv-versions { white-space: normal; font-size: 0.65rem; } }
 
