@@ -663,7 +663,7 @@
       "expected": "The flow increases with the bottleneck width. RiMEA names no flow values and sets no pass limit (p. 28).",
       "deviations": [
         "The test uses 50 agents, not 150.",
-        "The test takes the flow as the number of agents divided by the total evacuation time of the run, which includes the walk to the bottleneck and on to the goal, so it is not a flow measured at the bottleneck. The notebook measures the mean flow at the bottleneck line x = 10 m with PedPy and compares it with the line J = 1.9 w.",
+        "The test takes the flow as the number of agents divided by the total evacuation time of the run, which includes the walk to the bottleneck and on to the goal, so it is not a flow measured at the bottleneck. The notebook uses the same measure.",
         "The pass rule is the suite's own: flow(0.8 m) < flow(1.0 m) < flow(1.2 m), with one run per width.",
         "The goal is a strip 2 m deep at 23 to 25 m rather than a line at the right edge. Agents have one desired speed (1.2 m/s), the suite's default body radius of 0.15 m and one seed (42). RiMEA's standard population (section 3.2.4, p. 16) defines sex and age; speeds follow from age (Fig. 3, p. 13) and body size is not defined."
       ],
