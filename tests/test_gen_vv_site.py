@@ -337,6 +337,9 @@ def test_summary_intro_and_references(gen, inputs, content):
     assert "Verification only" not in index
     assert 'title: "JuPedSim verification"' in index
     assert "(https://www.jupedsim.org)" in index
+    assert "not validation" in index
+    assert "live verification" not in index and "expected result" not in index
+    assert "(https://github.com/PedestrianDynamics/jupedsim-web-community)" in index
     assert "Cite A (2020)." in index
     assert "(https://doi.org/10.1/x)" in index
 

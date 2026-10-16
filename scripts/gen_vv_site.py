@@ -1083,12 +1083,12 @@ def build_site(
 
 
 INTRO = (
-    "This page shows the live verification status of [JuPedSim](https://www.jupedsim.org) "
-    "against four published test suites for evacuation models: IMO MSC.1/Circ.1533, RiMEA 4.1.1, "
-    "NIST TN 1822 and ISO 20414:2020. Each test is rebuilt from the standard's description, run on "
-    "every change to the main branch with the versions shown above, and checked against the "
-    "standard's expected result. Every test has its own page with the definition, the scenario, our "
-    "result and the notebook. Failures are shown as they are. Code and scenarios: "
+    "Verification tests of [JuPedSim](https://www.jupedsim.org) against the test cases of "
+    "IMO MSC.1/Circ.1533, RiMEA 4.1.1, NIST TN 1822 and ISO 20414:2020. Each test page gives "
+    "the definition, the scenario, our result and the notebook. It also states the pass rule "
+    "and whether the standard gives that rule or the suite chose it. The results come from the "
+    "run named in the footer, not from a live check. This is verification, not validation: no "
+    "comparison with experimental data has been run. Code and scenarios: "
     "[jupedsim-web-community on GitHub](https://github.com/PedestrianDynamics/jupedsim-web-community)."
 )
 
