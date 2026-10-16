@@ -21,6 +21,9 @@
           {{- with $run.time }} <time datetime="{{ .iso }}">{{ .text }}</time>{{ else }} time unknown{{ end }}
         {{- end -}}
       </span>
+      {{- with $run.pages_commit_sha }}{{ if not $run.local }}
+      <span>Pages built from commit <a href="{{ $repo }}/commit/{{ . }}">{{ substr . 0 12 }}</a></span>
+      {{- end }}{{ end }}
       <span>All numbers and figures on this site come from one run on the locked versions.</span>
       <a href="{{ "diagnostics/" | relURL }}">Join diagnostics</a>
     </div>

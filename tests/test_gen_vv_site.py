@@ -280,6 +280,23 @@ def test_footer_data_and_diagnostics(gen, inputs, content):
     assert "Join diagnostics" not in (content / "_index.md").read_text()
 
 
+def test_pages_commit_shown_only_when_it_differs(gen, inputs, content, monkeypatch):
+    monkeypatch.setenv("GITHUB_SHA", "f" * 40)
+    build(gen, inputs, content)
+    run = json.loads((content.parent / "data" / "run.json").read_text())
+    assert run["run"]["pages_commit_sha"] == "f" * 40
+    monkeypatch.setenv("GITHUB_SHA", "abc123def456")
+    build(gen, inputs, content)
+    run = json.loads((content.parent / "data" / "run.json").read_text())
+    assert run["run"]["pages_commit_sha"] is None
+
+
+def test_pages_commit_falls_back_to_git_then_none(gen, tmp_path, monkeypatch):
+    monkeypatch.delenv("GITHUB_SHA", raising=False)
+    assert gen.pages_commit(Path(SCRIPT).parent)
+    assert gen.pages_commit(tmp_path) is None
+
+
 def test_footer_without_run_ids(gen):
     run = gen.pick_run([{"commit_sha": "a" * 40}], None)
     assert run["time"] is None and not run["local"]

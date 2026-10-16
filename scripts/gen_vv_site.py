@@ -38,8 +38,10 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 import zipfile
 from datetime import UTC, datetime
@@ -373,6 +375,24 @@ def pick_run(results, nb_manifest) -> dict:
     run["local"] = not any(run.values())
     run["time"] = format_time(run["timestamp"])
     return run
+
+
+def pages_commit(repo_root) -> str | None:
+    """Commit the site is generated from: GITHUB_SHA, else git HEAD, else None."""
+    sha = os.environ.get("GITHUB_SHA")
+    if sha:
+        return sha
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return out.stdout.strip() or None
 
 
 def fmt_value(v) -> str:
@@ -1033,6 +1053,8 @@ def build_site(
         manifest, definitions, results, nb_manifest
     )
     run = pick_run(results, nb_manifest)
+    pages_sha = pages_commit(repo_root)
+    run["pages_commit_sha"] = pages_sha if pages_sha != run["commit_sha"] else None
     model = {
         "standards": standards,
         "orphans": orphans,
