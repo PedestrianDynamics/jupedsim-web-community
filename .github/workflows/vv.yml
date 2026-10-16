@@ -5,8 +5,6 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  schedule:
-    - cron: "0 6 * * 1"  # Weekly Monday 06:00 UTC
   workflow_dispatch:
     inputs:
       recompute:
@@ -21,17 +19,66 @@ permissions:
   pages: write
   id-token: write
 
-# A newer pull request or main push supersedes the running one (the deploy
-# uses the newest main). Schedule and dispatch runs have their own groups,
-# queue instead of cancelling, and never cancel a main push run.
+# A newer pull request push supersedes the running one. Main pushes queue
+# instead (only the newest pending one is kept): a page-only push that
+# waits for a running recompute can then reuse its results, where
+# cancelling it would force the next push to recompute. Dispatch runs
+# have their own group and never cancel a main push run.
 concurrency:
   group: "pages-${{ github.event_name }}-${{ github.ref }}"
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Decide whether this run recomputes the results. Pull requests always
+  # do (they select their tests in vv-tests); a
+  # dispatch follows its input; a main push recomputes only when the
+  # changes since the commit of the latest successful main push run can
+  # affect a V&V test or notebook (scripts/select_vv_tests.py), so a
+  # page-only change rebuilds the site from those results. Diffing against
+  # that commit, not the previous push, keeps a change whose run was
+  # cancelled or failed in the next run's scope.
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      recompute: ${{ steps.decide.outputs.recompute }}
+    steps:
+    - uses: actions/checkout@v4
+      if: github.event_name == 'push'
+
+    - name: Decide
+      id: decide
+      env:
+        EVENT: ${{ github.event_name }}
+        RECOMPUTE_INPUT: ${{ inputs.recompute }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        recompute=true
+        if [ "$EVENT" = workflow_dispatch ]; then
+          recompute=${RECOMPUTE_INPUT:-false}
+        elif [ "$EVENT" = push ]; then
+          out=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/vv.yml/runs?branch=main&event=push&status=success&per_page=1" \
+            --jq '.workflow_runs[0] | "\(.id) \(.head_sha)"' || true)
+          run_id=${out%% *} base=${out#* }
+          # Reuse needs that run's results; once they have expired, recompute.
+          live=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+            --jq '[.artifacts[] | select(.expired | not) | .name] | map(select(. == "vv-test-results" or . == "executed-notebooks")) | length' || echo 0)
+          [ "$live" = 2 ] || base=
+        fi
+        if [ -n "${base:-}" ] && git fetch -q --depth=1 origin "$base" 2>/dev/null; then
+          git diff --name-only --no-renames "$base" HEAD > "${{ runner.temp }}/changed.txt"
+          echo "Files changed since ${base} (latest successful main run): $(wc -l < "${{ runner.temp }}/changed.txt")" >> "$GITHUB_STEP_SUMMARY"
+          tests=$(python3 scripts/select_vv_tests.py "$base" HEAD < "${{ runner.temp }}/changed.txt")
+          if [ -z "$tests" ] && ! grep -qx 'scripts/run_notebooks.py' "${{ runner.temp }}/changed.txt"; then
+            recompute=false
+          fi
+        fi
+        echo "recompute=$recompute" >> "$GITHUB_OUTPUT"
+        echo "Recompute results: $recompute" >> "$GITHUB_STEP_SUMMARY"
+
   vv-tests:
-    # A dispatch without recompute reuses the latest main results.
-    if: github.event_name != 'workflow_dispatch' || inputs.recompute
+    needs: scope
+    if: needs.scope.outputs.recompute == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -95,7 +142,7 @@ jobs:
         cat site/summary.md >> "$GITHUB_STEP_SUMMARY"
 
     - name: Update pinned issue
-      # Only push/schedule runs on main update the pinned tracking issue.
+      # Only push runs on main update the pinned tracking issue.
       # PR builds (especially from forks) have reduced GITHUB_TOKEN scope
       # and would either fail the PATCH or pollute the pinned issue with
       # in-flight PR results.
@@ -125,7 +172,8 @@ jobs:
   # pull requests (runtime). Drift detection against the latest
   # jupedsim-scenarios lives in notebooks.yml.
   notebooks:
-    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.recompute)
+    needs: scope
+    if: github.event_name != 'pull_request' && needs.scope.outputs.recompute == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -165,7 +213,7 @@ jobs:
     # notebooks. Runs on main pushes (deployed) and on manual dispatch
     # (artifact only, for previewing a branch; without recompute it uses
     # the latest successful main run's results).
-    needs: [vv-tests, notebooks]
+    needs: [scope, vv-tests, notebooks]
     if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     env:
@@ -180,13 +228,13 @@ jobs:
     - name: Sync environment
       run: uv sync --frozen --extra dev
 
-    # A dispatch without recompute previews the dispatched branch's site
-    # over the results of the latest successful push run on main. The
-    # provenance (commit, run ID) is written into those results when they
-    # are computed, so the page names that run, not this one.
+    # Without recompute (a dispatch preview or a page-only main push) the
+    # site is built over the results of the latest successful push run on
+    # main. The provenance (commit, run ID) is written into those results
+    # when they are computed, so the page names that run, not this one.
     - name: Find latest main results
       id: source
-      if: github.event_name == 'workflow_dispatch' && !inputs.recompute
+      if: needs.scope.outputs.recompute != 'true'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
@@ -234,6 +282,24 @@ jobs:
         run-id: ${{ steps.source.outputs.run_id }}
         github-token: ${{ github.token }}
 
+    # Carry the reused results forward: a page-only main push becomes the
+    # latest successful main run, so the next one finds them here.
+    - name: Re-upload test results
+      if: steps.source.outputs.run_id != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: vv-test-results
+        path: results/vv-*.*
+        if-no-files-found: error
+
+    - name: Re-upload executed notebooks
+      if: steps.source.outputs.run_id != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: executed-notebooks
+        path: results/notebooks
+        if-no-files-found: error
+
     - uses: actions/setup-go@v5
       with:
         go-version: "1.22"
@@ -263,12 +329,13 @@ jobs:
         path: site/public
 
   # Publish the site to GitHub Pages (main pushes only), and only when both
-  # the tests and the notebooks succeeded: a failing run never replaces the
-  # live page. Requires Pages to be enabled with "GitHub Actions" as the
-  # source (Settings -> Pages).
+  # the tests and the notebooks succeeded, in this run or, for a page-only
+  # push, in the successful main run whose results build-pages reused: a
+  # failing run never replaces the live page. Requires Pages to be enabled
+  # with "GitHub Actions" as the source (Settings -> Pages).
   deploy-pages:
-    needs: [vv-tests, notebooks, build-pages]
-    if: ${{ !cancelled() && needs.vv-tests.result == 'success' && needs.notebooks.result == 'success' && needs.build-pages.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [scope, vv-tests, notebooks, build-pages]
+    if: ${{ !cancelled() && needs.build-pages.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && ((needs.scope.outputs.recompute == 'true' && needs.vv-tests.result == 'success' && needs.notebooks.result == 'success') || (needs.scope.outputs.recompute == 'false' && needs.vv-tests.result == 'skipped' && needs.notebooks.result == 'skipped')) }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
