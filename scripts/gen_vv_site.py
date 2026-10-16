@@ -662,7 +662,16 @@ def summary_page(model) -> str:
 
 
 def diagnostics_page(model) -> str:
-    lines = [front_matter(title="Join diagnostics")]
+    # Maintainer page: reachable from the footer, kept out of the sidebar,
+    # the search index and search engines.
+    lines = [
+        front_matter(
+            title="Join diagnostics",
+            sidebar={"exclude": True},
+            excludeSearch=True,
+            noindex=True,
+        )
+    ]
     if not model["has_results"]:
         lines.append("Test results are not available in this run.")
         return "\n".join(lines) + "\n"

@@ -277,6 +277,8 @@ def test_footer_data_and_diagnostics(gen, inputs, content):
     assert run["versions"][0] == {"name": "jupedsim", "version": "1.0"}
     diag = (content / "diagnostics.md").read_text()
     assert "TestOrphan" in diag
+    assert 'sidebar: {"exclude": true}' in diag
+    assert "excludeSearch: true" in diag and "noindex: true" in diag
     assert "Join diagnostics" not in (content / "_index.md").read_text()
 
 
@@ -363,6 +365,10 @@ def test_hugo_builds_fixture_site(gen, inputs, tmp_path):
     )
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert (site / "public" / "standards" / "std" / "std-t1" / "index.html").is_file()
+    diag = (site / "public" / "diagnostics" / "index.html").read_text()
+    assert "noindex" in diag
+    assert "noindex" not in (site / "public" / "index.html").read_text()
+    assert "diagnostics" not in (site / "public" / "en.search-data.json").read_text()
 
 
 def test_number_format_keeps_pass_fail_reading(gen):
