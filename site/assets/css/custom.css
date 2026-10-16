@@ -23,6 +23,11 @@ html.dark .vv-logo { filter: brightness(0) invert(1) opacity(0.9); }
 .vv-versions { margin: 2px 0 0; font-size: 0.7rem; line-height: 1.2; color: var(--vv-muted); white-space: nowrap; }
 @media (max-width: 480px) { .vv-versions { white-space: normal; font-size: 0.65rem; } }
 
+/* Header theme toggle: same box, icon size and colour as the GitHub icon link */
+html .vv-theme-toggle .theme-toggle { height: auto; padding: 0.5rem; border-radius: 0; color: inherit; background: transparent; }
+html .vv-theme-toggle .theme-toggle:hover { background: transparent; color: inherit; }
+html .vv-theme-toggle .theme-toggle svg { height: 24px; width: auto; }
+
 /* Footer provenance */
 .vv-footer { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 0.875rem; }
 .vv-footer time { white-space: nowrap; }

@@ -210,7 +210,7 @@ def test_missing_results_and_notebooks(gen, inputs, content):
     assert run["run"]["local"] is True
     assert "No notebook for this test yet" in page(content, "std-t1")
     assert "Scenario picture not available" in page(content, "std-t1")
-    assert "not available" in (content / "diagnostics.md").read_text()
+    assert not (content / "diagnostics.md").exists()
 
 
 def notebook_inputs(tmp_path, inputs, status):
@@ -267,7 +267,7 @@ def test_unexecuted_notebook_is_not_run(gen, inputs, content, tmp_path, status):
     assert not list((content.parent / "static").rglob("*.html"))
 
 
-def test_footer_data_and_diagnostics(gen, inputs, content):
+def test_footer_data(gen, inputs, content):
     build(gen, inputs, content)
     run = json.loads((content.parent / "data" / "run.json").read_text())
     assert run["run"]["commit_sha"] == "abc123def456"
@@ -275,11 +275,34 @@ def test_footer_data_and_diagnostics(gen, inputs, content):
     assert run["run"]["time"]["iso"] == "2026-01-01T00:00:00.000+00:00"
     assert run["run"]["time"]["text"] == "2026-01-01 00:00 UTC"
     assert run["versions"][0] == {"name": "jupedsim", "version": "1.0"}
-    diag = (content / "diagnostics.md").read_text()
-    assert "TestOrphan" in diag
-    assert 'sidebar: {"exclude": true}' in diag
-    assert "excludeSearch: true" in diag and "noindex: true" in diag
+    assert not (content / "diagnostics.md").exists()
     assert "Join diagnostics" not in (content / "_index.md").read_text()
+
+
+def test_join_diagnostics_go_to_stdout_and_step_summary(
+    gen, inputs, content, tmp_path, monkeypatch, capsys
+):
+    summary = tmp_path / "summary.md"
+    summary.write_text("earlier\n")
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    build(gen, inputs, content)
+    out = capsys.readouterr().out
+    assert "join: results row maps to no coverage row: " in out
+    assert "TestOrphan" in out
+    text = summary.read_text()
+    assert text.startswith("earlier\n")
+    assert "## Join diagnostics: 1 unmapped result rows, " in text
+    assert "covered rows without results" in text
+    assert "- `" in text and "TestOrphan" in text
+
+
+def test_join_diagnostics_not_written_without_step_summary(
+    gen, inputs, content, tmp_path, monkeypatch
+):
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    build(gen, inputs, content)
+    assert not list(tmp_path.glob("*.md"))
 
 
 def test_pages_commit_shown_only_when_it_differs(gen, inputs, content, monkeypatch):
@@ -365,10 +388,10 @@ def test_hugo_builds_fixture_site(gen, inputs, tmp_path):
     )
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert (site / "public" / "standards" / "std" / "std-t1" / "index.html").is_file()
-    diag = (site / "public" / "diagnostics" / "index.html").read_text()
-    assert "noindex" in diag
-    assert "noindex" not in (site / "public" / "index.html").read_text()
-    assert "diagnostics" not in (site / "public" / "en.search-data.json").read_text()
+    assert not (site / "public" / "diagnostics").exists()
+    index = (site / "public" / "index.html").read_text()
+    assert "diagnostics" not in index.lower()
+    assert "theme-toggle" in index
 
 
 def test_number_format_keeps_pass_fail_reading(gen):

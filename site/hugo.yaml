@@ -58,7 +58,8 @@ params:
 
   theme:
     default: system
-    displayToggle: true
+    # Off hides Hextra's sidebar and footer toggles; navbar.html renders its own.
+    displayToggle: false
 
   search:
     enable: true
