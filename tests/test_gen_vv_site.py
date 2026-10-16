@@ -343,3 +343,60 @@ def test_hugo_builds_fixture_site(gen, inputs, tmp_path):
     )
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert (site / "public" / "standards" / "std" / "std-t1" / "index.html").is_file()
+
+
+def test_number_format_keeps_pass_fail_reading(gen):
+    assert gen.fmt_number(1.2230104463633147) == "1.223"
+    assert gen.fmt_number(20.0) == "20"
+    assert gen.fmt_number(13.7004, (13.0, 13.7)) == "13.7004"
+    assert gen.fmt_number(13.7, (13.0, 13.7)) == "13.7"
+    assert gen.fmt_number(0.9999999, (1.0,)) == "0.9999999"
+
+
+def view(gen, **fields):
+    row = {"test_id": "t.py::TestA::test_x", "status": "pass"} | fields
+    return gen.result_view(row)
+
+
+def test_result_cell_range_forms(gen):
+    both = view(gen, quantity="q", measured=13.15, unit="s", lower=13.0, upper=13.7)
+    cell = gen.result_cell(both)
+    assert cell.startswith("q = 13.15 s<br>")
+    assert "accepted 13 – 13.7 s" in cell
+    low = gen.result_cell(view(gen, measured=2.0, unit="s", lower=1.5))
+    assert "accepted ≥ 1.5 s" in low
+    up = gen.result_cell(view(gen, measured=2.0, unit="s", upper=3.0))
+    assert "accepted ≤ 3 s" in up
+
+
+def test_result_cell_missing_values(gen):
+    assert gen.result_cell(view(gen)) == "&mdash;"
+    assert gen.result_cell(view(gen, quantity="q")) == "q: not reported"
+    assert gen.run_cell(view(gen)) == "&mdash;"
+    assert gen.run_cell(view(gen, n=1.0, seed=42.0)) == "n = 1 &middot; seed 42"
+    assert gen.run_cell(view(gen, seed=7.0)) == "seed 7"
+
+
+def test_result_cell_dict_and_list_measured(gen):
+    cell = gen.result_cell(
+        view(gen, quantity="d", measured={"a": 1.0, "b": 0.93687862718091, "c": None})
+    )
+    assert "a: 1<br>b: 0.9369<br>c: " in cell
+    assert "0.936878" not in cell
+    listed = gen.result_cell(view(gen, quantity="l", measured=[1.5, 2.123456]))
+    assert listed == "l = 1.5, 2.123"
+
+
+def test_case_table_has_four_columns_and_rule_notes(gen):
+    views = [view(gen, rule="Needs <b> & more", quantity="q", measured=1.0)]
+    text = "\n".join(gen.case_table(views))
+    assert "<th>Case</th><th>Status</th><th>Result</th><th>Run</th>" in text
+    assert 'title="t.py::TestA::test_x">test_x</code>' in text
+    assert "Needs &lt;b&gt; &amp; more" in text
+    assert "\n\n<" not in text.split("</table>")[0].split("<table")[1]
+
+
+def test_dimensionless_unit_is_not_printed(gen):
+    cell = gen.result_cell(view(gen, quantity="p", measured=0.5, unit="1", lower=0.05))
+    assert cell.startswith("p = 0.5<br>")
+    assert "accepted \u2265 0.05<" in cell

@@ -36,6 +36,7 @@ shows NOT RUN, and an xfail row shows FAIL (declared limitation).
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import shutil
@@ -384,19 +385,63 @@ def fmt_value(v) -> str:
     return str(v)
 
 
+MIN_SIG_DIGITS = 4
+
+
+def fmt_number(v, bounds=()) -> str:
+    """Format a number with at least 4 significant digits.
+
+    More digits are added until the printed value compares to every bound
+    (<, ==, >) the way the exact value does, so rounding never changes a
+    pass or fail reading.
+    """
+    if not isinstance(v, float):
+        return fmt_value(v)
+    for digits in range(MIN_SIG_DIGITS, 18):
+        text = f"{v:.{digits}g}"
+        shown = float(text)
+        if all((shown > b) - (shown < b) == (v > b) - (v < b) for b in bounds):
+            return text
+    return repr(v)
+
+
+def fmt_measured(v, bounds=()) -> str:
+    if isinstance(v, list):
+        return ", ".join(fmt_number(x) for x in v)
+    return fmt_number(v, bounds)
+
+
+def numeric_bounds(*values) -> tuple:
+    return tuple(
+        float(b)
+        for b in values
+        if isinstance(b, (int, float)) and not isinstance(b, bool)
+    )
+
+
+def fmt_count(v) -> str:
+    return fmt_value(int(v) if isinstance(v, float) else v)
+
+
 def result_view(r) -> dict:
+    measured = r.get("measured")
+    bounds = numeric_bounds(r.get("lower"), r.get("upper"))
+    items = []
+    if isinstance(measured, dict):
+        items = [(str(k), fmt_measured(x)) for k, x in measured.items()]
+        measured = None
     return {
-        "test": r["test_id"].split("::", 1)[-1],
+        "test": r["test_id"].rsplit("::", 1)[-1],
+        "test_id": r["test_id"],
         "status": CASE_LABEL.get(r["status"], r["status"].upper()),
         "quantity": r.get("quantity") or "",
-        "measured": fmt_value(r.get("measured")),
+        "measured": fmt_measured(measured, bounds),
+        "items": items,
         "unit": r.get("unit") or "",
         "lower": fmt_value(r.get("lower")),
         "upper": fmt_value(r.get("upper")),
-        "n": fmt_value(int(r["n"]) if isinstance(r.get("n"), float) else r.get("n")),
-        "seed": fmt_value(
-            int(r["seed"]) if isinstance(r.get("seed"), float) else r.get("seed")
-        ),
+        "n": fmt_count(r.get("n")),
+        "seed": fmt_count(r.get("seed")),
         "rule": r.get("rule") or "",
     }
 
@@ -690,33 +735,87 @@ def first_test_source(e):
     return next((r["test_source"] for r in e["res_rows"] if r.get("test_source")), None)
 
 
+def esc(text) -> str:
+    """Escape free text for raw HTML in Markdown, including Hugo shortcode braces."""
+    out = html.escape(" ".join(str(text if text is not None else "").split()))
+    return out.replace("{", "&#123;").replace("}", "&#125;")
+
+
+def with_unit(text: str, unit: str) -> str:
+    """Append the unit; "1" marks a dimensionless quantity and is not printed."""
+    return f"{text} {esc(unit)}" if unit and unit != "1" else text
+
+
+def accepted_range(v) -> str:
+    lower, upper = v["lower"], v["upper"]
+    if lower and upper:
+        return with_unit(f"{esc(lower)} \u2013 {esc(upper)}", v["unit"])
+    if lower:
+        return with_unit(f"\u2265 {esc(lower)}", v["unit"])
+    if upper:
+        return with_unit(f"\u2264 {esc(upper)}", v["unit"])
+    return ""
+
+
+def result_cell(v) -> str:
+    quantity, unit = esc(v["quantity"]), v["unit"]
+    parts = []
+    if v["items"]:
+        head = f"{quantity} ({esc(unit)})" if quantity and unit else quantity
+        pairs = "<br>".join(f"{esc(k)}: {esc(x)}" for k, x in v["items"])
+        parts.append(f"<strong>{head}</strong><br>{pairs}" if head else pairs)
+    elif v["measured"]:
+        value = with_unit(esc(v["measured"]), unit)
+        parts.append(f"{quantity} = {value}" if quantity else value)
+    elif quantity:
+        parts.append(f"{quantity}: not reported")
+    rng = accepted_range(v)
+    if rng:
+        parts.append(f'<span class="vv-range">accepted {rng}</span>')
+    return "<br>".join(parts) or "&mdash;"
+
+
+def run_cell(v) -> str:
+    parts = []
+    if v["n"]:
+        parts.append(f"n = {esc(v['n'])}")
+    if v["seed"]:
+        parts.append(f"seed {esc(v['seed'])}")
+    return " &middot; ".join(parts) or "&mdash;"
+
+
+def case_row(v) -> str:
+    status = status_chip(v["status"]) if v["status"] != "SKIP" else "SKIP"
+    return (
+        "<tr>"
+        f'<td data-label="Case"><code title="{esc(v["test_id"])}">{esc(v["test"])}</code></td>'
+        f'<td data-label="Status">{status}</td>'
+        f'<td data-label="Result">{result_cell(v)}</td>'
+        f'<td data-label="Run">{run_cell(v)}</td>'
+        "</tr>"
+    )
+
+
 def case_table(res_views) -> list[str]:
-    show_rule = any(v["rule"] for v in res_views)
-    cols = ["Case", "Status", "Quantity", "Measured", "Unit", "Lower", "Upper", "n"]
-    cols += ["Seed"] + (["Rule"] if show_rule else [])
+    # No blank lines inside the HTML: Markdown ends a raw HTML block at one.
     lines = [
         "**Test cases of this row**",
         "",
-        "| " + " | ".join(cols) + " |",
-        "|" + "---|" * len(cols),
+        '<div class="vv-cases-wrap">',
+        '<table class="vv-cases">',
+        "<thead><tr><th>Case</th><th>Status</th><th>Result</th><th>Run</th></tr></thead>",
+        "<tbody>",
     ]
-    for v in res_views:
-        status = status_chip(v["status"]) if v["status"] != "SKIP" else "SKIP"
-        cells = [
-            f"`{v['test']}`".replace("|", "\\|"),
-            status,
-            md(v["quantity"]),
-            md(v["measured"]),
-            md(v["unit"]),
-            md(v["lower"]),
-            md(v["upper"]),
-            md(v["n"]),
-            md(v["seed"]),
+    lines += [case_row(v) for v in res_views]
+    lines += ["</tbody>", "</table>", "</div>", ""]
+    rules = [v for v in res_views if v["rule"]]
+    if rules:
+        lines += ['<ul class="vv-rules">']
+        lines += [
+            f"<li><code>{esc(v['test'])}</code>: {esc(v['rule'])}</li>" for v in rules
         ]
-        if show_rule:
-            cells.append(md(v["rule"]))
-        lines.append("| " + " | ".join(cells) + " |")
-    return lines + [""]
+        lines += ["</ul>", ""]
+    return lines
 
 
 def result_section(e, res_views, has_results, imgs, row) -> list[str]:
@@ -730,7 +829,7 @@ def result_section(e, res_views, has_results, imgs, row) -> list[str]:
     for n in e["notes"]:
         if n != row.get("note"):
             lines += [f"> {md(n)}", ""]
-    has_measured = any(v["measured"] for v in res_views)
+    has_measured = any(v["measured"] or v["items"] for v in res_views)
     if not has_results:
         lines += ["Test results are not available in this run.", ""]
     elif e["status"] in ("PENDING", "TEST-LOCAL") and not res_views:
