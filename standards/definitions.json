@@ -239,8 +239,8 @@
       "title": "Assignment of population demographics",
       "source": "IMO MSC.1/Circ.1533, Annex 3, Appendix 2, Test 7, para. 9, p. 10; Table 3.4, p. 5",
       "kind": "analytical",
-      "definition": "A panel of males aged 30 to 50 is taken from Table 3.4, whose walking speed on flat terrain is a uniform distribution between 0.97 m/s and 1.62 m/s. The speeds are distributed over a population of 50 persons. The test shows that the assigned speeds are consistent with the table.",
-      "expected": "The assigned speeds are consistent with the uniform distribution of Table 3.4 (0.97 m/s to 1.62 m/s). IMO gives no statistical test or tolerance.",
+      "definition": "A panel of males aged 30 to 50 is taken from Table 3.4, whose walking speed on flat terrain is a uniform distribution between 0.97 m/s and 1.62 m/s. The speeds are distributed over a population of 50 persons. The standard intends the assigned speeds to be consistent with the table.",
+      "expected": "The assigned speeds follow the uniform distribution of Table 3.4 (0.97 m/s to 1.62 m/s). IMO gives no statistical test or tolerance. This suite does not check the speeds: it checks only that all 50 agents leave the room within 25 s to 120 s.",
       "deviations": [
         "No speed distribution is assigned: all 50 agents have a constant desired speed of 1.2 m/s. The test does not read or check assigned speeds against Table 3.4.",
         "The test checks only that all 50 agents leave a 40 m by 10 m room and that the evacuation time lies between 25 s and 120 s. This window is the suite's own and is not in the standard.",
