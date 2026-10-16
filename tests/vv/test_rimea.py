@@ -84,7 +84,7 @@ RIMEA07_OBSERVED_TOL = 0.03  # m/s
 RIMEA12_AGENTS = 150  # RiMEA 12a/12b population
 RIMEA12A_NEAR_A = 1.0  # first goal distance of the rising branch, m
 RIMEA12A_PLATEAU_A = 4.0  # goal distances from here on form the plateau, m
-RIMEA13_CORBETTA_FLOOR = 0.25
+RIMEA13_BAND_FLOOR = 0.25
 RIMEA13_DOWN_WINS_MIN = 0.7
 RIMEA13_MIN_SAMPLES = 500
 RIMEA13_MIN_COMMON_BINS = 5
@@ -1318,7 +1318,7 @@ class TestRiMEA13FundamentalDiagramStairs:
             & (down_points["speed"].to_numpy() <= down_high)
         ).mean()
 
-        # The Corbetta band is an empirical envelope of stair speeds; the
+        # The suite band (source pending) is a coded envelope of stair speeds; the
         # fraction of points inside it is a *gross-plausibility* floor, not the
         # RiMEA criterion (that is the down > up comparison below). Coverage
         # drifts substantially with the simulator version - observed up ~0.95 /
@@ -1328,11 +1328,11 @@ class TestRiMEA13FundamentalDiagramStairs:
         # drift can't make it flaky, while still catching a grossly broken sim
         # (a wrong stair model lands near 0). The run is seeded (seed=42), so it
         # is deterministic within a given environment.
-        assert up_inside >= RIMEA13_CORBETTA_FLOOR, (
-            f"Upstairs points inside Corbetta band too low: {up_inside:.3f}"
+        assert up_inside >= RIMEA13_BAND_FLOOR, (
+            f"Upstairs points inside the suite band (source pending) too low: {up_inside:.3f}"
         )
-        assert down_inside >= RIMEA13_CORBETTA_FLOOR, (
-            f"Downstairs points inside Corbetta band too low: {down_inside:.3f}"
+        assert down_inside >= RIMEA13_BAND_FLOOR, (
+            f"Downstairs points inside the suite band (source pending) too low: {down_inside:.3f}"
         )
 
         up_binned = up_points.groupby("density_bin", observed=True)["speed"].mean()
@@ -1354,8 +1354,8 @@ class TestRiMEA13FundamentalDiagramStairs:
                 "mean_speed_down": float(down_points["speed"].mean()),
                 "samples_up": len(up_points),
                 "samples_down": len(down_points),
-                "inside_corbetta_up": float(up_inside),
-                "inside_corbetta_down": float(down_inside),
+                "inside_band_up": float(up_inside),
+                "inside_band_down": float(down_inside),
                 "shared_bins": len(common_bins),
                 "down_wins_fraction": float(down_wins),
                 "bin_mean_speed_up": float(up_binned.loc[common_bins].mean()),
@@ -1364,7 +1364,7 @@ class TestRiMEA13FundamentalDiagramStairs:
             n=total_agents, seed=DEFAULT_SEED, model="CollisionFreeSpeedModel",
             scenario_file="standards/rimea/scenario_builders/rimea13_stairs.py",
             rule=(
-                f"bound: inside Corbetta band >= {RIMEA13_CORBETTA_FLOOR} (up and down); "
+                f"bound: inside the suite band (source pending) >= {RIMEA13_BAND_FLOOR} (up and down); "
                 f"bound: samples > {RIMEA13_MIN_SAMPLES} per direction; "
                 f"bound: shared density bins >= {RIMEA13_MIN_COMMON_BINS}; "
                 f"bound: fraction of shared bins with down > up >= {RIMEA13_DOWN_WINS_MIN}; "
