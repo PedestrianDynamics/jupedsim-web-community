@@ -63,3 +63,22 @@ html.dark .vv-logo { filter: brightness(0) invert(1) opacity(0.9); }
 /* Test pages */
 .content figure img, .content p > img { max-width: 100%; height: auto; background: #fff; border: 1px solid var(--vv-line); }
 .content table { font-size: 0.95rem; }
+
+/* Test case table: four columns; stacked rows when the content column is narrow */
+.vv-cases-wrap { container-type: inline-size; margin: 1rem 0; }
+.content table.vv-cases { display: table; width: 100%; table-layout: fixed; margin: 0; overflow-wrap: anywhere; }
+.vv-cases th, .vv-cases td { vertical-align: top; text-align: left; }
+.vv-cases th:nth-child(1) { width: 30%; }
+.vv-cases th:nth-child(2) { width: 6.5rem; }
+.vv-cases th:nth-child(4) { width: 10rem; }
+.vv-cases code, .vv-rules code { word-break: normal; overflow-wrap: normal; }
+.vv-cases .vv-nw { white-space: nowrap; }
+.vv-cases .vv-range { color: var(--vv-muted); font-size: 0.875rem; }
+.vv-rules { margin: 0.5rem 0 1rem; padding-left: 1.25rem; list-style: disc; font-size: 0.875rem; color: var(--vv-muted); }
+@container (max-width: 40rem) {
+  .vv-cases thead { display: none; }
+  .vv-cases, .vv-cases tbody, .vv-cases tr, .vv-cases td { display: block; width: 100%; }
+  .vv-cases tr { border: 1px solid var(--vv-line); border-radius: var(--vv-radius); margin: 0 0 12px; padding: 4px 0; }
+  .vv-cases td { border: 0; padding: 4px 12px; }
+  .vv-cases td::before { content: attr(data-label); display: block; font-size: 0.75rem; color: var(--vv-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+}
