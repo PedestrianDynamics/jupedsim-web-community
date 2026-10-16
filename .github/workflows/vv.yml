@@ -21,12 +21,14 @@ permissions:
   pages: write
   id-token: write
 
-# A newer pull request or main push supersedes the running one (the deploy
-# uses the newest main). Schedule and dispatch runs have their own groups,
-# queue instead of cancelling, and never cancel a main push run.
+# A newer pull request push supersedes the running one. Main pushes queue
+# instead (only the newest pending one is kept): a page-only push that
+# waits for a running recompute can then reuse its results, where
+# cancelling it would force the next push to recompute. Schedule and
+# dispatch runs have their own groups and never cancel a main push run.
 concurrency:
   group: "pages-${{ github.event_name }}-${{ github.ref }}"
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Decide whether this run recomputes the results. Pull requests and the
