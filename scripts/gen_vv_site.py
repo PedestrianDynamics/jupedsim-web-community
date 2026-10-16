@@ -35,6 +35,7 @@ shows NOT RUN, and an xfail row shows FAIL (declared limitation).
 from __future__ import annotations
 
 import argparse
+import csv
 import html
 import json
 import os
@@ -441,6 +442,157 @@ def numeric_bounds(*values) -> tuple:
 NOT_REACHED = "\u2014 (not reached)"
 
 
+MAX_FLAT_LIST = 4
+
+
+def is_scalar(v) -> bool:
+    return not isinstance(v, (dict, list))
+
+
+def is_nested(v) -> bool:
+    """True when a measured value needs a table instead of an inline rendering."""
+    if isinstance(v, list):
+        return len(v) > MAX_FLAT_LIST or not all(is_scalar(x) for x in v)
+    if isinstance(v, dict):
+        return any(
+            isinstance(x, dict) or (isinstance(x, list) and is_nested(x))
+            for x in v.values()
+        )
+    return False
+
+
+def flatten_series(v, label: str) -> dict:
+    """Map group -> {series: values} for a nested measured value.
+
+    Keys above the last one form the group (joined with " / "); a bare list
+    becomes one series named after the quantity. Scalars become one-element
+    series and list elements that are not scalars are kept as text.
+    """
+    groups: dict = {}
+
+    def visit(x, path):
+        if isinstance(x, dict):
+            for k, sub in x.items():
+                visit(sub, [*path, str(k)])
+            return
+        values = x if isinstance(x, list) else [x]
+        values = [e if is_scalar(e) else str(e) for e in values]
+        series = path[-1] if path else label
+        groups.setdefault(" / ".join(path[:-1]), {})[series] = values
+
+    visit(v, [])
+    return groups
+
+
+def split_units(unit: str, count: int) -> list[str]:
+    """One unit per column, or none when the unit string does not match."""
+    parts = [u.strip() for u in (unit or "").split(",")]
+    if len(parts) != count or not all(parts):
+        return [""] * count
+    return ["" if u == "1" else u for u in parts]
+
+
+def titled(name: str, unit: str) -> str:
+    return f"{name} [{unit}]" if unit else name
+
+
+def is_wide(groups: dict) -> bool:
+    """True when every group has the same series, all of one length."""
+    names = {tuple(g) for g in groups.values()}
+    lengths = {len(x) for g in groups.values() for x in g.values()}
+    return len(names) == 1 and len(lengths) == 1
+
+
+def count_phrase(n: int, noun: str) -> str:
+    return f"{n} {noun}" if n == 1 or noun == "series" else f"{n} {noun}s"
+
+
+def summarize_table(groups: dict, wide: bool) -> str:
+    series = {s for g in groups.values() for s in g}
+    lengths = [len(x) for g in groups.values() for x in g.values()]
+    low, high = min(lengths), max(lengths)
+    points = count_phrase(low, "point") if low == high else f"{low}\u2013{high} points"
+    parts = []
+    if any(groups):
+        parts.append(count_phrase(len(groups), "group"))
+    if len(series) > 1 or any(groups) or not wide:
+        parts.append(count_phrase(len(series), "series"))
+        parts.append(points)
+    else:
+        parts.append(count_phrase(low, "value"))
+    return " \u00d7 ".join(parts)
+
+
+def long_table(groups: dict, wide: bool, unit: str) -> tuple[list, list]:
+    """Header and rows (raw values) in long format; points count from 1."""
+    has_group = any(groups)
+    lead = ["group"] if has_group else []
+    if wide:
+        names = list(next(iter(groups.values())))
+        units = split_units(unit, len(names))
+        header = lead + ["point"] + [titled(n, u) for n, u in zip(names, units)]
+        rows = []
+        for group, series in groups.items():
+            first = [group] if has_group else []
+            for i in range(len(series[names[0]])):
+                rows.append(first + [i + 1] + [series[n][i] for n in names])
+        return header, rows
+    names = {n for series in groups.values() for n in series}
+    # One unit cannot describe several different series.
+    value = titled("value", split_units(unit, 1)[0] if len(names) == 1 else "")
+    header = lead + ["series", "index", value]
+    rows = []
+    for group, series in groups.items():
+        first = [group] if has_group else []
+        for name, values in series.items():
+            rows += [first + [name, i + 1, x] for i, x in enumerate(values)]
+    return header, rows
+
+
+def measured_table(measured, quantity: str, unit: str) -> dict:
+    groups = flatten_series(measured, quantity or "value")
+    wide = is_wide(groups)
+    header, rows = long_table(groups, wide, unit)
+    return {
+        "header": header,
+        "rows": rows,
+        "summary": summarize_table(groups, wide),
+    }
+
+
+def csv_cell(v) -> str:
+    if v is None:
+        return ""
+    return repr(v) if isinstance(v, float) else str(v)
+
+
+def write_csv(path: Path, table: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f, lineterminator="\n")
+        w.writerow(table["header"])
+        w.writerows([csv_cell(x) for x in row] for row in table["rows"])
+
+
+def csv_name(test: str, used: set) -> str:
+    base = re.sub(r"[^A-Za-z0-9_.-]+", "-", test).strip("-") or "values"
+    name, n = base, 2
+    while name in used:
+        name, n = f"{base}-{n}", n + 1
+    used.add(name)
+    return f"data/{name}.csv"
+
+
+def attach_csv_files(res_views, pdir: Path):
+    """Write one CSV per nested result into the page bundle and link it."""
+    used: set = set()
+    for v in res_views:
+        if not v["table"]:
+            continue
+        v["csv"] = csv_name(v["test"], used)
+        write_csv(pdir / v["csv"], v["table"])
+
+
 def fmt_item(v) -> str:
     return NOT_REACHED if v is None else fmt_measured(v)
 
@@ -453,7 +605,11 @@ def result_view(r) -> dict:
     measured = r.get("measured")
     bounds = numeric_bounds(r.get("lower"), r.get("upper"))
     items = []
-    if isinstance(measured, dict):
+    table = None
+    if is_nested(measured):
+        table = measured_table(measured, r.get("quantity") or "", r.get("unit") or "")
+        measured = None
+    elif isinstance(measured, dict):
         items = [(str(k), fmt_item(x)) for k, x in measured.items()]
         measured = None
     return {
@@ -463,6 +619,8 @@ def result_view(r) -> dict:
         "quantity": r.get("quantity") or "",
         "measured": fmt_measured(measured, bounds),
         "items": items,
+        "table": table,
+        "csv": None,
         "unit": r.get("unit") or "",
         "lower": fmt_value(r.get("lower")),
         "upper": fmt_value(r.get("upper")),
@@ -779,10 +937,36 @@ def accepted_range(v) -> str:
     return ""
 
 
+def values_table(table) -> str:
+    head = "".join(f"<th>{esc(h)}</th>" for h in table["header"])
+    body = "".join(
+        "<tr>" + "".join(f"<td>{esc(fmt_item(x))}</td>" for x in row) + "</tr>"
+        for row in table["rows"]
+    )
+    return (
+        '<details class="vv-values"><summary>Show values</summary>'
+        '<div class="vv-values-wrap"><table class="vv-values-table">'
+        f"<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div></details>"
+    )
+
+
+def nested_cell(v) -> str:
+    quantity, unit = esc(v["quantity"]), v["unit"]
+    head = f"{quantity} ({esc(unit)})" if quantity and unit else quantity
+    parts = [f"<strong>{head}</strong>"] if head else []
+    parts.append(esc(v["table"]["summary"]))
+    if v["csv"]:
+        parts.append(f'<a href="{esc(v["csv"])}" download>Download CSV</a>')
+    parts.append(values_table(v["table"]))
+    return "<br>".join(parts)
+
+
 def result_cell(v) -> str:
     quantity, unit = esc(v["quantity"]), v["unit"]
     parts = []
-    if v["items"]:
+    if v["table"]:
+        parts.append(nested_cell(v))
+    elif v["items"]:
         head = f"{quantity} ({esc(unit)})" if quantity and unit else quantity
         pairs = "<br>".join(f"{esc(k)}: {esc(x)}" for k, x in v["items"])
         parts.append(f"<strong>{head}</strong><br>{pairs}" if head else pairs)
@@ -888,7 +1072,7 @@ def result_section(e, res_views, has_results, imgs, row) -> list[str]:
     for n in e["notes"]:
         if n != row.get("note"):
             lines += [f"> {md(n)}", ""]
-    has_measured = any(v["measured"] or v["items"] for v in res_views)
+    has_measured = any(v["measured"] or v["items"] or v["table"] for v in res_views)
     if not has_results:
         lines += ["Test results are not available in this run.", ""]
     elif e["status"] in ("PENDING", "TEST-LOCAL") and not res_views:
@@ -974,6 +1158,7 @@ def test_page(ctx, s, e, weight, pdir: Path) -> str:
             "Rendered from the scenario files of this repository (top view)."
         )
     res_views = [result_view(r) for r in e["res_rows"]]
+    attach_csv_files(res_views, pdir)
     model_name = next((r["model"] for r in e["res_rows"] if r.get("model")), None)
 
     title = f"{row['id']}: {e['title']}"

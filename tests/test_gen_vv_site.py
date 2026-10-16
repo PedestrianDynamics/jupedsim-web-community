@@ -479,3 +479,119 @@ def test_rule_note_omitted_only_when_it_restates_bounds(gen):
 
 def test_case_names_break_after_underscores(gen):
     assert gen.wrap_name("test_down_faster") == "test_<wbr>down_<wbr>faster"
+
+
+RIMEA4 = {
+    "control1": {
+        "density": [0.5, 1.0, 1.5, 2.0],
+        "speed": [1.3, 1.2, 1.1, 1.0],
+        "flow": [0.65, 1.2, 1.65, 2.0],
+    },
+    "main": {
+        "density": [0.25, 0.5, 0.75, 1.0],
+        "speed": [1.4, 1.3, 1.2, 1.1],
+        "flow": [0.35, 0.65, 0.9, 1.1],
+    },
+}
+
+
+def nested_view(gen, measured, **fields):
+    return view(gen, quantity="q", measured=measured, **fields)
+
+
+def read_csv_rows(path):
+    import csv
+
+    with open(path, newline="", encoding="utf-8") as f:
+        return list(csv.reader(f))
+
+
+def test_nested_summary_and_cell(gen):
+    v = nested_view(gen, RIMEA4, unit="P/m^2, m/s, P/(m s)")
+    assert v["table"]["summary"] == "2 groups \u00d7 3 series \u00d7 4 points"
+    assert v["items"] == [] and v["measured"] == ""
+    cell = gen.result_cell(v)
+    assert cell.startswith("<strong>q (P/m^2, m/s, P/(m s))</strong><br>2 groups")
+    assert "<details" in cell and "Show values</summary>" in cell
+    assert "Download CSV" not in cell
+
+
+def test_nested_csv_for_dict_of_dicts_of_lists(gen, tmp_path):
+    views = [nested_view(gen, RIMEA4, unit="P/m^2, m/s, P/(m s)")]
+    gen.attach_csv_files(views, tmp_path)
+    assert views[0]["csv"] == "data/test_x.csv"
+    assert 'href="data/test_x.csv"' in gen.result_cell(views[0])
+    rows = read_csv_rows(tmp_path / "data" / "test_x.csv")
+    assert rows[0] == [
+        "group",
+        "point",
+        "density [P/m^2]",
+        "speed [m/s]",
+        "flow [P/(m s)]",
+    ]
+    assert rows[1] == ["control1", "1", "0.5", "1.3", "0.65"]
+    assert len(rows) == 1 + 2 * 4
+
+
+def test_nested_csv_units_dropped_when_counts_differ(gen, tmp_path):
+    views = [nested_view(gen, RIMEA4, unit="P/m^2, m/s")]
+    gen.attach_csv_files(views, tmp_path)
+    header = read_csv_rows(tmp_path / "data" / "test_x.csv")[0]
+    assert header == ["group", "point", "density", "speed", "flow"]
+
+
+def test_nested_ragged_falls_back_to_long_rows(gen, tmp_path):
+    ragged = {"a": {"x": [1.0, 2.0, 3.0]}, "b": {"x": [4.0, 5.0], "y": [6.0]}}
+    views = [nested_view(gen, ragged, unit="s")]
+    assert (
+        views[0]["table"]["summary"]
+        == "2 groups \u00d7 2 series \u00d7 1\u20133 points"
+    )
+    gen.attach_csv_files(views, tmp_path)
+    rows = read_csv_rows(tmp_path / "data" / "test_x.csv")
+    assert rows[0] == ["group", "series", "index", "value"]
+    assert rows[1] == ["a", "x", "1", "1.0"]
+    assert len(rows) == 1 + 3 + 2 + 1
+
+
+def test_nested_none_and_mixed_types(gen, tmp_path):
+    mixed = {"t": [1.0, None, "late", 4, True], "n": 0.123456789}
+    views = [nested_view(gen, mixed)]
+    cell = gen.result_cell(views[0])
+    assert gen.NOT_REACHED in cell
+    assert "<td>0.1235</td>" in cell
+    gen.attach_csv_files(views, tmp_path)
+    rows = read_csv_rows(tmp_path / "data" / "test_x.csv")
+    assert rows[0] == ["series", "index", "value"]
+    assert ["t", "2", ""] in rows
+    assert ["n", "1", "0.123456789"] in rows
+
+
+def test_long_list_is_nested_and_short_forms_are_not(gen):
+    long_list = nested_view(gen, [1.5, 2.0, 3.0, 4.0, 5.0], unit="s")
+    assert long_list["table"]["summary"] == "5 values"
+    assert nested_view(gen, [1.5, 2.0, 3.0, 4.0])["table"] is None
+    flat = nested_view(gen, {"a": 1.0, "b": [20.0, 20.0], "c": None})
+    assert flat["table"] is None
+    assert flat["items"][1] == ("b", "20, 20")
+    assert "a: 1<br>b: 20, 20<br>c: \u2014 (not reached)" in gen.result_cell(flat)
+
+
+def test_csv_names_do_not_clash(gen):
+    used: set = set()
+    assert gen.csv_name("test_a[x]", used) == "data/test_a-x.csv"
+    assert gen.csv_name("test_a[x]", used) == "data/test_a-x-2.csv"
+
+
+def test_single_unit_not_applied_to_mixed_series(gen):
+    ragged = {"a": [1.0, 2.0, 3.0, 4.0, 5.0], "b": [1.0, 2.0]}
+    table = gen.result_view(
+        {"test_id": "t::T::x", "status": "pass", "measured": ragged, "unit": "s"}
+    )["table"]
+    assert table["header"] == ["series", "index", "value"]
+
+
+def test_single_unit_applied_to_single_series(gen):
+    uneven = {"a": {"x": [1.0, 2.0, 3.0]}, "b": {"x": [4.0, 5.0]}}
+    table = nested_view(gen, uneven, unit="s")["table"]
+    assert table["header"] == ["group", "series", "index", "value [s]"]
