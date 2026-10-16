@@ -439,6 +439,13 @@ def numeric_bounds(*values) -> tuple:
     )
 
 
+NOT_REACHED = "\u2014 (not reached)"
+
+
+def fmt_item(v) -> str:
+    return NOT_REACHED if v is None else fmt_measured(v)
+
+
 def fmt_count(v) -> str:
     return fmt_value(int(v) if isinstance(v, float) else v)
 
@@ -448,7 +455,7 @@ def result_view(r) -> dict:
     bounds = numeric_bounds(r.get("lower"), r.get("upper"))
     items = []
     if isinstance(measured, dict):
-        items = [(str(k), fmt_measured(x)) for k, x in measured.items()]
+        items = [(str(k), fmt_item(x)) for k, x in measured.items()]
         measured = None
     return {
         "test": r["test_id"].rsplit("::", 1)[-1],
@@ -856,6 +863,14 @@ def case_table(res_views) -> list[str]:
     ]
     lines += [case_row(v) for v in res_views]
     lines += ["</tbody>", "</table>", "</div>", ""]
+    if any(x == NOT_REACHED for v in res_views for _, x in v["items"]):
+        lines += [
+            (
+                f"{NOT_REACHED} means the run recorded no value for that entry, "
+                "for example because agents blocked before the end of the time budget."
+            ),
+            "",
+        ]
     rules = [v for v in res_views if v["rule"] and not restates_bounds(v)]
     if rules:
         lines += ['<ul class="vv-rules">']
