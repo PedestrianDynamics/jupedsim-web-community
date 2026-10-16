@@ -7,7 +7,12 @@ These are universal property checks that should hold for any valid scenario.
 """
 
 import pytest
-from vv_helpers import run_vv_scenario, agents_within_bounds, HAS_VV_DEPS
+from vv_helpers import (
+    DEFAULT_SEED,
+    HAS_VV_DEPS,
+    agents_within_bounds,
+    run_vv_scenario,
+)
 
 pytestmark = [
     pytest.mark.vv,
@@ -106,7 +111,8 @@ class TestBP02AgentsInBounds:
     """All agent positions must remain within walkable area bounding box."""
 
     @pytest.mark.parametrize("scenario_name", list(SCENARIOS.keys()))
-    def test_agents_within_bounds(self, scenario_name):
+    def test_agents_within_bounds(self, scenario_name, vv_row):
+        vv_row.set(seed=DEFAULT_SEED)
         sc = SCENARIOS[scenario_name]
         _, trajectory = run_vv_scenario(
             walkable_area_wkt=sc["walkable"],
@@ -125,7 +131,8 @@ class TestBP04AllEvacuate:
     """All agents must evacuate within max simulation time."""
 
     @pytest.mark.parametrize("scenario_name", list(SCENARIOS.keys()))
-    def test_all_agents_evacuate(self, scenario_name):
+    def test_all_agents_evacuate(self, scenario_name, vv_row):
+        vv_row.set(seed=DEFAULT_SEED)
         sc = SCENARIOS[scenario_name]
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=sc["walkable"],

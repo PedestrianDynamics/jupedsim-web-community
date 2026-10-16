@@ -157,6 +157,7 @@ class TestRiMEA01SpeedCorridor:
         result.cleanup()
         assert remaining == 0, "Agent did not evacuate"
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-01-corridor.zip",
             quantity="travel_time", unit="s", lower=RIMEA01_LOWER, upper=RIMEA01_UPPER,
             measured=evac, n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -179,6 +180,7 @@ class TestRiMEA01SpeedCorridor:
             radius=_agent_radius(scenario),
         )
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-01-corridor.zip",
             quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
             measured=len(violations), n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -206,6 +208,7 @@ class TestRiMEA02SpeedUpStairs:
         result.cleanup()
 
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-02-upstairs.zip",
             quantity="travel_time", unit="s", lower=RIMEA02_LOWER, upper=RIMEA02_UPPER,
             measured=evac, n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -237,6 +240,7 @@ class TestRiMEA03SpeedDownStairs:
         result.cleanup()
 
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-03-downstairs.zip",
             quantity="travel_time", unit="s", lower=RIMEA03_LOWER, upper=RIMEA03_UPPER,
             measured=evac, n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -448,6 +452,7 @@ class TestRiMEA05PremovementTime:
 
         observed = np.array([movement_start[agent_id] for agent_id in agent_ids])
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-05-premovement.zip",
             quantity="movement_start_time", unit="s", lower=RIMEA05_LOWER,
             upper=RIMEA05_UPPER, measured=observed.tolist(), n=len(agent_ids),
             seed=DEFAULT_SEED, premovement_seed=RIMEA05_PREMOVEMENT_SEED,
@@ -493,6 +498,7 @@ class TestRiMEA06Corner:
         total_agents = result.total_agents
         result.cleanup()
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-06-corner.zip",
             quantity="agents_remaining", unit="count", lower=0, upper=0,
             measured=remaining, n=total_agents,
             seed=DEFAULT_SEED, model="CollisionFreeSpeedModel",
@@ -513,6 +519,7 @@ class TestRiMEA06Corner:
             radius=_agent_radius(scenario),
         )
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-06-corner.zip",
             quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
             measured=len(violations), n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -781,6 +788,10 @@ class TestRiMEA09LargePublicSpace:
         time_4, remaining_4, total = self._run(self.OPEN_ZIP)
         time_2, remaining_2, _ = self._run(self.LOCKED_ZIP)
         vv_row.set(
+            scenario_file=[
+                "standards/rimea/scenario_files/Rimea-09-large-public.zip",
+                "standards/rimea/scenario_files/Rimea-09-large-public-locked.zip",
+            ],
             quantity="evacuation_time_4_exits_vs_2_exits", unit="s",
             measured=[time_4, time_2],
             n=total, seed=DEFAULT_SEED,
@@ -927,7 +938,7 @@ class TestRiMEA11EscapeRouteChoice:
         )
         return 1 if rng.random() < probability_exit2 else 0
 
-    def test_prefer_closer_exit(self):
+    def test_prefer_closer_exit(self, vv_row):
         with zipfile.ZipFile(self.SCENARIO_ZIP) as zf:
             raw = json.loads(zf.read("config.json"))
             geometry = wkt.loads(zf.read("geometry.wkt").decode("utf-8"))
@@ -1001,6 +1012,16 @@ class TestRiMEA11EscapeRouteChoice:
         ):
             simulation.iterate()
 
+        vv_row.set(
+            quantity="agents_per_exit_closer_and_farther", unit="count",
+            measured=exit_counts, n=distribution_params["number"],
+            seed=config["baseSeed"], model="CollisionFreeSpeedModel",
+            scenario_file="standards/rimea/scenario_files/Rimea-11-choice-escape.zip",
+            rule=(
+                "bound: all agents evacuate; comparison: agents(closer exit) > "
+                "agents(farther exit); bound: agents(farther exit) > 0"
+            ),
+        )
         assert simulation.agent_count() == 0, (
             f"{simulation.agent_count()} agents did not evacuate within "
             f"{simulation_params['max_simulation_time']} seconds"
@@ -1085,6 +1106,7 @@ class TestRiMEA12aGoalPosition:
         plateau = [t for a, t in by_a.items() if a >= RIMEA12A_PLATEAU_A]
         plateau_mean = float(np.mean(plateau))
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-12a-goal-position.zip",
             quantity="room1_clearance_time_vs_goal_distance", unit="s",
             measured=times, n=n_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -1137,6 +1159,10 @@ class TestRiMEA12bBottleneckLength:
         t_short = self._clearance_time(self.SHORT_ZIP)
         t_long = self._clearance_time(self.LONG_ZIP)
         vv_row.set(
+            scenario_file=[
+                "standards/rimea/scenario_files/Rimea-12a-goal-position.zip",
+                "standards/rimea/scenario_files/Rimea-12b-bottleneck-length.zip",
+            ],
             quantity="room1_clearance_time_short_vs_long_bottleneck", unit="s",
             measured=[t_short, t_long],
             n=RIMEA12_AGENTS, seed=DEFAULT_SEED,
@@ -1281,6 +1307,7 @@ class TestRiMEA12dBottleneckWidthFlow:
             assert metrics["agents_remaining"] == 0, f"w={w}: not all evacuated"
             flows[w] = measure_flow_rate(metrics)
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-12d-bottleneck.zip",
             quantity="flow_by_bottleneck_width_0.8_1.0_1.2", unit="agents/s",
             measured=[flows[0.8], flows[1.0], flows[1.2]], n=metrics["total_agents"],
             seed=DEFAULT_SEED, model="CollisionFreeSpeedModel",
@@ -1552,6 +1579,10 @@ class TestRiMEA15LargeCrowdCorner:
         time_straight, remaining_straight, total = self._run(self.STRAIGHT_ZIP)
         time_corner, remaining_corner, _ = self._run(self.CORNER_ZIP)
         vv_row.set(
+            scenario_file=[
+                "standards/rimea/scenario_files/Rimea-15-large-crowd-corner-3.zip",
+                "standards/rimea/scenario_files/Rimea-15-large-crowd-corner-2.zip",
+            ],
             quantity="evacuation_time_straight_vs_corner", unit="s",
             measured=[time_straight, time_corner],
             n=total, seed=DEFAULT_SEED,
