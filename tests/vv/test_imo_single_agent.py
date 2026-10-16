@@ -8,7 +8,12 @@ Note: SA-03 (pre-movement delay) deferred to later phase.
 """
 
 import pytest
-from vv_helpers import run_vv_scenario, agents_outside_polygon, HAS_VV_DEPS
+from vv_helpers import (
+    DEFAULT_SEED,
+    HAS_VV_DEPS,
+    agents_outside_polygon,
+    run_vv_scenario,
+)
 
 pytestmark = [
     pytest.mark.vv,
@@ -51,8 +56,9 @@ class TestSA01SpeedInCorridor:
         }
     }
 
-    def test_evacuation_time(self):
+    def test_evacuation_time(self, vv_row):
         """Single agent should traverse ~38m at ~1.2 m/s → ~32s ± 20%."""
+        vv_row.set(seed=DEFAULT_SEED)
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
@@ -69,8 +75,9 @@ class TestSA01SpeedInCorridor:
             f"Evacuation time {evac:.2f}s outside {expected_time:.1f}s ± {tolerance * 100}%"
         )
 
-    def test_agent_stays_in_corridor(self):
+    def test_agent_stays_in_corridor(self, vv_row):
         """Agent must remain within corridor bounds."""
+        vv_row.set(seed=DEFAULT_SEED)
         _, trajectory = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
@@ -118,8 +125,9 @@ class TestSA02SpeedDistribution:
         }
     }
 
-    def test_all_evacuate(self):
+    def test_all_evacuate(self, vv_row):
         """All 50 agents must evacuate."""
+        vv_row.set(seed=DEFAULT_SEED)
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
@@ -131,8 +139,9 @@ class TestSA02SpeedDistribution:
             f"{metrics['agents_remaining']} agents did not evacuate"
         )
 
-    def test_evacuation_time_reasonable(self):
+    def test_evacuation_time_reasonable(self, vv_row):
         """Evacuation time should be between 25s and 120s for 50 agents."""
+        vv_row.set(seed=DEFAULT_SEED)
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
@@ -177,8 +186,9 @@ class TestSA04Cornering:
         }
     }
 
-    def test_all_evacuate(self):
+    def test_all_evacuate(self, vv_row):
         """All 20 agents must navigate the corner and evacuate."""
+        vv_row.set(seed=DEFAULT_SEED)
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
@@ -189,8 +199,9 @@ class TestSA04Cornering:
             f"{metrics['agents_remaining']} agents stuck at corner"
         )
 
-    def test_agents_stay_in_geometry(self):
+    def test_agents_stay_in_geometry(self, vv_row):
         """No agent should leave the L-shaped corridor bounds."""
+        vv_row.set(seed=DEFAULT_SEED)
         _, trajectory = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,

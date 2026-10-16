@@ -8,6 +8,7 @@ RE-04: Counterflow (IMO 8)
 
 import pytest
 from vv_helpers import (
+    DEFAULT_SEED,
     FLOW_CAP_TOLERANCE,
     HAS_VV_DEPS,
     MAX_SPECIFIC_FLOW,
@@ -58,7 +59,8 @@ class TestRE01SingleExitFlow:
         }
     }
 
-    def test_all_evacuate(self):
+    def test_all_evacuate(self, vv_row):
+        vv_row.set(seed=DEFAULT_SEED)
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
             exits=self.EXIT,
@@ -78,8 +80,9 @@ class TestRE01SingleExitFlow:
         assert metrics["agents_remaining"] == 0, "not all agents evacuated"
         return specific_exit_flow(trajectory.data, trajectory.frame_rate)
 
-    def test_flow_within_cap_with_limiter(self):
+    def test_flow_within_cap_with_limiter(self, vv_row):
         """Flow must not exceed 1.33 p/s with the exit limiter enabled."""
+        vv_row.set(seed=DEFAULT_SEED)
         flow = self._flow(limiter_on=True)
         cap = MAX_SPECIFIC_FLOW * (1 + FLOW_CAP_TOLERANCE)
         assert flow <= cap, (
@@ -87,8 +90,9 @@ class TestRE01SingleExitFlow:
             f"(+{FLOW_CAP_TOLERANCE:.0%} tolerance)"
         )
 
-    def test_emergent_flow_without_limiter_is_reported(self):
+    def test_emergent_flow_without_limiter_is_reported(self, vv_row):
         """Information only: the emergent flow is printed, not asserted."""
+        vv_row.set(seed=DEFAULT_SEED)
         flow = self._flow(limiter_on=False)
         print(f"IMO 4 emergent flow, limiter off: {flow:.2f} p/s")
 
@@ -207,8 +211,9 @@ class TestRE02ExitSensitivity:
             )
         return distributions, journeys_v2
 
-    def test_time_ratio(self):
+    def test_time_ratio(self, vv_row):
         """Halving exits should increase evacuation time."""
+        vv_row.set(seed=DEFAULT_SEED)
         dist_4, j_4 = self._make_dist_and_journeys(self.EXITS_4)
         metrics_4, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,
@@ -322,8 +327,9 @@ class TestRE04Counterflow:
         },
     }
 
-    def test_counterflow_increases_time(self):
+    def test_counterflow_increases_time(self, vv_row):
         """Adding counterflow agents should increase evacuation time."""
+        vv_row.set(seed=DEFAULT_SEED)
         # No counterflow: 50 agents left → right exit
         metrics_none, _ = run_vv_scenario(
             walkable_area_wkt=self.WALKABLE,

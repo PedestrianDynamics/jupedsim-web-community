@@ -84,7 +84,7 @@ RIMEA07_OBSERVED_TOL = 0.03  # m/s
 RIMEA12_AGENTS = 150  # RiMEA 12a/12b population
 RIMEA12A_NEAR_A = 1.0  # first goal distance of the rising branch, m
 RIMEA12A_PLATEAU_A = 4.0  # goal distances from here on form the plateau, m
-RIMEA13_CORBETTA_FLOOR = 0.25
+RIMEA13_BAND_FLOOR = 0.25
 RIMEA13_DOWN_WINS_MIN = 0.7
 RIMEA13_MIN_SAMPLES = 500
 RIMEA13_MIN_COMMON_BINS = 5
@@ -157,6 +157,7 @@ class TestRiMEA01SpeedCorridor:
         result.cleanup()
         assert remaining == 0, "Agent did not evacuate"
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-01-corridor.zip",
             quantity="travel_time", unit="s", lower=RIMEA01_LOWER, upper=RIMEA01_UPPER,
             measured=evac, n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -179,6 +180,7 @@ class TestRiMEA01SpeedCorridor:
             radius=_agent_radius(scenario),
         )
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-01-corridor.zip",
             quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
             measured=len(violations), n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -206,6 +208,7 @@ class TestRiMEA02SpeedUpStairs:
         result.cleanup()
 
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-02-upstairs.zip",
             quantity="travel_time", unit="s", lower=RIMEA02_LOWER, upper=RIMEA02_UPPER,
             measured=evac, n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -237,6 +240,7 @@ class TestRiMEA03SpeedDownStairs:
         result.cleanup()
 
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-03-downstairs.zip",
             quantity="travel_time", unit="s", lower=RIMEA03_LOWER, upper=RIMEA03_UPPER,
             measured=evac, n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -263,6 +267,8 @@ class TestRiMEA04FundamentalDiagram:
         STANDARDS_DIR / "rimea" / "scenario_files" / "Rimea-04-fundamental-diagram.zip"
     )
     AGENT_COUNTS: ClassVar[list] = [1000, 2000, 4000, 6000]
+    SEED = 42
+    SPEED_TOLERANCE = 0.05  # allowed speed rise between sweep steps, m/s
     T_MIN = 10.0
     T_MAX = 60.0
     MEASURING_AREAS: ClassVar[dict] = {
@@ -304,7 +310,7 @@ class TestRiMEA04FundamentalDiagram:
             number_of_agents=number_of_agents,
             distance_to_agents=distribution_params["radius"] * 2,
             distance_to_polygon=distribution_params["radius"],
-            seed=42,
+            seed=cls.SEED,
         )
         for position in positions:
             simulation.add_agent(
@@ -363,7 +369,7 @@ class TestRiMEA04FundamentalDiagram:
             }
         return measurements
 
-    def test_speed_density_relation(self):
+    def test_speed_density_relation(self, vv_row):
         with zipfile.ZipFile(self.SCENARIO_ZIP) as zf:
             raw = json.loads(zf.read("config.json"))
             geometry = wkt.loads(zf.read("geometry.wkt").decode("utf-8"))
@@ -372,6 +378,25 @@ class TestRiMEA04FundamentalDiagram:
             self._run_density(raw, geometry, number_of_agents)
             for number_of_agents in self.AGENT_COUNTS
         ]
+        vv_row.set(
+            quantity="density_speed_flow_by_population",
+            unit="P/m^2, m/s, P/(m s)",
+            measured={
+                name: {
+                    key: [m[name][key] for m in sweep_measurements]
+                    for key in ("density", "speed", "flow")
+                }
+                for name in self.MEASURING_AREAS
+            },
+            n=max(self.AGENT_COUNTS), seed=self.SEED, model="WarpDriverModel",
+            scenario_file="standards/rimea/scenario_files/Rimea-04-fundamental-diagram.zip",
+            rule=(
+                f"comparison over populations {self.AGENT_COUNTS}: density "
+                "strictly increases; bound: speed rise between consecutive "
+                f"populations <= {self.SPEED_TOLERANCE} m/s; "
+                f"window {self.T_MIN:g}-{self.T_MAX:g} s, per measuring area"
+            ),
+        )
 
         for name in self.MEASURING_AREAS:
             values = [measurement[name] for measurement in sweep_measurements]
@@ -387,9 +412,7 @@ class TestRiMEA04FundamentalDiagram:
             assert np.all(np.diff(densities) > 0), (
                 f"{name}: density did not increase with population: {densities}"
             )
-            SPEED_TOLERANCE = 0.05
-
-            assert np.all(np.diff(speeds) <= SPEED_TOLERANCE), (
+            assert np.all(np.diff(speeds) <= self.SPEED_TOLERANCE), (
                 f"{name}: speed increased with density beyond tolerance: {speeds}"
             )
 
@@ -429,6 +452,7 @@ class TestRiMEA05PremovementTime:
 
         observed = np.array([movement_start[agent_id] for agent_id in agent_ids])
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-05-premovement.zip",
             quantity="movement_start_time", unit="s", lower=RIMEA05_LOWER,
             upper=RIMEA05_UPPER, measured=observed.tolist(), n=len(agent_ids),
             seed=DEFAULT_SEED, premovement_seed=RIMEA05_PREMOVEMENT_SEED,
@@ -474,6 +498,7 @@ class TestRiMEA06Corner:
         total_agents = result.total_agents
         result.cleanup()
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-06-corner.zip",
             quantity="agents_remaining", unit="count", lower=0, upper=0,
             measured=remaining, n=total_agents,
             seed=DEFAULT_SEED, model="CollisionFreeSpeedModel",
@@ -494,6 +519,7 @@ class TestRiMEA06Corner:
             radius=_agent_radius(scenario),
         )
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-06-corner.zip",
             quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
             measured=len(violations), n=total_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -628,6 +654,7 @@ class TestRiMEA08ParameterStudy:
 
     SEED = 42
     MAX_SIMULATION_TIME = 600.0
+    TOLERANCE_FRACTION = 0.30
 
     @classmethod
     def _run(cls, desired_speeds):
@@ -649,13 +676,22 @@ class TestRiMEA08ParameterStudy:
 
         return evacuation_time
 
-    def test_evacuation_time_decreases_as_speed_increases(self):
+    def test_evacuation_time_decreases_as_speed_increases(self, vv_row):
         """Increasing desired speed must decrease evacuation time."""
         desired_speeds = [1.0, 1.25, 1.5, 2.0]
 
         evacuation_times = [
             self._run(rimea08_v0_constant(speed)) for speed in desired_speeds
         ]
+        vv_row.set(
+            quantity="evacuation_time_by_desired_speed", unit="s",
+            measured=evacuation_times, n=RIMEA08_N_AGENTS, seed=self.SEED,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                f"comparison over desired speeds {desired_speeds} m/s: "
+                "evacuation time strictly decreases as speed increases"
+            ),
+        )
 
         for slower_speed, faster_speed, slower_time, faster_time in zip(
             desired_speeds,
@@ -670,7 +706,7 @@ class TestRiMEA08ParameterStudy:
                 f"{slower_time:.2f} s versus {faster_time:.2f} s"
             )
 
-    def test_speed_distribution_sensitivity(self):
+    def test_speed_distribution_sensitivity(self, vv_row):
         """Different speed spreads with the same mean remain comparable."""
         constant_time = self._run(rimea08_v0_constant(1.25))
         narrow_distribution_time = self._run(
@@ -688,7 +724,21 @@ class TestRiMEA08ParameterStudy:
             )
         )
 
-        tolerance = 0.30 * constant_time
+        tolerance = self.TOLERANCE_FRACTION * constant_time
+        vv_row.set(
+            quantity="evacuation_time_by_speed_distribution", unit="s",
+            measured={
+                "constant_1.25": constant_time,
+                "uniform_1.00_1.50": narrow_distribution_time,
+                "uniform_0.75_1.75": wide_distribution_time,
+            },
+            n=RIMEA08_N_AGENTS, seed=self.SEED, model="CollisionFreeSpeedModel",
+            rule=(
+                f"bound: |time(uniform) - time(constant 1.25 m/s)| < "
+                f"{self.TOLERANCE_FRACTION:.0%} of time(constant) "
+                "for both uniform spreads"
+            ),
+        )
 
         assert abs(narrow_distribution_time - constant_time) < tolerance, (
             "The U(1.00, 1.50) evacuation time differs by more than 30% "
@@ -738,6 +788,10 @@ class TestRiMEA09LargePublicSpace:
         time_4, remaining_4, total = self._run(self.OPEN_ZIP)
         time_2, remaining_2, _ = self._run(self.LOCKED_ZIP)
         vv_row.set(
+            scenario_file=[
+                "standards/rimea/scenario_files/Rimea-09-large-public.zip",
+                "standards/rimea/scenario_files/Rimea-09-large-public-locked.zip",
+            ],
             quantity="evacuation_time_4_exits_vs_2_exits", unit="s",
             measured=[time_4, time_2],
             n=total, seed=DEFAULT_SEED,
@@ -884,7 +938,7 @@ class TestRiMEA11EscapeRouteChoice:
         )
         return 1 if rng.random() < probability_exit2 else 0
 
-    def test_prefer_closer_exit(self):
+    def test_prefer_closer_exit(self, vv_row):
         with zipfile.ZipFile(self.SCENARIO_ZIP) as zf:
             raw = json.loads(zf.read("config.json"))
             geometry = wkt.loads(zf.read("geometry.wkt").decode("utf-8"))
@@ -958,6 +1012,16 @@ class TestRiMEA11EscapeRouteChoice:
         ):
             simulation.iterate()
 
+        vv_row.set(
+            quantity="agents_per_exit_closer_and_farther", unit="count",
+            measured=exit_counts, n=distribution_params["number"],
+            seed=config["baseSeed"], model="CollisionFreeSpeedModel",
+            scenario_file="standards/rimea/scenario_files/Rimea-11-choice-escape.zip",
+            rule=(
+                "bound: all agents evacuate; comparison: agents(closer exit) > "
+                "agents(farther exit); bound: agents(farther exit) > 0"
+            ),
+        )
         assert simulation.agent_count() == 0, (
             f"{simulation.agent_count()} agents did not evacuate within "
             f"{simulation_params['max_simulation_time']} seconds"
@@ -1042,6 +1106,7 @@ class TestRiMEA12aGoalPosition:
         plateau = [t for a, t in by_a.items() if a >= RIMEA12A_PLATEAU_A]
         plateau_mean = float(np.mean(plateau))
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-12a-goal-position.zip",
             quantity="room1_clearance_time_vs_goal_distance", unit="s",
             measured=times, n=n_agents, seed=DEFAULT_SEED,
             model="CollisionFreeSpeedModel",
@@ -1094,6 +1159,10 @@ class TestRiMEA12bBottleneckLength:
         t_short = self._clearance_time(self.SHORT_ZIP)
         t_long = self._clearance_time(self.LONG_ZIP)
         vv_row.set(
+            scenario_file=[
+                "standards/rimea/scenario_files/Rimea-12a-goal-position.zip",
+                "standards/rimea/scenario_files/Rimea-12b-bottleneck-length.zip",
+            ],
             quantity="room1_clearance_time_short_vs_long_bottleneck", unit="s",
             measured=[t_short, t_long],
             n=RIMEA12_AGENTS, seed=DEFAULT_SEED,
@@ -1238,6 +1307,7 @@ class TestRiMEA12dBottleneckWidthFlow:
             assert metrics["agents_remaining"] == 0, f"w={w}: not all evacuated"
             flows[w] = measure_flow_rate(metrics)
         vv_row.set(
+            scenario_file="standards/rimea/scenario_files/Rimea-12d-bottleneck.zip",
             quantity="flow_by_bottleneck_width_0.8_1.0_1.2", unit="agents/s",
             measured=[flows[0.8], flows[1.0], flows[1.2]], n=metrics["total_agents"],
             seed=DEFAULT_SEED, model="CollisionFreeSpeedModel",
@@ -1318,7 +1388,7 @@ class TestRiMEA13FundamentalDiagramStairs:
             & (down_points["speed"].to_numpy() <= down_high)
         ).mean()
 
-        # The Corbetta band is an empirical envelope of stair speeds; the
+        # The suite band (source pending) is a coded envelope of stair speeds; the
         # fraction of points inside it is a *gross-plausibility* floor, not the
         # RiMEA criterion (that is the down > up comparison below). Coverage
         # drifts substantially with the simulator version - observed up ~0.95 /
@@ -1328,11 +1398,11 @@ class TestRiMEA13FundamentalDiagramStairs:
         # drift can't make it flaky, while still catching a grossly broken sim
         # (a wrong stair model lands near 0). The run is seeded (seed=42), so it
         # is deterministic within a given environment.
-        assert up_inside >= RIMEA13_CORBETTA_FLOOR, (
-            f"Upstairs points inside Corbetta band too low: {up_inside:.3f}"
+        assert up_inside >= RIMEA13_BAND_FLOOR, (
+            f"Upstairs points inside the suite band (source pending) too low: {up_inside:.3f}"
         )
-        assert down_inside >= RIMEA13_CORBETTA_FLOOR, (
-            f"Downstairs points inside Corbetta band too low: {down_inside:.3f}"
+        assert down_inside >= RIMEA13_BAND_FLOOR, (
+            f"Downstairs points inside the suite band (source pending) too low: {down_inside:.3f}"
         )
 
         up_binned = up_points.groupby("density_bin", observed=True)["speed"].mean()
@@ -1354,8 +1424,8 @@ class TestRiMEA13FundamentalDiagramStairs:
                 "mean_speed_down": float(down_points["speed"].mean()),
                 "samples_up": len(up_points),
                 "samples_down": len(down_points),
-                "inside_corbetta_up": float(up_inside),
-                "inside_corbetta_down": float(down_inside),
+                "inside_band_up": float(up_inside),
+                "inside_band_down": float(down_inside),
                 "shared_bins": len(common_bins),
                 "down_wins_fraction": float(down_wins),
                 "bin_mean_speed_up": float(up_binned.loc[common_bins].mean()),
@@ -1364,7 +1434,7 @@ class TestRiMEA13FundamentalDiagramStairs:
             n=total_agents, seed=DEFAULT_SEED, model="CollisionFreeSpeedModel",
             scenario_file="standards/rimea/scenario_builders/rimea13_stairs.py",
             rule=(
-                f"bound: inside Corbetta band >= {RIMEA13_CORBETTA_FLOOR} (up and down); "
+                f"bound: inside the suite band (source pending) >= {RIMEA13_BAND_FLOOR} (up and down); "
                 f"bound: samples > {RIMEA13_MIN_SAMPLES} per direction; "
                 f"bound: shared density bins >= {RIMEA13_MIN_COMMON_BINS}; "
                 f"bound: fraction of shared bins with down > up >= {RIMEA13_DOWN_WINS_MIN}; "
@@ -1509,6 +1579,10 @@ class TestRiMEA15LargeCrowdCorner:
         time_straight, remaining_straight, total = self._run(self.STRAIGHT_ZIP)
         time_corner, remaining_corner, _ = self._run(self.CORNER_ZIP)
         vv_row.set(
+            scenario_file=[
+                "standards/rimea/scenario_files/Rimea-15-large-crowd-corner-3.zip",
+                "standards/rimea/scenario_files/Rimea-15-large-crowd-corner-2.zip",
+            ],
             quantity="evacuation_time_straight_vs_corner", unit="s",
             measured=[time_straight, time_corner],
             n=total, seed=DEFAULT_SEED,

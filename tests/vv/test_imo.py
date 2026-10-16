@@ -24,6 +24,7 @@ import pytest
 from jupedsim_scenarios import load_scenario, run_scenario
 from shapely.geometry import Point, Polygon
 from vv_helpers import (
+    DEFAULT_SEED,
     FLOW_CAP_TOLERANCE,
     HAS_VV_DEPS,
     MAX_SPECIFIC_FLOW,
@@ -1237,7 +1238,8 @@ class TestIMOBehaviorAgentsInBounds:
     """All agents remain inside each scenario's walkable bounds."""
 
     @pytest.mark.parametrize("scenario_name", list(BEHAVIOR_SCENARIOS))
-    def test_agents_within_bounds(self, scenario_name):
+    def test_agents_within_bounds(self, scenario_name, vv_row):
+        vv_row.set(seed=DEFAULT_SEED)
         scenario = BEHAVIOR_SCENARIOS[scenario_name]
         _, trajectory = run_vv_scenario(
             walkable_area_wkt=scenario["walkable"],
@@ -1255,7 +1257,8 @@ class TestIMOBehaviorAllEvacuate:
     """All agents evacuate within each scenario's simulation budget."""
 
     @pytest.mark.parametrize("scenario_name", list(BEHAVIOR_SCENARIOS))
-    def test_all_agents_evacuate(self, scenario_name):
+    def test_all_agents_evacuate(self, scenario_name, vv_row):
+        vv_row.set(seed=DEFAULT_SEED)
         scenario = BEHAVIOR_SCENARIOS[scenario_name]
         metrics, _ = run_vv_scenario(
             walkable_area_wkt=scenario["walkable"],

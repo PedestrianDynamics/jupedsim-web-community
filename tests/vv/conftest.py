@@ -5,12 +5,14 @@ Every test in the standard test files (``STANDARD_FILES``) writes one row to
 manifest metadata (standard, clause, criterion), the test status and the run
 provenance, plus whatever the test reports through ``vv_row.set(...)``.
 Fields a test does not report are null.
+``scenario_sha256`` is derived from ``scenario_file``, not reported by tests.
 
 A run that collects only part of the suite writes ``vv-results-partial.json``
 instead, so a subset run never replaces the full results file.
 """
 
 import datetime
+import hashlib
 import importlib.metadata
 import json
 import os
@@ -114,6 +116,23 @@ def _manifest_entry(class_name: str | None, method_name: str) -> dict:
     }
 
 
+def _scenario_sha256(scenario_file):
+    """SHA-256 of the scenario zip(s) a test names; null for anything else.
+
+    ``scenario_file`` is a repo-relative path or a list of them. A path that
+    is not an existing ``.zip`` (a scenario builder script, or none) has no
+    hash.
+    """
+    if isinstance(scenario_file, list | tuple):
+        return [_scenario_sha256(f) for f in scenario_file]
+    if not isinstance(scenario_file, str) or not scenario_file.endswith(".zip"):
+        return None
+    path = REPO_ROOT / scenario_file
+    if not path.is_file():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _to_json(value):
     if value is None or isinstance(value, bool | str):
         return value
@@ -140,6 +159,7 @@ class VVRow:
     def as_dict(self, status: str) -> dict:
         row = {**self._base, "kind": "verification", "status": status}
         row.update({k: _to_json(v) for k, v in self._values.items()})
+        row["scenario_sha256"] = _scenario_sha256(self._values["scenario_file"])
         return row
 
 

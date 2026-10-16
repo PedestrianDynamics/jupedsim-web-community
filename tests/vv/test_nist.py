@@ -111,7 +111,10 @@ class TestNist11Premovement:
     available by wrapping the sweep loop.
     """
 
-    def test_base_zip_loads(self):
+    def test_base_zip_loads(self, vv_row):
+        vv_row.set(
+            scenario_file="standards/nist/scenario_files/Nist-1-1-premovement.zip"
+        )
         scenario = _load("Nist-1-1-premovement")
         assert scenario.model_type == "CollisionFreeSpeedModel"
         params = scenario.distributions["jps-distributions_0"]["parameters"]
@@ -342,7 +345,10 @@ class TestNist24Demographics:
     We verify the config is wired up to sample from Gaussian(1.2, 0.2).
     """
 
-    def test_gaussian_distribution_configured(self):
+    def test_gaussian_distribution_configured(self, vv_row):
+        vv_row.set(
+            scenario_file="standards/nist/scenario_files/Nist-2-4-demographics.zip"
+        )
         scenario = _load("Nist-2-4-demographics")
         params = scenario.distributions["jps-distributions_0"]["parameters"]
         assert params["v0_distribution"] == "gaussian"
@@ -698,7 +704,11 @@ class TestNist29Groups:
     GROUP1_SIZE = 5
     MAX_SPREAD_S = 10.0  # NIST TN 1822 section 3.1.2, Verif.2.9.
 
-    def test_runs_without_error(self):
+    def test_runs_without_error(self, vv_row):
+        vv_row.set(
+            seed=42,
+            scenario_file="standards/nist/scenario_files/Nist-2-9-groups.zip",
+        )
         scenario = _load("Nist-2-9-groups")
         result = run_scenario(scenario, seed=42)
         try:

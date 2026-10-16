@@ -120,7 +120,8 @@ class TestIso01Premovement:
     N_RUNS = 6
     ALPHA = 0.05
 
-    def test_base_zip_loads(self):
+    def test_base_zip_loads(self, vv_row):
+        vv_row.set(scenario_file="standards/iso/scenario_files/Iso-01-premovement.zip")
         scenario = _load("Iso-01-premovement")
         assert scenario.model_type == "CollisionFreeSpeedModel"
         params = scenario.distributions["jps-distributions_0"]["parameters"]
