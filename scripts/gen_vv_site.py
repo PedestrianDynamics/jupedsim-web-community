@@ -38,8 +38,10 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 import zipfile
 from datetime import UTC, datetime
@@ -375,6 +377,24 @@ def pick_run(results, nb_manifest) -> dict:
     return run
 
 
+def pages_commit(repo_root) -> str | None:
+    """Commit the site is generated from: GITHUB_SHA, else git HEAD, else None."""
+    sha = os.environ.get("GITHUB_SHA")
+    if sha:
+        return sha
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return out.stdout.strip() or None
+
+
 def fmt_value(v) -> str:
     if v is None:
         return ""
@@ -419,6 +439,13 @@ def numeric_bounds(*values) -> tuple:
     )
 
 
+NOT_REACHED = "\u2014 (not reached)"
+
+
+def fmt_item(v) -> str:
+    return NOT_REACHED if v is None else fmt_measured(v)
+
+
 def fmt_count(v) -> str:
     return fmt_value(int(v) if isinstance(v, float) else v)
 
@@ -428,7 +455,7 @@ def result_view(r) -> dict:
     bounds = numeric_bounds(r.get("lower"), r.get("upper"))
     items = []
     if isinstance(measured, dict):
-        items = [(str(k), fmt_measured(x)) for k, x in measured.items()]
+        items = [(str(k), fmt_item(x)) for k, x in measured.items()]
         measured = None
     return {
         "test": r["test_id"].rsplit("::", 1)[-1],
@@ -635,7 +662,16 @@ def summary_page(model) -> str:
 
 
 def diagnostics_page(model) -> str:
-    lines = [front_matter(title="Join diagnostics")]
+    # Maintainer page: reachable from the footer, kept out of the sidebar,
+    # the search index and search engines.
+    lines = [
+        front_matter(
+            title="Join diagnostics",
+            sidebar={"exclude": True},
+            excludeSearch=True,
+            noindex=True,
+        )
+    ]
     if not model["has_results"]:
         lines.append("Test results are not available in this run.")
         return "\n".join(lines) + "\n"
@@ -836,6 +872,14 @@ def case_table(res_views) -> list[str]:
     ]
     lines += [case_row(v) for v in res_views]
     lines += ["</tbody>", "</table>", "</div>", ""]
+    if any(x == NOT_REACHED for v in res_views for _, x in v["items"]):
+        lines += [
+            (
+                f"{NOT_REACHED} means the run recorded no value for that entry, "
+                "for example because agents blocked before the end of the time budget."
+            ),
+            "",
+        ]
     rules = [v for v in res_views if v["rule"] and not restates_bounds(v)]
     if rules:
         lines += ['<ul class="vv-rules">']
@@ -1033,6 +1077,8 @@ def build_site(
         manifest, definitions, results, nb_manifest
     )
     run = pick_run(results, nb_manifest)
+    pages_sha = pages_commit(repo_root)
+    run["pages_commit_sha"] = pages_sha if pages_sha != run["commit_sha"] else None
     model = {
         "standards": standards,
         "orphans": orphans,
@@ -1061,12 +1107,12 @@ def build_site(
 
 
 INTRO = (
-    "This page shows the live verification status of [JuPedSim](https://www.jupedsim.org) "
-    "against four published test suites for evacuation models: IMO MSC.1/Circ.1533, RiMEA 4.1.1, "
-    "NIST TN 1822 and ISO 20414:2020. Each test is rebuilt from the standard's description, run on "
-    "every change to the main branch with the versions shown above, and checked against the "
-    "standard's expected result. Every test has its own page with the definition, the scenario, our "
-    "result and the notebook. Failures are shown as they are. Code and scenarios: "
+    "Verification tests of [JuPedSim](https://www.jupedsim.org) against the test cases of "
+    "IMO MSC.1/Circ.1533, RiMEA 4.1.1, NIST TN 1822 and ISO 20414:2020. Each test page gives "
+    "the definition, the scenario, our result and the notebook. It also states the pass rule "
+    "and whether the standard gives that rule or the suite chose it. The results come from the "
+    "run named in the footer, not from a live check. This is verification, not validation: no "
+    "comparison with experimental data has been run. Code and scenarios: "
     "[jupedsim-web-community on GitHub](https://github.com/PedestrianDynamics/jupedsim-web-community)."
 )
 

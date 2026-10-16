@@ -239,8 +239,8 @@
       "title": "Assignment of population demographics",
       "source": "IMO MSC.1/Circ.1533, Annex 3, Appendix 2, Test 7, para. 9, p. 10; Table 3.4, p. 5",
       "kind": "analytical",
-      "definition": "A panel of males aged 30 to 50 is taken from Table 3.4, whose walking speed on flat terrain is a uniform distribution between 0.97 m/s and 1.62 m/s. The speeds are distributed over a population of 50 persons. The test shows that the assigned speeds are consistent with the table.",
-      "expected": "The assigned speeds are consistent with the uniform distribution of Table 3.4 (0.97 m/s to 1.62 m/s). IMO gives no statistical test or tolerance.",
+      "definition": "A panel of males aged 30 to 50 is taken from Table 3.4, whose walking speed on flat terrain is a uniform distribution between 0.97 m/s and 1.62 m/s. The speeds are distributed over a population of 50 persons. The standard intends the assigned speeds to be consistent with the table.",
+      "expected": "The assigned speeds follow the uniform distribution of Table 3.4 (0.97 m/s to 1.62 m/s). IMO gives no statistical test or tolerance. This suite does not check the speeds: it checks only that all 50 agents leave the room within 25 s to 120 s.",
       "deviations": [
         "No speed distribution is assigned: all 50 agents have a constant desired speed of 1.2 m/s. The test does not read or check assigned speeds against Table 3.4.",
         "The test checks only that all 50 agents leave a 40 m by 10 m room and that the evacuation time lies between 25 s and 120 s. This window is the suite's own and is not in the standard.",
@@ -959,7 +959,7 @@
       "definition": "Two 10 m by 10 m rooms are joined by a 10 m long, 2 m wide corridor. 100 occupants with no response time fill room 1 from the left at the highest possible density and move to room 2; the time the last of them enters room 2 is recorded. The run is repeated with 10, 50 and 100 additional occupants in room 2 who move to room 1 at the same time and have the same characteristics.",
       "expected": "The recorded time increases with the number of people in counter-flow. The tester discusses qualitatively how large the increase is.",
       "deviations": [
-        "Decision D10: a level at which room-1 occupants block and do not all reach room 2 within the time budget is reported as 'blocking documented', as ISO 20414 asks for the same scenario, and counts as later than any level that completes.",
+        "Decision D10: a level at which room-1 occupants block and do not all reach room 2 within the time budget is reported as 'blocking documented', as ISO 20414 asks for the same scenario, and counts as later than any level that completes. In the result table such a level shows as \"\u2014 (not reached)\".",
         "Desired speed is a constant 1.2 m/s instead of a building-population distribution."
       ],
       "scenario_files": [
@@ -1260,7 +1260,7 @@
       "definition": "Two rooms of 10 m by 10 m are joined by a corridor 10 m long and 2 m wide, which starts and ends at the centre of one side of each room. One hundred occupants with no pre-evacuation time and speeds drawn from the building population start in room 1, packed from the left at the highest possible density, and move to room 2. The time the last of them enters room 2 is recorded. The run is repeated with 10, 50 and 100 additional occupants of the same kind starting in room 2 and moving to room 1 at the same time. The tester discusses how large the time increases are and documents any long-term blocking.",
       "expected": "The recorded time increases with the number of occupants in counter-flow. ISO calls the evaluation qualitative and sets no numeric limit.",
       "deviations": [
-        "Decision D10: a level in which some room-1 occupant does not reach room 2 within the 200 s budget is reported as 'blocking documented'. It counts as later than every level that completes, as ISO asks for blocking to be documented and not treated as a failure.",
+        "Decision D10: a level in which some room-1 occupant does not reach room 2 within the 200 s budget is reported as 'blocking documented'. It counts as later than every level that completes, as ISO asks for blocking to be documented and not treated as a failure. In the result table such a level shows as \"\u2014 (not reached)\".",
         "The pass rule is the suite's own: the last room-2 entry times of the levels that complete must increase strictly, no completing level may follow a blocked one, and the level without counter-flow must complete. Room 2 is entered at the first frame with x of 20 m or more, the far end of the corridor.",
         "All occupants walk at a constant 1.2 m/s instead of a speed distribution from the building population.",
         "The 100 room-1 occupants start at random positions in a 2.5 m by 9.6 m strip along the left wall (mean density about 4.2 persons per square metre), which may be below the maximum possible density. Counter-flow occupants start in a strip against the right wall. One seed (42) is run."

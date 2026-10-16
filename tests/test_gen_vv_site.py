@@ -277,7 +277,26 @@ def test_footer_data_and_diagnostics(gen, inputs, content):
     assert run["versions"][0] == {"name": "jupedsim", "version": "1.0"}
     diag = (content / "diagnostics.md").read_text()
     assert "TestOrphan" in diag
+    assert 'sidebar: {"exclude": true}' in diag
+    assert "excludeSearch: true" in diag and "noindex: true" in diag
     assert "Join diagnostics" not in (content / "_index.md").read_text()
+
+
+def test_pages_commit_shown_only_when_it_differs(gen, inputs, content, monkeypatch):
+    monkeypatch.setenv("GITHUB_SHA", "f" * 40)
+    build(gen, inputs, content)
+    run = json.loads((content.parent / "data" / "run.json").read_text())
+    assert run["run"]["pages_commit_sha"] == "f" * 40
+    monkeypatch.setenv("GITHUB_SHA", "abc123def456")
+    build(gen, inputs, content)
+    run = json.loads((content.parent / "data" / "run.json").read_text())
+    assert run["run"]["pages_commit_sha"] is None
+
+
+def test_pages_commit_falls_back_to_git_then_none(gen, tmp_path, monkeypatch):
+    monkeypatch.delenv("GITHUB_SHA", raising=False)
+    assert gen.pages_commit(Path(SCRIPT).parent)
+    assert gen.pages_commit(tmp_path) is None
 
 
 def test_footer_without_run_ids(gen):
@@ -320,6 +339,9 @@ def test_summary_intro_and_references(gen, inputs, content):
     assert "Verification only" not in index
     assert 'title: "JuPedSim verification"' in index
     assert "(https://www.jupedsim.org)" in index
+    assert "not validation" in index
+    assert "live verification" not in index and "expected result" not in index
+    assert "(https://github.com/PedestrianDynamics/jupedsim-web-community)" in index
     assert "Cite A (2020)." in index
     assert "(https://doi.org/10.1/x)" in index
 
@@ -343,6 +365,10 @@ def test_hugo_builds_fixture_site(gen, inputs, tmp_path):
     )
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert (site / "public" / "standards" / "std" / "std-t1" / "index.html").is_file()
+    diag = (site / "public" / "diagnostics" / "index.html").read_text()
+    assert "noindex" in diag
+    assert "noindex" not in (site / "public" / "index.html").read_text()
+    assert "diagnostics" not in (site / "public" / "en.search-data.json").read_text()
 
 
 def test_number_format_keeps_pass_fail_reading(gen):
@@ -384,10 +410,19 @@ def test_result_cell_dict_and_list_measured(gen):
     cell = gen.result_cell(
         view(gen, quantity="d", measured={"a": 1.0, "b": 0.93687862718091, "c": None})
     )
-    assert "a: 1<br>b: 0.9369<br>c: " in cell
+    assert "a: 1<br>b: 0.9369<br>c: \u2014 (not reached)" in cell
     assert "0.936878" not in cell
     listed = gen.result_cell(view(gen, quantity="l", measured=[1.5, 2.123456]))
     assert listed == "l = 1.5, 2.123"
+
+
+def test_unreached_entries_get_a_note(gen):
+    views = [view(gen, quantity="d", measured={"a": 1.0, "b": None})]
+    text = "\n".join(gen.case_table(views))
+    assert "b: \u2014 (not reached)" in text
+    assert "recorded no value" in text
+    plain = "\n".join(gen.case_table([view(gen, quantity="d", measured={"a": 1.0})]))
+    assert "not reached" not in plain
 
 
 def test_case_table_has_four_columns_and_rule_notes(gen):
