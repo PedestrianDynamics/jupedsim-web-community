@@ -73,9 +73,9 @@ html .vv-theme-toggle .theme-toggle svg { height: 24px; width: auto; }
 .vv-cases-wrap { container-type: inline-size; margin: 1rem 0; }
 .content table.vv-cases { display: table; width: 100%; table-layout: fixed; margin: 0; overflow-wrap: anywhere; }
 .vv-cases th, .vv-cases td { vertical-align: top; text-align: left; }
-.vv-cases th:nth-child(1) { width: 30%; }
-.vv-cases th:nth-child(2) { width: 6.5rem; }
-.vv-cases th:nth-child(4) { width: 10rem; }
+.vv-cases th:nth-child(1) { width: 18%; }
+.vv-cases th:nth-child(2) { width: 5.5rem; }
+.vv-cases th:nth-child(4) { width: 8rem; }
 .vv-cases code, .vv-rules code { word-break: normal; overflow-wrap: normal; }
 .vv-cases .vv-nw { white-space: nowrap; }
 .vv-cases .vv-range { color: var(--vv-muted); font-size: 0.875rem; }
@@ -87,3 +87,15 @@ html .vv-theme-toggle .theme-toggle svg { height: 24px; width: auto; }
   .vv-cases td { border: 0; padding: 4px 12px; }
   .vv-cases td::before { content: attr(data-label); display: block; font-size: 0.75rem; color: var(--vv-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 }
+
+/* Nested measured values: collapsed table inside the Result cell */
+.vv-cases .vv-values { margin-top: 0.4rem; }
+.vv-cases .vv-values summary { cursor: pointer; color: var(--vv-muted); font-size: 0.875rem; }
+.vv-values-wrap { max-height: 24rem; overflow: auto; margin-top: 0.4rem; }
+.vv-cases .vv-values-table { display: table; width: max-content; table-layout: auto; font-size: 0.75rem; overflow-wrap: normal; }
+.vv-cases .vv-values-table thead { display: table-header-group; }
+.vv-cases .vv-values-table tbody { display: table-row-group; width: auto; }
+.vv-cases .vv-values-table tr { display: table-row; width: auto; border: 0; margin: 0; padding: 0; }
+.vv-cases .vv-values-table th, .vv-cases .vv-values-table td { display: table-cell; width: auto; padding: 2px 6px; text-align: right; white-space: nowrap; border: 0; }
+.vv-cases .vv-values-table th { white-space: normal; vertical-align: bottom; line-height: 1.2; }
+.vv-cases .vv-values-table td::before { content: none; }
