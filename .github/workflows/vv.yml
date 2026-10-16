@@ -58,9 +58,14 @@ jobs:
         if [ "$EVENT" = workflow_dispatch ]; then
           recompute=${RECOMPUTE_INPUT:-false}
         elif [ "$EVENT" = push ]; then
-          base=$(gh api \
+          out=$(gh api \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/vv.yml/runs?branch=main&event=push&status=success&per_page=1" \
-            --jq '.workflow_runs[0].head_sha // empty' || true)
+            --jq '.workflow_runs[0] | "\(.id) \(.head_sha)"' || true)
+          run_id=${out%% *} base=${out#* }
+          # Reuse needs that run's results; once they have expired, recompute.
+          live=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+            --jq '[.artifacts[] | select(.expired | not) | .name] | map(select(. == "vv-test-results" or . == "executed-notebooks")) | length' || echo 0)
+          [ "$live" = 2 ] || base=
         fi
         if [ -n "${base:-}" ] && git fetch -q --depth=1 origin "$base" 2>/dev/null; then
           git diff --name-only --no-renames "$base" HEAD > "${{ runner.temp }}/changed.txt"
