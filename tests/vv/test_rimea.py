@@ -263,6 +263,8 @@ class TestRiMEA04FundamentalDiagram:
         STANDARDS_DIR / "rimea" / "scenario_files" / "Rimea-04-fundamental-diagram.zip"
     )
     AGENT_COUNTS: ClassVar[list] = [1000, 2000, 4000, 6000]
+    SEED = 42
+    SPEED_TOLERANCE = 0.05  # allowed speed rise between sweep steps, m/s
     T_MIN = 10.0
     T_MAX = 60.0
     MEASURING_AREAS: ClassVar[dict] = {
@@ -304,7 +306,7 @@ class TestRiMEA04FundamentalDiagram:
             number_of_agents=number_of_agents,
             distance_to_agents=distribution_params["radius"] * 2,
             distance_to_polygon=distribution_params["radius"],
-            seed=42,
+            seed=cls.SEED,
         )
         for position in positions:
             simulation.add_agent(
@@ -363,7 +365,7 @@ class TestRiMEA04FundamentalDiagram:
             }
         return measurements
 
-    def test_speed_density_relation(self):
+    def test_speed_density_relation(self, vv_row):
         with zipfile.ZipFile(self.SCENARIO_ZIP) as zf:
             raw = json.loads(zf.read("config.json"))
             geometry = wkt.loads(zf.read("geometry.wkt").decode("utf-8"))
@@ -372,6 +374,25 @@ class TestRiMEA04FundamentalDiagram:
             self._run_density(raw, geometry, number_of_agents)
             for number_of_agents in self.AGENT_COUNTS
         ]
+        vv_row.set(
+            quantity="density_speed_flow_by_population",
+            unit="P/m^2, m/s, P/(m s)",
+            measured={
+                name: {
+                    key: [m[name][key] for m in sweep_measurements]
+                    for key in ("density", "speed", "flow")
+                }
+                for name in self.MEASURING_AREAS
+            },
+            n=max(self.AGENT_COUNTS), seed=self.SEED, model="WarpDriverModel",
+            scenario_file="standards/rimea/scenario_files/Rimea-04-fundamental-diagram.zip",
+            rule=(
+                f"comparison over populations {self.AGENT_COUNTS}: density "
+                "strictly increases; bound: speed rise between consecutive "
+                f"populations <= {self.SPEED_TOLERANCE} m/s; "
+                f"window {self.T_MIN:g}-{self.T_MAX:g} s, per measuring area"
+            ),
+        )
 
         for name in self.MEASURING_AREAS:
             values = [measurement[name] for measurement in sweep_measurements]
@@ -387,9 +408,7 @@ class TestRiMEA04FundamentalDiagram:
             assert np.all(np.diff(densities) > 0), (
                 f"{name}: density did not increase with population: {densities}"
             )
-            SPEED_TOLERANCE = 0.05
-
-            assert np.all(np.diff(speeds) <= SPEED_TOLERANCE), (
+            assert np.all(np.diff(speeds) <= self.SPEED_TOLERANCE), (
                 f"{name}: speed increased with density beyond tolerance: {speeds}"
             )
 
@@ -628,6 +647,7 @@ class TestRiMEA08ParameterStudy:
 
     SEED = 42
     MAX_SIMULATION_TIME = 600.0
+    TOLERANCE_FRACTION = 0.30
 
     @classmethod
     def _run(cls, desired_speeds):
@@ -649,13 +669,22 @@ class TestRiMEA08ParameterStudy:
 
         return evacuation_time
 
-    def test_evacuation_time_decreases_as_speed_increases(self):
+    def test_evacuation_time_decreases_as_speed_increases(self, vv_row):
         """Increasing desired speed must decrease evacuation time."""
         desired_speeds = [1.0, 1.25, 1.5, 2.0]
 
         evacuation_times = [
             self._run(rimea08_v0_constant(speed)) for speed in desired_speeds
         ]
+        vv_row.set(
+            quantity="evacuation_time_by_desired_speed", unit="s",
+            measured=evacuation_times, n=RIMEA08_N_AGENTS, seed=self.SEED,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                f"comparison over desired speeds {desired_speeds} m/s: "
+                "evacuation time strictly decreases as speed increases"
+            ),
+        )
 
         for slower_speed, faster_speed, slower_time, faster_time in zip(
             desired_speeds,
@@ -670,7 +699,7 @@ class TestRiMEA08ParameterStudy:
                 f"{slower_time:.2f} s versus {faster_time:.2f} s"
             )
 
-    def test_speed_distribution_sensitivity(self):
+    def test_speed_distribution_sensitivity(self, vv_row):
         """Different speed spreads with the same mean remain comparable."""
         constant_time = self._run(rimea08_v0_constant(1.25))
         narrow_distribution_time = self._run(
@@ -688,7 +717,21 @@ class TestRiMEA08ParameterStudy:
             )
         )
 
-        tolerance = 0.30 * constant_time
+        tolerance = self.TOLERANCE_FRACTION * constant_time
+        vv_row.set(
+            quantity="evacuation_time_by_speed_distribution", unit="s",
+            measured={
+                "constant_1.25": constant_time,
+                "uniform_1.00_1.50": narrow_distribution_time,
+                "uniform_0.75_1.75": wide_distribution_time,
+            },
+            n=RIMEA08_N_AGENTS, seed=self.SEED, model="CollisionFreeSpeedModel",
+            rule=(
+                f"bound: |time(uniform) - time(constant 1.25 m/s)| < "
+                f"{self.TOLERANCE_FRACTION:.0%} of time(constant) "
+                "for both uniform spreads"
+            ),
+        )
 
         assert abs(narrow_distribution_time - constant_time) < tolerance, (
             "The U(1.00, 1.50) evacuation time differs by more than 30% "
