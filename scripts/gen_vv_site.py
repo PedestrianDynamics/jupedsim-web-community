@@ -10,7 +10,6 @@ Inputs:
 Output (--hugo-content, for example site/content; the Hugo project in site/
 holds the theme, layouts and styles):
   content/_index.md                          summary, cards, references
-  content/diagnostics.md                     join diagnostics
   content/standards/<std>/_index.md          grouped test table
   content/standards/<std>/<slug>/index.md    one page bundle per test
   data/run.json                              versions and run provenance
@@ -661,25 +660,12 @@ def summary_page(model) -> str:
     return "\n".join(lines) + "\n"
 
 
-def diagnostics_page(model) -> str:
-    # Maintainer page: reachable from the footer, kept out of the sidebar,
-    # the search index and search engines.
+def join_diagnostics(orphans, no_results) -> str:
+    """Maintainer check as a markdown section for the CI run summary."""
     lines = [
-        front_matter(
-            title="Join diagnostics",
-            sidebar={"exclude": True},
-            excludeSearch=True,
-            noindex=True,
-        )
-    ]
-    if not model["has_results"]:
-        lines.append("Test results are not available in this run.")
-        return "\n".join(lines) + "\n"
-    orphans, no_results = model["orphans"], model["no_results"]
-    lines += [
         (
-            f"Result rows mapped to no coverage row: {len(orphans)}. "
-            f"Covered rows with no result rows: {len(no_results)}."
+            f"## Join diagnostics: {len(orphans)} unmapped result rows, "
+            f"{len(no_results)} covered rows without results"
         ),
         "",
     ]
@@ -688,7 +674,7 @@ def diagnostics_page(model) -> str:
         ("Covered rows with no result rows", no_results),
     ):
         if items:
-            lines += [f"## {title}", ""] + [f"- `{t}`" for t in items] + [""]
+            lines += [f"### {title}", ""] + [f"- `{t}`" for t in items] + [""]
     return "\n".join(lines) + "\n"
 
 
@@ -1098,7 +1084,6 @@ def build_site(
     }
     clean_generated(content_dir, static_dir)
     write(content_dir / "_index.md", summary_page(model))
-    write(content_dir / "diagnostics.md", diagnostics_page(model))
     write(content_dir / "standards" / "_index.md", standards_index(standards))
     for weight, s in enumerate(standards, start=1):
         write_standard(ctx, s, weight)
@@ -1143,9 +1128,13 @@ def main(argv=None) -> int:
         repo_root,
     )
     for t in orphans:
-        print(f"join: results row maps to no coverage row: {t}", file=sys.stderr)
+        print(f"join: results row maps to no coverage row: {t}")
     for t in no_results:
-        print(f"join: covered row has no results rows: {t}", file=sys.stderr)
+        print(f"join: covered row has no results rows: {t}")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as f:
+            f.write(join_diagnostics(orphans, no_results))
     return 0
 
 
