@@ -265,10 +265,8 @@ def render_html(data: list, stamp: str) -> str:
     parts.append("<div class=overall>")
     for key, lbl in [
         ("pass", "Pass"),
-        ("notebook", "Notebook"),
+        ("test-local", "Test-Local"),
         ("xfail", "XFail"),
-        ("skip", "Skip"),
-        ("pending", "Pending"),
         ("not-supported", "Not Supported"),
         ("fail", "Fail"),
     ]:

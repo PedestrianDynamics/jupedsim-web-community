@@ -32,6 +32,11 @@ import numpy as np
 import pytest
 from shapely.geometry import Point, Polygon
 from vv_helpers import HAS_VV_DEPS
+from test_nist import (
+    TestNist25ReducedVisibility,
+    TestNist26OccupantIncapacitation,
+)
+
 
 STANDARDS_DIR = pathlib.Path(__file__).resolve().parents[2] / "standards"
 SCENARIO_FILES = STANDARDS_DIR / "iso" / "scenario_files"
@@ -942,3 +947,47 @@ class TestIso17RouteChoice:
             "geometry error: shortcut is not shorter than the long way"
         )
         assert choice["frac_shortcut"] > 0.5, choice
+
+
+# ---------------------------------------------------------------------------
+# Test 18 - Reduced visibility vs walking speed
+# ---------------------------------------------------------------------------
+
+
+class TestIso18ReducedVisibility(TestNist25ReducedVisibility):
+    """ISO 20414:2020 Test 18 - Reduced visibility vs walking speed.
+
+    Reuses the NIST 2.5 simulation and smoke-speed adapter.
+
+    The test compares simulated travel time with the analytical
+    prediction obtained from the selected speed-reduction correlation.
+
+    Limitation:
+        The reused NIST scenario has a 120 m corridor with a
+        100 m measurement section, rather than the 100 m corridor
+        specified by ISO Table 21.
+
+        Smoke effects are implemented through an external adapter,
+        not a native JuPedSim smoke model.
+    """
+
+
+# ---------------------------------------------------------------------------
+# Test 19 - Occupant incapacitation by fire/smoke
+# ---------------------------------------------------------------------------
+
+
+class TestIso19OccupantIncapacitation(TestNist26OccupantIncapacitation):
+    """ISO 20414:2020 Test 19 - Occupant incapacitation by fire/smoke.
+
+    Reuses the NIST 2.6 FED verification implementation.
+
+    The test compares the simulated time to FED=1 against an
+    independent analytical calculation under constant exposure.
+
+    The occupant remains stationary in a 10 m x 10 m room.
+
+    Limitation:
+        FED accumulation is implemented by an external V&V
+        adapter rather than a native JuPedSim hazard model.
+    """

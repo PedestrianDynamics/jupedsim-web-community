@@ -224,14 +224,14 @@
       "id": "Test 18",
       "name": "Reduced visibility",
       "criterion": "Reuse the NIST 2.5 reduced-visibility verification adapter",
-      "status": "pending",
+      "status": "test-local",
       "note": "Feasible using the existing NIST 2.5 test-local adapter. Implementation pending."
     },
     {
       "id": "Test 19",
       "name": "Occupant incapacitation",
       "criterion": "Reuse the NIST 2.6 FED verification adapter",
-      "status": "pending",
+      "status": "test-local",
       "note": "Feasible using the existing NIST 2.6 test-local adapter. Implementation pending."
     },
     {
