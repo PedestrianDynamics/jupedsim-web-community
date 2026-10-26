@@ -51,6 +51,7 @@ STATUS_META = {
     "pending": ("PENDING", "pending"),
     "notebook": ("NOTEBOOK", "notebook"),
     "test-local": ("TEST-LOCAL", "test-local"),
+    "not-supported": ("NOT SUPPORTED", "not-supported"),
 }
 
 
@@ -85,7 +86,7 @@ def parse_junit(xml_path: pathlib.Path) -> dict:
 def resolve(entry: dict, junit: dict) -> str:
     """Resolve a manifest entry to a live status token."""
     declared = entry.get("status", "pending")
-    if declared in ("pending", "notebook"):
+    if declared in ("pending", "notebook", "not-supported"):
         return declared
     # "covered" is the manifest's word for "expected to pass"; the render/count
     # token for a pass is "pass".
@@ -117,7 +118,7 @@ def resolve(entry: dict, junit: dict) -> str:
 
 def summarise(standard: dict, junit: dict) -> dict:
     rows = []
-    counts = {"pass": 0, "fail": 0, "xfail": 0, "skip": 0, "pending": 0, "notebook": 0}
+    counts = {"pass": 0, "fail": 0, "xfail": 0, "skip": 0, "pending": 0, "notebook": 0, "test-local": 0, "not-supported": 0,}
     for t in standard["tests"]:
         st = resolve(t, junit)
         counts[st] = counts.get(st, 0) + 1
@@ -142,6 +143,7 @@ MD_ICON = {
     "pending": ":hourglass_flowing_sand:",
     "notebook": ":ledger:",
     "test-local": ":label:",
+    "not-supported": "no_entry_sign",
 }
 
 
@@ -160,9 +162,14 @@ def render_markdown(data: list, stamp: str) -> str:
         out.append("")
     # legend
     out.append(
-        "Legend: :white_check_mark: pass · :warning: xfail (known model limitation) · "
-        ":ledger: notebook-demonstrated · :fast_forward: skip (placeholder) · "
-        ":hourglass_flowing_sand: pending (not implemented) · :x: fail\n"
+        "Legend: :white_check_mark: pass · "
+        ":warning: xfail (criterion not met) · "
+        ":ledger: notebook-demonstrated · "
+        ":fast_forward: skip (placeholder) · "
+        ":label: test-local (tests adapter or configuration logic) · "
+        ":hourglass_flowing_sand: pending (feasible but not implemented) · "
+        ":no_entry_sign: not-supported (required functionality unavailable) · "
+        ":x: fail\n"
     )
     return "\n".join(out)
 
@@ -204,6 +211,7 @@ td.id{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}
 letter-spacing:.02em;color:#fff;white-space:nowrap}
 .badge.pass{background:var(--pass)}.badge.fail{background:var(--fail)}.badge.xfail{background:var(--xfail)}
 .badge.skip{background:var(--skip)}.badge.test-local{background:var(--skip)}.badge.pending{background:var(--pending)}.badge.notebook{background:var(--notebook)}
+.badge.not-supported{background:var(--not-supported)}
 .legend{color:var(--muted);font-size:.82rem;margin-top:1.5rem;line-height:1.9}
 .legend .badge{margin-right:.25rem}
 .tablewrap{overflow-x:auto}a{color:var(--notebook)}
@@ -212,21 +220,32 @@ letter-spacing:.02em;color:#fff;white-space:nowrap}
 
 def bar_segments(counts: dict, total: int) -> str:
     segs = []
-    order = ["pass", "notebook", "xfail", "skip", "test-local", "fail", "pending"]
-    # pending fills the remainder up to total_defined
-    accounted = sum(counts.get(k, 0) for k in order if k != "pending")
-    counts = dict(counts)
-    counts["pending"] = max(counts.get("pending", 0), total - accounted)
+
+    order = [
+        "pass",
+        "notebook",
+        "xfail",
+        "skip",
+        "test-local",
+        "fail",
+        "not-supported",
+        "pending",
+    ]
+
     for k in order:
         n = counts.get(k, 0)
+
         if n:
             pct = 100 * n / total if total else 0
-            segs.append(f'<i class="{k}" style="width:{pct:.4f}%"></i>')
+            segs.append(
+                f'<i class="{k}" style="width:{pct:.4f}%"></i>'
+            )
+
     return "".join(segs)
 
 
 def render_html(data: list, stamp: str) -> str:
-    totals = {"pass": 0, "fail": 0, "xfail": 0, "skip": 0, "pending": 0, "notebook": 0}
+    totals = {"pass": 0, "fail": 0, "xfail": 0, "skip": 0, "pending": 0, "notebook": 0, "test-local": 0, "not-supported": 0,}
     for _std, s in data:
         for k in totals:
             totals[k] += s["counts"].get(k, 0)
@@ -250,6 +269,7 @@ def render_html(data: list, stamp: str) -> str:
         ("xfail", "XFail"),
         ("skip", "Skip"),
         ("pending", "Pending"),
+        ("not-supported", "Not Supported"),
         ("fail", "Fail"),
     ]:
         parts.append(f'<div class=stat><b>{totals[key]}</b><span>{lbl}</span></div>')
@@ -286,11 +306,12 @@ def render_html(data: list, stamp: str) -> str:
     parts.append(
         '<p class=legend>'
         '<span class="badge pass">PASS</span> criterion asserted &amp; met · '
-        '<span class="badge xfail">XFAIL</span> criterion asserted but blocked by a model limitation · '
+        '<span class="badge xfail">XFAIL</span> criterion asserted but not met (known limitation) · '
         '<span class="badge notebook">NOTEBOOK</span> demonstrated in a notebook (no automated assert) · '
         '<span class="badge skip">SKIP</span> placeholder test · '
         '<span class="badge test-local">TEST-LOCAL</span> asserts test-file logic, not simulator output (see note) · '
-        '<span class="badge pending">PENDING</span> defined by the standard, not implemented · '
+        '<span class="badge pending">PENDING</span> feasible but not implemented · '
+        '<span class="badge not-supported">NOT SUPPORTED</span> required functionality unavailable in JuPedSim · '
         '<span class="badge fail">FAIL</span> asserted &amp; failing'
         "</p>")
     parts.append("</div></body></html>")
