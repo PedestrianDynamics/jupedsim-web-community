@@ -127,6 +127,12 @@ When reporting issues, please include:
 
 This repository is public and community-facing. It is the right place for issues, discussions, docs, local examples, and public scenario tooling. Private backend, web application, and deployment internals remain outside this repository.
 
+## Acknowledgements
+
+Thanks to Yingying Chen (Massey University) for the character meshes and
+animations and Ruggiero Lovreglio (Massey University) for the animation
+mixer used in the 3D playback.
+
 ## License
 
 This documentation is provided under the MIT License.
