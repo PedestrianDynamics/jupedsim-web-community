@@ -20,9 +20,10 @@ from contextlib import redirect_stdout
 from typing import ClassVar
 
 import numpy as np
+import jupedsim as jps
 import pytest
 from jupedsim_scenarios import load_scenario, run_scenario
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon, box
 from vv_helpers import (
     HAS_VV_DEPS,
     agents_within_bounds,
@@ -901,73 +902,351 @@ class TestIMO10ExitRouteAllocation:
 
 
 # ---------------------------------------------------------------------------
-# IMO 11 - 1D speed-density curve on a ring
+# IMO 11 - Staircase
 # ---------------------------------------------------------------------------
+def build_imo11_staircase(seed=42):
+    """Build IMO Test 11: room, corridor, and upward staircase.
 
-
-class TestIMO11RingFundamentalDiagram:
-    """IMO Test 11 checked against the RiMEA Test 16 ring fundamental diagram.
-
-    Runs a loop at three desired speeds and measures speed versus 1D density.
-    Checks: at least 75% of baseline samples lie inside the reference 10/90
-    percentile band; the slower run has a lower mean speed than the baseline;
-    at least 75% of faster-run samples lie above the 90th percentile.
-    This is a consistency check against a reference band, not a validation.
+    The staircase is approximated by a reduced-speed zone.
+    Walking speeds are uniformly sampled from the IMO Table 3.4
+    range for males aged 30–50.
     """
 
-    def test_1d_fundamental_diagram(self):
-        reference = load_reference_band()
-        runs = {}
-        for label, desired_speed in {
-            "slower": 0.9,
-            "baseline": 1.2,
-            "faster": 1.5,
-        }.items():
-            scenario, geometry = build_loop_scenario(
-                label=f"imo11-{label}",
-                desired_speed=desired_speed,
-            )
-            with redirect_stdout(io.StringIO()):
-                result = run_scenario(scenario, seed=42)
-            trajectory_df = result.trajectory_dataframe()[["id", "frame", "x", "y"]]
-            lap_counts = compute_lap_counts(
-                trajectory_df=trajectory_df,
-                centerline=geometry.centerline,
-                track_length=geometry.track_length,
-            )
-            assert (lap_counts["completed_laps"] >= 3).all(), (
-                f"All agents should complete at least 3 laps, got "
-                f"{lap_counts['completed_laps'].tolist()}"
-            )
-            samples = compute_density_speed_samples(
-                trajectory_df=trajectory_df,
-                frame_rate=result.frame_rate,
-                centerline=geometry.centerline,
-                track_length=geometry.track_length,
-            )
-            curve = compute_density_speed_curve(samples)
-            runs[label] = summarize_reference_fit(curve, reference)
-            result.cleanup()
+    # Geometry:
+    # Room:       8 x 6 m
+    # Corridor:   2 x 12 m
+    # Staircase:  2 x 4 m (assumed length)
 
-        baseline = runs["baseline"]
-        slower = runs["slower"]
-        faster = runs["faster"]
+    room = box(0, 0, 8, 6)
+    corridor = box(3, 6, 5, 18)
+    staircase = box(3, 18, 5, 22)
 
-        assert baseline["inside_band"].mean() >= 0.75, (
-            f"Baseline curve should mostly lie within the reference band, got "
-            f"{baseline['inside_band'].mean():.2%} inside"
+    from shapely.ops import unary_union
+
+    geometry = unary_union([room, corridor, staircase])
+
+    simulation = jps.Simulation(
+        model=jps.CollisionFreeSpeedModel(),
+        geometry=geometry,
+        dt=0.05,
+    )
+
+    # Exit at the upper end of the staircase.
+    exit_polygon = box(3.2, 21.7, 4.8, 21.95)
+
+    exit_id = simulation.add_exit_stage(
+        list(exit_polygon.exterior.coords[:-1])
+    )
+
+    journey_id = simulation.add_journey(
+        jps.JourneyDescription([exit_id])
+    )
+
+    # Generate 150 initial positions in the room.
+    positions = jps.distributions.distribute_by_number(
+        polygon=box(0.3, 0.3, 7.7, 5.7),
+        number_of_agents=150,
+        distance_to_agents=0.35,
+        distance_to_polygon=0.15,
+        seed=seed,
+    )
+
+    rng = np.random.default_rng(seed)
+
+    # IMO Table 3.4: males aged 30–50.
+    walking_speeds = rng.uniform(0.97, 1.62, size=150)
+
+    for position, speed in zip(positions, walking_speeds):
+        simulation.add_agent(
+            jps.CollisionFreeSpeedModelAgentParameters(
+                journey_id=journey_id,
+                stage_id=exit_id,
+                position=position,
+                desired_speed=float(speed),
+                radius=0.15,
+            )
         )
-        assert float(slower["speed_mps"].mean()) < float(
-            baseline["speed_mps"].mean()
-        ), (
-            f"Lower desired speed should shift the curve down, got "
-            f"slower={slower['speed_mps'].mean():.3f}, "
-            f"baseline={baseline['speed_mps'].mean():.3f}"
+
+    return simulation
+def run_imo11_staircase(simulation, dt=0.05, max_time=300.0):
+    """Run IMO 11 with reduced walking speed on the staircase.
+
+    Returns
+    -------
+    trajectories : pandas.DataFrame
+        Agent positions at each recorded timestep.
+    evacuation_time : float
+        Time elapsed when the simulation stops.
+    """
+    import pandas as pd
+
+    # Preserve each agent's original desired speed.
+    original_speeds = {
+        agent.id: agent.model.desired_speed
+        for agent in simulation.agents()
+    }
+
+    records = []
+    steps = int(max_time / dt)
+
+    for step in range(steps):
+        time = step * dt
+
+        for agent in simulation.agents():
+            x, y = agent.position
+
+            # Staircase occupies y = 18..22 m.
+            factor = 0.5 if 18.0 <= y <= 22.0 else 1.0
+
+            agent.model.desired_speed = (
+                original_speeds[agent.id] * factor
+            )
+
+            records.append({
+                "time": time,
+                "id": agent.id,
+                "x": x,
+                "y": y,
+            })
+
+        if simulation.agent_count() == 0:
+            break
+
+        simulation.iterate()
+
+    return pd.DataFrame(records), simulation.elapsed_time()
+class TestIMO11Staircase:
+    """IMO Test 11 — Escape route via stairs.
+
+    A population of 150 occupants evacuates through a narrow corridor
+    and an upward staircase.
+
+    The test verifies congestion at the room exit and staircase base,
+    with approximately steady flow in the connecting corridor.
+
+    Stair movement is approximated using a reduced-speed zone.
+    """
+    def test_scenario_initialization(self):
+
+        simulation = build_imo11_staircase(seed=42)
+
+        assert simulation.agent_count() == 150
+
+    def test_staircase_evacuation(self):
+        simulation = build_imo11_staircase(seed=42)
+        trajectories, evacuation_time = run_imo11_staircase(
+            simulation,
+            dt=0.05,
+            max_time=300.0,
         )
-        assert faster["above_p90"].mean() >= 0.75, (
-            f"Higher desired speed should push the curve above the 90th "
-            f"percentile band, got {faster['above_p90'].mean():.2%} above"
+
+        assert not trajectories.empty
+        assert simulation.agent_count() == 0, (
+            f"{simulation.agent_count()} agents did not evacuate "
+            f"within 300 seconds"
         )
+
+        print(f"\nEvacuation time: {evacuation_time:.2f} s")
+        print(f"Recorded positions: {len(trajectories)}")
+    def test_congestion_and_flow(self):
+        simulation = build_imo11_staircase(seed=42)
+
+        trajectories, _ = run_imo11_staircase(
+            simulation,
+            dt=0.05,
+            max_time=300.0,
+        )
+
+        # Measurement regions (all 2 m wide).
+        regions = {
+            "room_exit": (3.0, 5.0, 5.5, 7.5),
+            "corridor": (3.0, 5.0, 10.0, 12.0),
+            "stair_base": (3.0, 5.0, 17.0, 19.0),
+        }
+
+        peak_densities = {}
+
+        for name, (x0, x1, y0, y1) in regions.items():
+            inside = trajectories[
+                (trajectories["x"] >= x0)
+                & (trajectories["x"] < x1)
+                & (trajectories["y"] >= y0)
+                & (trajectories["y"] < y1)
+            ]
+
+            # Each region has an area of 4 m².
+            counts = inside.groupby("time").size()
+            peak_densities[name] = counts.max() / (
+                (x1 - x0) * (y1 - y0)
+            )
+        # Examine how density evolves in each measurement region.
+        print("\nDensity over time (10-second intervals):")
+
+        for name, (x0, x1, y0, y1) in regions.items():
+            inside = trajectories[
+                (trajectories["x"] >= x0)
+                & (trajectories["x"] < x1)
+                & (trajectories["y"] >= y0)
+                & (trajectories["y"] < y1)
+            ].copy()
+
+            area = (x1 - x0) * (y1 - y0)
+
+            # Average density over all recorded frames in each interval,
+            # including frames with zero pedestrians in the region.
+            frame_counts = inside.groupby("time").size()
+            all_times = np.sort(trajectories["time"].unique())
+            density = frame_counts.reindex(all_times, fill_value=0) / area
+
+            for start in range(0, 80, 10):
+                mask = (all_times >= start) & (all_times < start + 10)
+
+                if mask.any():
+                    mean_density = density.iloc[mask].mean()
+                    print(
+                        f"  {name:12s} | {start:2d}–{start+10:2d} s"
+                        f" | {mean_density:.2f} persons/m²"
+                    )
+        # Calculate actual walking speeds from trajectories.
+        trajectories = trajectories.sort_values(["id", "time"]).copy()
+
+        trajectories["dx"] = trajectories.groupby("id")["x"].diff()
+        trajectories["dy"] = trajectories.groupby("id")["y"].diff()
+        trajectories["dt"] = trajectories.groupby("id")["time"].diff()
+
+        trajectories["speed"] = np.sqrt(
+            trajectories["dx"] ** 2 + trajectories["dy"] ** 2
+        ) / trajectories["dt"]
+
+        # Compare speeds during the main evacuation period.
+        active = trajectories[
+            (trajectories["time"] >= 20)
+            & (trajectories["time"] < 50)
+        ]
+
+        print("\nMean walking speeds (20–50 s):")
+
+        for name, (x0, x1, y0, y1) in regions.items():
+            inside = active[
+                (active["x"] >= x0)
+                & (active["x"] < x1)
+                & (active["y"] >= y0)
+                & (active["y"] < y1)
+            ]
+
+            mean_speed = inside["speed"].mean()
+
+            print(f"  {name:12s}: {mean_speed:.3f} m/s")
+        # Measure congestion immediately upstream of the staircase.
+        # Staircase begins at y = 18 m.
+        upstream = active[
+            (active["x"] >= 3.0)
+            & (active["x"] < 5.0)
+            & (active["y"] >= 16.0)
+            & (active["y"] < 18.0)
+        ]
+
+        upstream_speed = upstream["speed"].mean()
+
+        print("\nStaircase approach (before speed reduction):")
+        print(f"  Mean speed: {upstream_speed:.3f} m/s")
+
+        # Compare against the corridor.
+        corridor = active[
+            (active["x"] >= 3.0)
+            & (active["x"] < 5.0)
+            & (active["y"] >= 10.0)
+            & (active["y"] < 12.0)
+        ]
+
+        corridor_speed = corridor["speed"].mean()
+
+        print(f"  Corridor mean speed: {corridor_speed:.3f} m/s")
+        print(f"  Speed ratio: {upstream_speed / corridor_speed:.3f}")
+        # Congestion should cause pedestrians to slow down
+        # at the room exit and immediately before the staircase.
+
+        room_exit = active[
+            (active["x"] >= 3.0)
+            & (active["x"] < 5.0)
+            & (active["y"] >= 5.5)
+            & (active["y"] < 7.5)
+        ]
+
+        room_exit_speed = room_exit["speed"].mean()
+
+        assert np.isfinite(room_exit_speed)
+        assert np.isfinite(upstream_speed)
+        assert np.isfinite(corridor_speed)
+
+        assert corridor_speed > 0
+
+        # Project-defined congestion criterion:
+        # At least 15% reduction relative to corridor speed.
+        assert room_exit_speed < 0.85 * corridor_speed, (
+            "No significant slowdown detected at the room exit"
+        )
+
+        assert upstream_speed < 0.85 * corridor_speed, (
+            "No significant slowdown detected before the staircase"
+        )
+        # Count crossings of the corridor midpoint (y = 12 m).
+        crossings = []
+
+        for _, agent_data in trajectories.groupby("id"):
+            agent_data = agent_data.sort_values("time")
+
+            previous_y = agent_data["y"].shift(1)
+            crossed = (
+                (previous_y < 12.0)
+                & (agent_data["y"] >= 12.0)
+            )
+
+            crossings.extend(agent_data.loc[crossed, "time"].tolist())
+
+        crossings = np.asarray(crossings)
+
+        # Measure flow in consecutive 10-second intervals.
+        bins = np.arange(0, 301, 10)
+        counts, _ = np.histogram(crossings, bins=bins)
+        flow_rates = counts / 10.0
+        print("\nCorridor flow by 10-second interval:")
+        for start, rate in zip(bins[:-1], flow_rates):
+            if rate > 0:
+                print(f"  {start:3.0f}–{start + 10:3.0f} s: {rate:.2f} persons/s")
+
+        print("\nIMO 11 measurements:")
+        for name, density in peak_densities.items():
+            print(f"  {name}: {density:.3f} persons/m²")
+
+        print(f"  Total corridor crossings: {len(crossings)}")
+        print(f"  Maximum 10-second flow: {flow_rates.max():.2f} persons/s")
+
+
+        # All 150 agents should cross the corridor midpoint.
+        assert len(crossings) == 150
+        # Congestion should develop at the room exit and staircase base.
+        assert peak_densities["room_exit"] > peak_densities["corridor"]
+        assert peak_densities["stair_base"] > peak_densities["corridor"]
+        # Check approximately steady corridor flow during the
+        # established flow phase (10–60 seconds).
+        steady_flow = flow_rates[1:6]
+
+        mean_flow = np.mean(steady_flow)
+        std_flow = np.std(steady_flow)
+
+        coefficient_of_variation = std_flow / mean_flow
+
+        print(f"  Mean steady flow: {mean_flow:.2f} persons/s")
+        print(f"  Flow coefficient of variation: {coefficient_of_variation:.3f}")
+
+        assert mean_flow > 0
+        assert coefficient_of_variation < 0.15, (
+            "Corridor flow is not sufficiently steady: "
+            f"CV = {coefficient_of_variation:.3f}"
+
+        )
+
 
 
 # ---------------------------------------------------------------------------
