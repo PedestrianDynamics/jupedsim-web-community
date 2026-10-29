@@ -17,7 +17,8 @@
         {"id": "IMO 8", "name": "Counterflow", "criterion": "Counterflow increases evacuation time", "status": "covered", "test": "TestIMO08Counterflow"},
         {"id": "IMO 9", "name": "Exit-count sensitivity", "criterion": "Halving the exits increases evacuation time", "status": "covered", "test": "TestIMO09ExitCountSensitivity"},
         {"id": "IMO 10", "name": "Exit route allocation", "criterion": "Agents use assigned escape routes", "status": "covered", "test": "TestIMO10ExitRouteAllocation"},
-        {"id": "IMO 11", "name": "Congestion / flow on stairs", "criterion": "Baseline 1D speed-density samples at least 75% inside the reference 10/90 band; slower run has lower mean speed than baseline; faster run at least 75% above the 90th percentile", "status": "covered", "test": "TestIMO11RingFundamentalDiagram"}
+        {"id": "IMO 11", "name": "Congestion / flow on stairs", "criterion": "Congestion develops at the room exit and staircase base, with approximately steady flow through the corridor", "status": "covered", "test": "TestIMO11Staircase"},
+        {"id": "IMO 12", "name": "Flow-density relation", "criterion": "Pedestrian flow at very high density is lower than at moderate density in an unobstructed corridor", "status": "covered", "test": "TestIMO12FlowDensityRelation"}
       ]
     },
     {
@@ -74,181 +75,33 @@
       ]
     },
     {
-  "id": "iso",
-  "name": "ISO 20414:2020",
-  "full_name": "Fire safety engineering - Verification and validation protocol for building fire evacuation models",
-  "verification": "pytest",
-  "tests": [
-    {
-      "id": "Test 1",
-      "name": "Pre-evacuation time assignment",
-      "criterion": "Start times fit the assigned distribution (two-sample KS, alpha=0.05)",
-      "status": "covered",
-      "test": "TestIso01Premovement",
-      "notebook": "standards/iso/iso01_premovement.ipynb"
-    },
-    {
-      "id": "Test 2",
-      "name": "Walking speed in a corridor",
-      "criterion": "Walking speed 1.0 +/- 0.05 m/s over the 40 m segment",
-      "status": "covered",
-      "test": "TestIso02CorridorSpeed",
-      "notebook": "standards/iso/iso02_corridor_speed.ipynb"
-    },
-    {
-      "id": "Test 3",
-      "name": "Walking speed on stairs",
-      "criterion": "Stair speed 0.5 +/- 0.05 m/s in the speed-factor zone",
-      "status": "covered",
-      "test": "TestIso03Stairs",
-      "notebook": "standards/iso/iso03_stairs.ipynb"
-    },
-    {
-      "id": "Test 4",
-      "name": "Movement around a corner",
-      "criterion": "All agents evacuate; no boundary penetration",
-      "status": "covered",
-      "test": "TestIso04Corner",
-      "notebook": "standards/iso/iso04_corner.ipynb"
-    },
-    {
-      "id": "Test 5",
-      "name": "Assigned occupant demographics",
-      "criterion": "Realized speeds match Gaussian(1.2, 0.2) (pooled mean/std + KS)",
-      "status": "covered",
-      "test": "TestIso05Demographics",
-      "notebook": "standards/iso/iso05_demographics.ipynb"
-    },
-    {
-      "id": "Test 6",
-      "name": "Horizontal counter-flows",
-      "criterion": "Crossing time increases with counterflow",
-      "status": "xfail",
-      "test": "TestIso06Counterflow",
-      "notebook": "standards/iso/iso06_counterflow.ipynb",
-      "note": "No lane formation in CollisionFreeSpeedModel; the primary crowd deadlocks at >= 50 counterflow agents, so the crossing time is undefined."
-    },
-    {
-      "id": "Test 7",
-      "name": "Overtaking people with movement disabilities",
-      "criterion": "A slower, larger occupant increases total evacuation time",
-      "status": "covered",
-      "test": "TestIso07MovementDisabilities",
-      "notebook": "standards/iso/iso07_movement_disabilities.ipynb"
-    },
-    {
-      "id": "Test 8",
-      "name": "Exit route allocation",
-      "criterion": "Every agent reaches its allocated exit",
-      "status": "covered",
-      "test": "TestIso08RouteAllocation",
-      "notebook": "standards/iso/iso08_route_allocation.ipynb"
-    },
-    {
-      "id": "Test 9",
-      "name": "Dynamic availability of exits",
-      "criterion": "An occupant reroutes when its initially selected exit becomes unavailable",
-      "status": "not-supported",
-      "test": "TestIso09DynamicExitAvailability",
-      "notebook": "standards/iso/iso09_dynamic_exit_availability.ipynb",
-      "note": "The public API cannot make an exit unavailable at runtime (jupedsim-scenarios 0.7.3, the locked version, removes exits only before a run and has no runtime exit closure); the test forces the reroute through private runner state and is not run."
-    },
-    {
-      "id": "Test 10",
-      "name": "Congestion in front of a stair",
-      "criterion": "Peak density at the room->neck entrance and stair base exceeds the mid-corridor",
-      "status": "covered",
-      "test": "TestIso10Congestion",
-      "notebook": "standards/iso/iso10_congestion.ipynb"
-    },
-    {
-      "id": "Test 11",
-      "name": "Maximum flow rates at an exit",
-      "criterion": "Sustained specific flow <= 1.33 p/m/s (IMO)",
-      "status": "xfail",
-      "test": "TestIso11MaxFlow",
-      "notebook": "standards/iso/iso11_max_flow.ipynb",
-      "note": "CollisionFreeSpeedModel has no door-flow limiter (emergent ~5 p/m/s)."
-    },
-    {
-      "id": "Test 12",
-      "name": "Stair flow rates",
-      "criterion": "Flow rate increases with stair width (positive slope)",
-      "status": "covered",
-      "test": "TestIso12StairFlow",
-      "notebook": "standards/iso/iso12_stair_flow.ipynb"
-    },
-    {
-      "id": "Test 13",
-      "name": "Flow, density and speed in a corridor",
-      "criterion": "Zone-2 speed stays within the assigned free speed",
-      "status": "xfail",
-      "test": "TestIso13CorridorFd",
-      "notebook": "standards/iso/iso13_corridor_fd.ipynb",
-      "note": "CollisionFreeSpeedModel does not reproduce an empirical fundamental diagram; zone-2 speeds exceed the 1.0 m/s free speed."
-    },
-    {
-      "id": "Test 14",
-      "name": "Group behaviour",
-      "criterion": "The homogeneous fast group reaches the exit together (spread <= 10 s)",
-      "status": "covered",
-      "test": "TestIso14Groups",
-      "notebook": "standards/iso/iso14_group_behaviour.ipynb"
-    },
-    {
-      "id": "Test 15",
-      "name": "Social influence on exit choice",
-      "criterion": "A deterministic exit-2 occupant raises free occupants' exit-2 usage",
-      "status": "not-supported",
-      "test": "TestIso15SocialInfluence",
-      "notebook": "standards/iso/iso15_social_influence.ipynb",
-      "note": "CollisionFreeSpeedModel has no social-influence model; exit-2 usage is unchanged."
-    },
-    {
-      "id": "Test 16",
-      "name": "Affiliation to familiar exits",
-      "criterion": "Journey-weighted affiliation biases exit choice (80/20 -> exit 2 preferred)",
-      "status": "covered",
-      "test": "TestIso16FamiliarExits",
-      "notebook": "standards/iso/iso16_familiar_exits.ipynb"
-    },
-    {
-      "id": "Test 17",
-      "name": "Route choice from geometric layout",
-      "criterion": "Agents prefer the geometrically shorter route",
-      "status": "covered",
-      "test": "TestIso17RouteChoice",
-      "notebook": "standards/iso/iso17_route_choice.ipynb"
-    },
-    {
-      "id": "Test 18",
-      "name": "Reduced visibility",
-      "criterion": "Reuse the NIST 2.5 reduced-visibility verification adapter",
-      "status": "test-local",
-      "note": "Feasible using the existing NIST 2.5 test-local adapter. Implementation pending."
-    },
-    {
-      "id": "Test 19",
-      "name": "Occupant incapacitation",
-      "criterion": "Reuse the NIST 2.6 FED verification adapter",
-      "status": "test-local",
-      "note": "Feasible using the existing NIST 2.6 test-local adapter. Implementation pending."
-    },
-    {
-      "id": "Test 20",
-      "name": "Elevator usage",
-      "criterion": "Occupants evacuate using an elevator",
-      "status": "not-supported",
-      "note": "JuPedSim does not currently provide an elevator component."
-    },
-    {
-      "id": "Test 21",
-      "name": "Escalator usage",
-      "criterion": "Occupants evacuate using an escalator",
-      "status": "not-supported",
-      "note": "JuPedSim does not currently provide an escalator component."
+      "id": "iso",
+      "name": "ISO 20414:2020",
+      "full_name": "Fire safety engineering - Verification and validation protocol for building fire evacuation models",
+      "verification": "pytest",
+      "tests": [
+        {"id": "Test 1","name": "Pre-evacuation time assignment","criterion": "Start times fit the assigned distribution (two-sample KS, alpha=0.05)","status": "covered","test": "TestIso01Premovement","notebook": "standards/iso/iso01_premovement.ipynb"},
+        {"id": "Test 2","name": "Walking speed in a corridor","criterion": "Walking speed 1.0 +/- 0.05 m/s over the 40 m segment","status": "covered","test": "TestIso02CorridorSpeed","notebook": "standards/iso/iso02_corridor_speed.ipynb"},
+        {"id": "Test 3", "name": "Walking speed on stairs", "criterion": "Stair speed 0.5 +/- 0.05 m/s in the speed-factor zone", "status": "covered", "test": "TestIso03Stairs", "notebook": "standards/iso/iso03_stairs.ipynb"},
+        {"id": "Test 4", "name": "Movement around a corner", "criterion": "All agents evacuate; no boundary penetration", "status": "covered", "test": "TestIso04Corner", "notebook": "standards/iso/iso04_corner.ipynb"},
+        {"id": "Test 5", "name": "Assigned occupant demographics", "criterion": "Realized speeds match Gaussian(1.2, 0.2) (pooled mean/std + KS)", "status": "covered", "test": "TestIso05Demographics", "notebook": "standards/iso/iso05_demographics.ipynb"},
+        {"id": "Test 6", "name": "Horizontal counter-flows", "criterion": "Crossing time increases with counterflow", "status": "xfail", "test": "TestIso06Counterflow", "notebook": "standards/iso/iso06_counterflow.ipynb", "note": "No lane formation in CollisionFreeSpeedModel; the primary crowd deadlocks at >= 50 counterflow agents, so the crossing time is undefined."},
+        {"id": "Test 7", "name": "Overtaking people with movement disabilities", "criterion": "A slower, larger occupant increases total evacuation time", "status": "covered", "test": "TestIso07MovementDisabilities", "notebook": "standards/iso/iso07_movement_disabilities.ipynb"},
+        {"id": "Test 8", "name": "Exit route allocation", "criterion": "Every agent reaches its allocated exit", "status": "covered", "test": "TestIso08RouteAllocation", "notebook": "standards/iso/iso08_route_allocation.ipynb" },
+        {"id": "Test 9", "name": "Dynamic availability of exits", "criterion": "An occupant reroutes when its initially selected exit becomes unavailable", "status": "not-supported", "test": "TestIso09DynamicExitAvailability", "notebook": "standards/iso/iso09_dynamic_exit_availability.ipynb", "note": "The public API cannot make an exit unavailable at runtime (jupedsim-scenarios 0.7.3, the locked version, removes exits only before a run and has no runtime exit closure); the test forces the reroute through private runner state and is not run."},
+        {"id": "Test 10", "name": "Congestion in front of a stair", "criterion": "Peak density at the room->neck entrance and stair base exceeds the mid-corridor", "status": "covered", "test": "TestIso10Congestion", "notebook": "standards/iso/iso10_congestion.ipynb"},
+        {"id": "Test 11", "name": "Maximum flow rates at an exit", "criterion": "Sustained specific flow <= 1.33 p/m/s (IMO)", "status": "xfail", "test": "TestIso11MaxFlow", "notebook": "standards/iso/iso11_max_flow.ipynb", "note": "CollisionFreeSpeedModel has no door-flow limiter (emergent ~5 p/m/s)."},
+        {"id": "Test 12", "name": "Stair flow rates", "criterion": "Flow rate increases with stair width (positive slope)", "status": "covered", "test": "TestIso12StairFlow", "notebook": "standards/iso/iso12_stair_flow.ipynb"},
+        {"id": "Test 13", "name": "Flow, density and speed in a corridor", "criterion": "Zone-2 speed stays within the assigned free speed", "status": "xfail", "test": "TestIso13CorridorFd", "notebook": "standards/iso/iso13_corridor_fd.ipynb", "note": "CollisionFreeSpeedModel does not reproduce an empirical fundamental diagram; zone-2 speeds exceed the 1.0 m/s free speed."},
+        {"id": "Test 14", "name": "Group behaviour", "criterion": "The homogeneous fast group reaches the exit together (spread <= 10 s)", "status": "covered", "test": "TestIso14Groups", "notebook": "standards/iso/iso14_group_behaviour.ipynb"},
+        {"id": "Test 15", "name": "Social influence on exit choice", "criterion": "A deterministic exit-2 occupant raises free occupants' exit-2 usage", "status": "not-supported", "test": "TestIso15SocialInfluence", "notebook": "standards/iso/iso15_social_influence.ipynb", "note": "CollisionFreeSpeedModel has no social-influence model; exit-2 usage is unchanged."},
+        {"id": "Test 16", "name": "Affiliation to familiar exits", "criterion": "Journey-weighted affiliation biases exit choice (80/20 -> exit 2 preferred)", "status": "covered", "test": "TestIso16FamiliarExits", "notebook": "standards/iso/iso16_familiar_exits.ipynb"},
+        {"id": "Test 17", "name": "Route choice from geometric layout", "criterion": "Agents prefer the geometrically shorter route", "status": "covered", "test": "TestIso17RouteChoice", "notebook": "standards/iso/iso17_route_choice.ipynb"},
+        {"id": "Test 18", "name": "Reduced visibility", "criterion": "Reuse the NIST 2.5 reduced-visibility verification adapter", "status": "test-local", "note": "Feasible using the existing NIST 2.5 test-local adapter. Implementation pending."},
+        {"id": "Test 19", "name": "Occupant incapacitation", "criterion": "Reuse the NIST 2.6 FED verification adapter", "status": "test-local", "note": "Feasible using the existing NIST 2.6 test-local adapter. Implementation pending."},
+        {"id": "Test 20", "name": "Elevator usage", "criterion": "Occupants evacuate using an elevator", "status": "not-supported", "note": "JuPedSim does not currently provide an elevator component."},
+        {"id": "Test 21", "name": "Escalator usage", "criterion": "Occupants evacuate using an escalator", "status": "not-supported", "note": "JuPedSim does not currently provide an escalator component."}
+      ]
     }
-  ]
-}
-  ]
-}
+      ]
+    }

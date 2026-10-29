@@ -1247,7 +1247,230 @@ class TestIMO11Staircase:
 
         )
 
+# ---------------------------------------------------------------------------
+# IMO 12 - Flow-Density Relation
+# ---------------------------------------------------------------------------
 
+def build_imo12_corridor(density, seed=42):
+    """Build an unobstructed corridor for IMO Test 12."""
+
+    length = 30.0
+    width = 2.0
+    radius = 0.15
+
+    geometry = box(0, 0, length, width)
+
+    simulation = jps.Simulation(
+        model=jps.CollisionFreeSpeedModel(),
+        geometry=geometry,
+        dt=0.05,
+    )
+
+    exit_polygon = box(
+        length - 0.3,
+        0.2,
+        length - 0.05,
+        width - 0.2,
+    )
+
+    exit_id = simulation.add_exit_stage(
+        list(exit_polygon.exterior.coords[:-1])
+    )
+
+    journey_id = simulation.add_journey(
+        jps.JourneyDescription([exit_id])
+    )
+
+    number_of_agents = int(density * length * width)
+
+    positions = jps.distributions.distribute_by_number(
+        polygon=box(0.3, 0.3, length - 0.5, width - 0.3),
+        number_of_agents=number_of_agents,
+        distance_to_agents=0.35,
+        distance_to_polygon=0.15,
+        seed=seed,
+    )
+
+    for position in positions:
+        simulation.add_agent(
+            jps.CollisionFreeSpeedModelAgentParameters(
+                journey_id=journey_id,
+                stage_id=exit_id,
+                position=position,
+                desired_speed=1.2,
+                radius=radius,
+            )
+        )
+
+    return simulation
+def run_imo12_corridor(simulation, dt=0.05, max_time=120.0):
+    """Run IMO 12 and record pedestrian trajectories."""
+    import pandas as pd
+
+    records = []
+    steps = int(max_time / dt)
+
+    for step in range(steps):
+        time = step * dt
+
+        if simulation.agent_count() == 0:
+            break
+
+        for agent in simulation.agents():
+            x, y = agent.position
+
+            records.append({
+                "time": time,
+                "id": agent.id,
+                "x": x,
+                "y": y,
+            })
+
+        simulation.iterate()
+
+    return pd.DataFrame(records)
+def measure_imo12_flow_density(trajectories, interval=5.0):
+    """Measure local density and pedestrian flow over time."""
+
+    # Density measurement region: x = 13..17 m.
+    measurement_area = 4.0 * 2.0
+
+    # Calculate density at every recorded timestep.
+    inside = trajectories[
+        (trajectories["x"] >= 13.0)
+        & (trajectories["x"] < 17.0)
+    ]
+
+    counts = inside.groupby("time").size()
+
+    all_times = np.sort(trajectories["time"].unique())
+
+    density = (
+        counts.reindex(all_times, fill_value=0)
+        / measurement_area
+    )
+
+    # Detect crossings of x = 15 m.
+    trajectories = trajectories.sort_values(["id", "time"]).copy()
+
+    previous_x = trajectories.groupby("id")["x"].shift(1)
+
+    crossed = (
+        (previous_x < 15.0)
+        & (trajectories["x"] >= 15.0)
+    )
+
+    crossing_times = trajectories.loc[crossed, "time"].to_numpy()
+
+    # Aggregate measurements into time intervals.
+    bins = np.arange(
+        0,
+        trajectories["time"].max() + interval,
+        interval,
+    )
+
+    results = []
+
+    for start, end in zip(bins[:-1], bins[1:]):
+        mask = (all_times >= start) & (all_times < end)
+
+        if not mask.any():
+            continue
+
+        mean_density = density.iloc[mask].mean()
+
+        crossings = np.count_nonzero(
+            (crossing_times >= start)
+            & (crossing_times < end)
+        )
+
+        flow = crossings / interval
+
+        results.append({
+            "time_start": start,
+            "time_end": end,
+            "density": mean_density,
+            "flow": flow,
+        })
+
+    return results
+class TestIMO12FlowDensityRelation:
+
+    @pytest.mark.parametrize(
+        "density",
+        [0.5, 1.0, 2.0, 3.0],
+    )
+    def test_scenario_initialization(self, density):
+        simulation = build_imo12_corridor(
+            density=density,
+            seed=42,
+        )
+
+        expected_agents = int(density * 30.0 * 2.0)
+
+        assert simulation.agent_count() == expected_agents
+    def test_flow_density_measurements(self):
+        densities = [0.5, 1.0, 2.0, 3.0]
+
+        all_measurements = []
+
+        for initial_density in densities:
+            simulation = build_imo12_corridor(
+                density=initial_density,
+                seed=42,
+            )
+
+            trajectories = run_imo12_corridor(simulation)
+
+            measurements = measure_imo12_flow_density(
+                trajectories,
+                interval=5.0,
+            )
+
+            print(f"\nInitial density: {initial_density:.1f} persons/m²")
+            print("Measured density | Flow")
+
+            for measurement in measurements:
+                density = measurement["density"]
+                flow = measurement["flow"]
+
+                if density > 0.1:
+                    print(
+                        f"  {density:.3f} persons/m²"
+                        f" | {flow:.3f} persons/s"
+                    )
+
+            all_measurements.extend(measurements)
+
+        # Select measurements by actual local density,
+        # not by the initial density of the simulation.
+
+        moderate_flow = [
+            m["flow"]
+            for m in all_measurements
+            if 1.5 <= m["density"] <= 2.5
+        ]
+
+        high_flow = [
+            m["flow"]
+            for m in all_measurements
+            if 3.0 <= m["density"] <= 3.5
+        ]
+
+        assert moderate_flow, "No moderate-density measurements found"
+        assert high_flow, "No high-density measurements found"
+
+        mean_moderate_flow = np.mean(moderate_flow)
+        mean_high_flow = np.mean(high_flow)
+
+        print("\nIMO 12 verification:")
+        print(f"  Moderate-density flow: {mean_moderate_flow:.3f} persons/s")
+        print(f"  High-density flow:     {mean_high_flow:.3f} persons/s")
+
+        assert mean_high_flow < mean_moderate_flow, (
+            "IMO 12 failed: flow at high density is not lower "
+            "than flow at moderate density"
+        )
 
 # ---------------------------------------------------------------------------
 # Additional behavior/property checks (not individual IMO test numbers)
