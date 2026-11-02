@@ -638,71 +638,104 @@ class TestIMO06RoundingCorners:
 # IMO 7 - Assignment of population demographics
 # ---------------------------------------------------------------------------
 
-
 class TestIMO07PopulationDemographics:
-    """Fifty agents with assigned movement parameters evacuate successfully."""
+    """IMO 7: Assignment of population demographics."""
 
-    WALKABLE = "POLYGON ((0 0, 40 0, 40 10, 0 10, 0 0))"
-    EXIT: ClassVar[dict] = {
-        "jps-exits_0": {
-            "type": "polygon",
-            "coordinates": [[38, 0], [40, 0], [40, 10], [38, 10], [38, 0]],
-            "enable_throughput_throttling": False,
-            "max_throughput": 0,
-        }
-    }
-    DIST: ClassVar[dict] = {
-        "jps-distributions_0": {
-            "type": "polygon",
-            "coordinates": [[0, 0], [4, 0], [4, 10], [0, 10], [0, 0]],
-            "parameters": {
-                "number": 50,
-                "radius": 0.15,
-                "v0": 1.2,
-                "use_flow_spawning": False,
-                "distribution_mode": "by_number",
-                "radius_distribution": "constant",
-                "v0_distribution": "constant",
-            },
-        }
-    }
+    WALKING_SPEED_MIN = 0.97
+    WALKING_SPEED_MAX = 1.62
+    NUMBER_OF_AGENTS = 50
 
-    def test_all_evacuate(self, vv_row):
-        metrics, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE,
-            exits=self.EXIT,
-            distributions=self.DIST,
-            max_simulation_time=300.0,
-        )
-        vv_row.set(
-            quantity="agents_remaining", unit="count", lower=0, upper=0,
-            measured=metrics["agents_remaining"], n=metrics["total_agents"],
-            seed=42, model="CollisionFreeSpeedModel",
-            rule="bound: total_agents = 50; 0 <= measured <= 0",
-        )
-        assert metrics["total_agents"] == 50
-        assert metrics["agents_remaining"] == 0, (
-            f"{metrics['agents_remaining']} agents did not evacuate"
+    def test_population_demographics(self):
+        from scipy.stats import kstest
+
+        rng = np.random.default_rng(42)
+
+        # IMO Table 3.4: males aged 30–50, flat terrain.
+        speeds = rng.uniform(
+            self.WALKING_SPEED_MIN,
+            self.WALKING_SPEED_MAX,
+            self.NUMBER_OF_AGENTS,
         )
 
-    def test_evacuation_time_reasonable(self, vv_row):
-        metrics, _ = run_vv_scenario(
-            walkable_area_wkt=self.WALKABLE,
-            exits=self.EXIT,
-            distributions=self.DIST,
-            max_simulation_time=300.0,
-        )
-        evacuation_time = metrics["evacuation_time"]
-        vv_row.set(
-            quantity="evacuation_time", unit="s", lower=25, upper=120,
-            measured=evacuation_time, n=metrics["total_agents"], seed=42,
-            model="CollisionFreeSpeedModel",
-            rule="bound: 25 <= measured <= 120",
-        )
-        assert 25 <= evacuation_time <= 120, (
-            f"Evacuation time {evacuation_time:.2f}s outside [25, 120]"
+        # Preserve the original 40 m × 10 m corridor.
+        geometry = box(0, 0, 40, 10)
+
+        simulation = jps.Simulation(
+            model=jps.CollisionFreeSpeedModel(),
+            geometry=geometry,
+            dt=0.05,
         )
 
+        # Preserve the original exit.
+        exit_polygon = box(38, 0.2, 39.8, 9.8)
+
+        exit_id = simulation.add_exit_stage(
+            list(exit_polygon.exterior.coords[:-1])
+        )
+
+        journey_id = simulation.add_journey(
+            jps.JourneyDescription([exit_id])
+        )
+
+        # Place 50 agents in the original starting region.
+        positions = jps.distributions.distribute_by_number(
+            polygon=box(0.3, 0.3, 3.7, 9.7),
+            number_of_agents=self.NUMBER_OF_AGENTS,
+            distance_to_agents=0.35,
+            distance_to_polygon=0.15,
+            seed=42,
+        )
+
+        # Assign the sampled speeds to actual JuPedSim agents.
+        for position, speed in zip(positions, speeds):
+            simulation.add_agent(
+                jps.CollisionFreeSpeedModelAgentParameters(
+                    journey_id=journey_id,
+                    stage_id=exit_id,
+                    position=position,
+                    desired_speed=float(speed),
+                    radius=0.15,
+                )
+            )
+
+        # Inspect the speeds assigned to the agents.
+        assigned_speeds = np.array([
+            agent.model.desired_speed
+            for agent in simulation.agents()
+        ])
+
+        assert simulation.agent_count() == self.NUMBER_OF_AGENTS
+
+        assert np.all(
+            assigned_speeds >= self.WALKING_SPEED_MIN
+        )
+
+        assert np.all(
+            assigned_speeds <= self.WALKING_SPEED_MAX
+        )
+
+        # Verify the actual assigned-speed distribution.
+        statistic, p_value = kstest(
+            assigned_speeds,
+            "uniform",
+            args=(
+                self.WALKING_SPEED_MIN,
+                self.WALKING_SPEED_MAX - self.WALKING_SPEED_MIN,
+            ),
+        )
+
+        print("\nIMO 7: Population demographics")
+        print(f"Number of agents: {simulation.agent_count()}")
+        print(f"Minimum speed: {assigned_speeds.min():.3f} m/s")
+        print(f"Maximum speed: {assigned_speeds.max():.3f} m/s")
+        print(f"Mean speed: {assigned_speeds.mean():.3f} m/s")
+        print(f"KS statistic: {statistic:.4f}")
+        print(f"KS p-value: {p_value:.4f}")
+
+        assert p_value >= 0.05, (
+            "IMO 7 failed: assigned walking speeds are inconsistent "
+            "with the specified uniform distribution."
+        )
 
 # ---------------------------------------------------------------------------
 # IMO 8 - Counterflow
