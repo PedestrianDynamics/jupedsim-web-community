@@ -339,22 +339,79 @@ class TestNist23Corner:
 
 
 class TestNist24Demographics:
-    """NIST Verif.2.4 - 100 agents with Gaussian-distributed desired speed.
+    """NIST Verif.2.4 - Verify Gaussian-distributed desired speeds."""
 
-    The NIST test has no exit, so the loader refuses to start a simulation.
-    We verify the config is wired up to sample from Gaussian(1.2, 0.2).
-    """
+    def test_assigned_agent_demographics(self):
+        from scipy.stats import kstest
+        from jupedsim_scenarios import ScenarioRunner
 
-    def test_gaussian_distribution_configured(self, vv_row):
-        vv_row.set(
-            scenario_file="standards/nist/scenario_files/Nist-2-4-demographics.zip"
-        )
         scenario = _load("Nist-2-4-demographics")
+
         params = scenario.distributions["jps-distributions_0"]["parameters"]
+
+        expected_mean = float(params["v0"])
+        expected_std = float(params["v0_std"])
+        expected_count = int(params["number"])
+
         assert params["v0_distribution"] == "gaussian"
-        assert abs(params["v0"] - 1.2) < 1e-6
-        assert abs(params["v0_std"] - 0.2) < 1e-6
-        assert int(params["number"]) == 100
+        assert expected_count == 100
+        assert expected_mean == 1.2
+        assert expected_std == 0.2
+
+        # NIST 2.4 has no exit. Add a temporary exit for initialization.
+        # The simulation is not advanced, so it does not affect assigned speeds.
+        minx, miny, maxx, maxy = scenario.walkable_polygon.bounds
+
+        scenario.add_exit(
+            coordinates=[
+                [maxx - 2, miny],
+                [maxx, miny],
+                [maxx, maxy],
+                [maxx - 2, maxy],
+                [maxx - 2, miny],
+            ],
+            key="jps-exits_0",
+            max_throughput=0.0,
+        )
+
+        runner = ScenarioRunner(scenario, seed=42)
+
+        try:
+            assigned_speeds = np.array([
+                agent.model.desired_speed
+                for agent in runner.agents()
+            ])
+
+            assert runner.agent_count == expected_count
+
+            # Check the sampled distribution.
+            sample_mean = assigned_speeds.mean()
+            sample_std = assigned_speeds.std(ddof=1)
+
+            statistic, p_value = kstest(
+                assigned_speeds,
+                "norm",
+                args=(expected_mean, expected_std),
+            )
+
+            print("\nNIST 2.4: Assigned agent demographics")
+            print(f"Number of agents: {runner.agent_count}")
+            print(f"Expected mean: {expected_mean:.3f} m/s")
+            print(f"Measured mean: {sample_mean:.3f} m/s")
+            print(f"Expected std: {expected_std:.3f} m/s")
+            print(f"Measured std: {sample_std:.3f} m/s")
+            print(f"KS statistic: {statistic:.4f}")
+            print(f"KS p-value: {p_value:.4f}")
+
+            assert abs(sample_mean - expected_mean) < 0.06
+            assert abs(sample_std - expected_std) < 0.05
+            assert p_value >= 0.05, (
+                "Assigned speeds are inconsistent with the "
+                "configured Gaussian distribution."
+            )
+
+        finally:
+            runner.close()
 
 
 # ---------------------------------------------------------------------------

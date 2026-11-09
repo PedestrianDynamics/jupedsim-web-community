@@ -1,6 +1,6 @@
 ## V&V Standards Coverage
 
-*Last updated: 2026-11-02 14:28 UTC*
+*Last updated: 2026-11-09 09:01 UTC*
 
 ### IMO MSC.1/Circ.1533 — 12/12 covered
 
