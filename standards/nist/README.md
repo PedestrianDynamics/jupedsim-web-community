@@ -51,10 +51,10 @@ strict `xfail` (see issue #151):
   reference. There is no door-flow limiter, so the emergent flow (~5 p/m/s)
   exceeds it.
 
-`test-local` rows (Verif.2.5, 2.6, 3.3) assert logic implemented in the
-test files (a smoke speed-factor adapter, a FED adapter and journey-weight
-input), not simulator output. The notes in `standards/coverage.json` say
-what each one verifies.
+`test-local` rows (shown as SCRIPTED; Verif.2.5, 2.6, 3.3) assert logic
+implemented in the test files (a smoke speed-factor adapter, a FED
+adapter and journey-weight input), not simulator output. The notes in
+`standards/coverage.json` say what each one verifies.
 
 ## Modification highlights vs NIST originals
 

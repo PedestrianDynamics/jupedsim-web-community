@@ -50,7 +50,7 @@ STATUS_META = {
     "skip": ("SKIP", "skip"),
     "pending": ("PENDING", "pending"),
     "notebook": ("NOTEBOOK", "notebook"),
-    "test-local": ("TEST-LOCAL", "test-local"),
+    "test-local": ("SCRIPTED", "test-local"),
 }
 
 
@@ -289,7 +289,7 @@ def render_html(data: list, stamp: str) -> str:
         '<span class="badge xfail">XFAIL</span> criterion asserted but blocked by a model limitation · '
         '<span class="badge notebook">NOTEBOOK</span> demonstrated in a notebook (no automated assert) · '
         '<span class="badge skip">SKIP</span> placeholder test · '
-        '<span class="badge test-local">TEST-LOCAL</span> asserts test-file logic, not simulator output (see note) · '
+        '<span class="badge test-local">SCRIPTED</span> reproduced by scripting the JuPedSim API; no built-in model (see note) · '
         '<span class="badge pending">PENDING</span> defined by the standard, not implemented · '
         '<span class="badge fail">FAIL</span> asserted &amp; failing'
         "</p>")
