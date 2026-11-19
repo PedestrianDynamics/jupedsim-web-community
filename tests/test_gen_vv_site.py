@@ -64,6 +64,7 @@ ROWS = [
         "name": "Lift",
         "criterion": "c6",
         "status": "not-supported",
+        "test": "TestLift",
         "note": "Needs a lift component.",
     },
 ]
@@ -118,6 +119,7 @@ def inputs(tmp_path):
         result("TestUp::test_c", "pass"),
         result("TestDown::test_d", "fail"),
         result("TestOrphan::test_e", "pass"),
+        result("TestLift::test_f", "xfail", measured=[23.7], unit="s"),
     ]
     paths = {}
     for name, data in [
@@ -184,6 +186,7 @@ def test_status_rendering(gen, inputs, content):
     lift = page(content, "std-t6")
     assert '{{< status "NOT SUPPORTED" >}}' in lift
     assert "Needs a lift component." in lift
+    assert "FAIL" not in lift and "23.7" in lift
     assert "1.5" in page(content, "std-t1")
 
 
@@ -605,3 +608,13 @@ def test_single_unit_applied_to_single_series(gen):
     uneven = {"a": {"x": [1.0, 2.0, 3.0]}, "b": {"x": [4.0, 5.0]}}
     table = nested_view(gen, uneven, unit="s")["table"]
     assert table["header"] == ["group", "series", "index", "value [s]"]
+
+
+def test_not_supported_row_still_reports_a_crash(gen, inputs, content):
+    results = json.loads(inputs["results"].read_text())
+    results[-1]["status"] = "error"
+    inputs["results"].write_text(json.dumps(results))
+    build(gen, inputs, content)
+    lift = page(content, "std-t6")
+    assert '{{< status "FAIL" >}}' in lift
+    assert "NOT SUPPORTED" not in lift

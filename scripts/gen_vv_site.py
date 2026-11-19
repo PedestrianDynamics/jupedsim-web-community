@@ -176,6 +176,16 @@ def assign_results(manifest, results) -> dict:
     return assigned
 
 
+def not_supported_status(note, res_rows):
+    """NOT SUPPORTED, unless the attached test crashed or passed unexpectedly."""
+    states = {r["status"] for r in res_rows}
+    if states & {"fail", "error"}:
+        return "FAIL", ["The test of an unsupported row crashed."]
+    if "xpass" in states:
+        return "FAIL", ["Unexpected pass of a row declared not supported."]
+    return "NOT SUPPORTED", [note] if note else []
+
+
 def derive_status(row, res_rows):
     """Return (status label, notes list)."""
     note = row.get("note")
@@ -183,7 +193,7 @@ def derive_status(row, res_rows):
     if cov == "pending":
         return "PENDING", []
     if cov == "not-supported":
-        return "NOT SUPPORTED", [note] if note else []
+        return not_supported_status(note, res_rows)
     if cov == "test-local":
         return "SCRIPTED", [note] if note else []
     if cov in ("skip", "notebook"):
@@ -1161,6 +1171,11 @@ def test_page(ctx, s, e, weight, pdir: Path) -> str:
             "Rendered from the scenario files of this repository (top view)."
         )
     res_views = [result_view(r) for r in e["res_rows"]]
+    if e["status"] == "NOT SUPPORTED":
+        # The expected failure of an unsupported row is not a test failure.
+        for v, r in zip(res_views, e["res_rows"]):
+            if r["status"] == "xfail":
+                v["status"] = "NOT SUPPORTED"
     attach_csv_files(res_views, pdir)
     model_name = next((r["model"] for r in e["res_rows"] if r.get("model")), None)
 
