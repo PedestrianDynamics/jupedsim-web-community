@@ -172,7 +172,7 @@ def test_status_rendering(gen, inputs, content):
     limit = page(content, "std-t2")
     assert '{{< status "FAIL" >}}' in limit and "Model has no cohesion." in limit
     assert '{{< status "PENDING" >}}' in page(content, "std-t3")
-    assert '{{< status "TEST-LOCAL" >}}' in page(content, "std-t4")
+    assert '{{< status "SCRIPTED" >}}' in page(content, "std-t4")
     assert '{{< status "FAIL" >}}' in page(content, "std-t5-down")
     assert "1.5" in page(content, "std-t1")
 
@@ -341,7 +341,7 @@ def test_summary_cards_and_blocking_count(gen, inputs, content):
     index = (content / "_index.md").read_text()
     assert 'blocking="1"' in index
     assert 'pass="2"' in index and 'fail="2"' in index
-    assert 'test_local="1"' in index and 'pending="1"' in index
+    assert 'scripted="1"' in index and 'pending="1"' in index
     assert 'not_run="0"' in index
     assert "blocking documented" in page(content, "std-t1")
 

@@ -37,7 +37,7 @@ html .vv-theme-toggle .theme-toggle svg { height: 24px; width: auto; }
   font-weight: 700; letter-spacing: 0.03em; border: 1px solid currentColor; white-space: nowrap; line-height: 1.4; }
 .vv-badge-pass { background: var(--vv-pass-bg); color: var(--vv-pass-fg); }
 .vv-badge-fail { background: var(--vv-fail-bg); color: var(--vv-fail-fg); }
-.vv-badge-test-local { background: var(--vv-local-bg); color: var(--vv-local-fg); }
+.vv-badge-scripted { background: var(--vv-local-bg); color: var(--vv-local-fg); }
 .vv-badge-pending { background: var(--vv-pending-bg); color: var(--vv-pending-fg); }
 .vv-badge-not-run { background: var(--vv-notrun-bg); color: var(--vv-notrun-fg); }
 
