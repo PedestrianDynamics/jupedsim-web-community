@@ -5,6 +5,7 @@
   --vv-local-bg: #e6e9fb; --vv-local-fg: #25318f;
   --vv-pending-bg: #fdf1d3; --vv-pending-fg: #6b4700;
   --vv-notrun-bg: #eceff2; --vv-notrun-fg: #3b434c;
+  --vv-unsup-bg: #f3e6f7; --vv-unsup-fg: #5b2470;
   --vv-radius: 6px; --vv-gap: 16px;
 }
 html.dark {
@@ -14,6 +15,7 @@ html.dark {
   --vv-local-bg: #1f2650; --vv-local-fg: #b9c3ff;
   --vv-pending-bg: #3d3010; --vv-pending-fg: #f3d58a;
   --vv-notrun-bg: #272d34; --vv-notrun-fg: #c3cad2;
+  --vv-unsup-bg: #3a2145; --vv-unsup-fg: #e6bff3;
 }
 
 /* Header: logo with the versions line beneath it */
@@ -40,6 +42,7 @@ html .vv-theme-toggle .theme-toggle svg { height: 24px; width: auto; }
 .vv-badge-scripted { background: var(--vv-local-bg); color: var(--vv-local-fg); }
 .vv-badge-pending { background: var(--vv-pending-bg); color: var(--vv-pending-fg); }
 .vv-badge-not-run { background: var(--vv-notrun-bg); color: var(--vv-notrun-fg); }
+.vv-badge-not-supported { background: var(--vv-unsup-bg); color: var(--vv-unsup-fg); }
 
 /* Summary cards */
 .vv-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--vv-gap); margin: 1.5rem 0 0; }

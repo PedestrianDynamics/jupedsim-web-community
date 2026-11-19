@@ -1,4 +1,4 @@
-{{- $order := slice "PASS" "FAIL" "SCRIPTED" "PENDING" "NOT RUN" -}}
+{{- $order := slice "PASS" "FAIL" "SCRIPTED" "PENDING" "NOT SUPPORTED" "NOT RUN" -}}
 <article class="vv-card">
   <h2><a href="{{ .Get "url" | relURL }}">{{ .Get "name" }}</a></h2>
   <p class="vv-count">{{ .Get "total" }} <span>tests</span></p>

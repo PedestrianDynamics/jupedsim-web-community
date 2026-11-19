@@ -26,11 +26,11 @@ into "-" (so "Verif.2.4" in nist gives "nist-2-4"). When a coverage id
 repeats within a standard, the slugified row name is appended. Remaining
 clashes get a numeric suffix.
 
-Page status (plan section 3): PENDING and SCRIPTED (coverage status
-test-local) come from the coverage row; otherwise from the results rows
-joined to the row (fail/error/xfail/xpass -> FAIL, all pass -> PASS).
-With no usable results rows a covered row shows NOT RUN, and an xfail row
-shows FAIL (declared limitation).
+Page status (plan section 3): PENDING, SCRIPTED (coverage status
+test-local) and NOT SUPPORTED come from the coverage row; otherwise from the
+results rows joined to the row (fail/error/xfail/xpass -> FAIL, all pass ->
+PASS). With no usable results rows a covered row shows NOT RUN, and an xfail
+row shows FAIL (declared limitation).
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ from shapely import wkt
 
 REPO = "https://github.com/PedestrianDynamics/jupedsim-web-community"
 BANNER = "Verification only; no validation comparisons have been run (#165)."
-STATUS_ORDER = ["PASS", "FAIL", "SCRIPTED", "PENDING", "NOT RUN"]
+STATUS_ORDER = ["PASS", "FAIL", "SCRIPTED", "PENDING", "NOT SUPPORTED", "NOT RUN"]
 FAIL_ROWS = {"fail", "error", "xfail"}
 CASE_LABEL = {
     "pass": "PASS",
@@ -182,6 +182,8 @@ def derive_status(row, res_rows):
     cov = row["status"]
     if cov == "pending":
         return "PENDING", []
+    if cov == "not-supported":
+        return "NOT SUPPORTED", [note] if note else []
     if cov == "test-local":
         return "SCRIPTED", [note] if note else []
     if cov in ("skip", "notebook"):
@@ -1076,12 +1078,12 @@ def result_section(e, res_views, has_results, imgs, row) -> list[str]:
     has_measured = any(v["measured"] or v["items"] or v["table"] for v in res_views)
     if not has_results:
         lines += ["Test results are not available in this run.", ""]
-    elif e["status"] in ("PENDING", "SCRIPTED") and not res_views:
-        reason = (
-            "this test is not covered yet"
-            if e["status"] == "PENDING"
-            else "this test does not measure simulator output"
-        )
+    elif e["status"] in ("PENDING", "SCRIPTED", "NOT SUPPORTED") and not res_views:
+        reason = {
+            "PENDING": "this test is not covered yet",
+            "SCRIPTED": "this test does not measure simulator output",
+            "NOT SUPPORTED": "JuPedSim does not provide the required functionality",
+        }[e["status"]]
         lines += [f"No measured values: {reason}.", ""]
     elif not has_measured:
         lines += ["Measured values not reported yet.", ""]

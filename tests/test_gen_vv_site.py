@@ -59,6 +59,13 @@ ROWS = [
         "status": "covered",
         "test": "TestDown",
     },
+    {
+        "id": "T6",
+        "name": "Lift",
+        "criterion": "c6",
+        "status": "not-supported",
+        "note": "Needs a lift component.",
+    },
 ]
 
 
@@ -174,6 +181,9 @@ def test_status_rendering(gen, inputs, content):
     assert '{{< status "PENDING" >}}' in page(content, "std-t3")
     assert '{{< status "SCRIPTED" >}}' in page(content, "std-t4")
     assert '{{< status "FAIL" >}}' in page(content, "std-t5-down")
+    lift = page(content, "std-t6")
+    assert '{{< status "NOT SUPPORTED" >}}' in lift
+    assert "Needs a lift component." in lift
     assert "1.5" in page(content, "std-t1")
 
 
@@ -342,7 +352,7 @@ def test_summary_cards_and_blocking_count(gen, inputs, content):
     assert 'blocking="1"' in index
     assert 'pass="2"' in index and 'fail="2"' in index
     assert 'scripted="1"' in index and 'pending="1"' in index
-    assert 'not_run="0"' in index
+    assert 'not_run="0"' in index and 'not_supported="1"' in index
     assert "blocking documented" in page(content, "std-t1")
 
 
