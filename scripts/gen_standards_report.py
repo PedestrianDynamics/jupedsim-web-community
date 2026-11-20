@@ -41,6 +41,7 @@ def logo_img() -> str:
         f'<img class=logo alt="JuPedSim" src="data:image/svg+xml;base64,{b64}"></a>'
     )
 
+
 # status -> (label, css class). "covered" is the resolved-pass state.
 STATUS_META = {
     "pass": ("PASS", "pass"),
@@ -50,7 +51,6 @@ STATUS_META = {
     "skip": ("SKIP", "skip"),
     "pending": ("PENDING", "pending"),
     "notebook": ("NOTEBOOK", "notebook"),
-
     "test-local": ("TEST-LOCAL", "test-local"),
     "not-supported": ("NOT SUPPORTED", "not-supported"),
 }
@@ -87,8 +87,26 @@ def parse_junit(xml_path: pathlib.Path) -> dict:
 def resolve(entry: dict, junit: dict) -> str:
     """Resolve a manifest entry to a live status token."""
     declared = entry.get("status", "pending")
-    if declared in ("pending", "notebook", "not-supported"):
+
+    if declared in ("pending", "notebook"):
         return declared
+
+    if declared == "not-supported":
+        ref = entry.get("test")
+        if not ref:
+            return "not-supported"
+
+        cls, _, method = ref.partition("::")
+        matches = [
+            st
+            for (c, m), st in junit.items()
+            if c == cls and (not method or m == method)
+        ]
+
+        if any(st in ("fail", "xpass") for st in matches):
+            return "fail"
+
+        return "not-supported"
     # "covered" is the manifest's word for "expected to pass"; the render/count
     # token for a pass is "pass".
     fallback = "pass" if declared == "covered" else declared
@@ -97,9 +115,7 @@ def resolve(entry: dict, junit: dict) -> str:
         return fallback
     cls, _, method = ref.partition("::")
     matches = [
-        st
-        for (c, m), st in junit.items()
-        if c == cls and (not method or m == method)
+        st for (c, m), st in junit.items() if c == cls and (not method or m == method)
     ]
     if not matches:
         # No live result (suite not run / test missing) -> fall back to intent.
@@ -119,7 +135,16 @@ def resolve(entry: dict, junit: dict) -> str:
 
 def summarise(standard: dict, junit: dict) -> dict:
     rows = []
-    counts = {"pass": 0, "fail": 0, "xfail": 0, "skip": 0, "pending": 0, "notebook": 0, "test-local": 0, "not-supported": 0,}
+    counts = {
+        "pass": 0,
+        "fail": 0,
+        "xfail": 0,
+        "skip": 0,
+        "pending": 0,
+        "notebook": 0,
+        "test-local": 0,
+        "not-supported": 0,
+    }
     for t in standard["tests"]:
         st = resolve(t, junit)
         counts[st] = counts.get(st, 0) + 1
@@ -144,7 +169,7 @@ MD_ICON = {
     "pending": ":hourglass_flowing_sand:",
     "notebook": ":ledger:",
     "test-local": ":label:",
-    "not-supported": "no_entry_sign",
+    "not-supported": ":no_entry_sign:",
 }
 
 
@@ -181,13 +206,13 @@ def render_markdown(data: list, stamp: str) -> str:
 
 CSS = """
 :root{--bg:#fff;--fg:#1b1f24;--muted:#6a737d;--card:#f6f8fa;--border:#d0d7de;
---pass:#1a7f37;--fail:#cf222e;--xfail:#9a6700;--skip:#6a737d;--pending:#8250df;--notebook:#0969da}
+--pass:#1a7f37;--fail:#cf222e;--xfail:#9a6700;--skip:#6a737d;--pending:#8250df;--notebook:#0969da;--not-supported:#57606a}
 @media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#8b949e;
---card:#161b22;--border:#30363d;--pass:#3fb950;--fail:#f85149;--xfail:#d29922;--skip:#8b949e;--pending:#a371f7;--notebook:#58a6ff}}
+--card:#161b22;--border:#30363d;--pass:#3fb950;--fail:#f85149;--xfail:#d29922;--skip:#8b949e;--pending:#a371f7;--notebook:#58a6ff;--not-supported:#8b949e}}
 :root[data-theme=light]{--bg:#fff;--fg:#1b1f24;--muted:#6a737d;--card:#f6f8fa;--border:#d0d7de;
---pass:#1a7f37;--fail:#cf222e;--xfail:#9a6700;--skip:#6a737d;--pending:#8250df;--notebook:#0969da}
+--pass:#1a7f37;--fail:#cf222e;--xfail:#9a6700;--skip:#6a737d;--pending:#8250df;--notebook:#0969da;--not-supported:#57606a}
 :root[data-theme=dark]{--bg:#0d1117;--fg:#e6edf3;--muted:#8b949e;--card:#161b22;--border:#30363d;
---pass:#3fb950;--fail:#f85149;--xfail:#d29922;--skip:#8b949e;--pending:#a371f7;--notebook:#58a6ff}
+--pass:#3fb950;--fail:#f85149;--xfail:#d29922;--skip:#8b949e;--pending:#a371f7;--notebook:#58a6ff;--not-supported:#8b949e}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
 font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
 .wrap{max-width:1040px;margin:0 auto;padding:2rem 1.25rem 4rem}
@@ -203,7 +228,7 @@ h1{font-size:1.6rem;margin:0 0 .25rem}.sub{color:var(--muted);margin:0 0 1.5rem}
 .card h2{font-size:1.15rem;margin:0}.card .full{color:var(--muted);font-size:.82rem;margin:.15rem 0 .8rem;font-weight:400}
 .bar{display:flex;height:10px;border-radius:6px;overflow:hidden;margin:.2rem 0 .9rem;background:var(--border)}
 .bar i{display:block}.bar .pass{background:var(--pass)}.bar .notebook{background:var(--notebook)}
-.bar .xfail{background:var(--xfail)}.bar .skip{background:var(--skip)}.bar .test-local{background:var(--skip)}.bar .pending{background:var(--pending)}.bar .fail{background:var(--fail)}
+.bar .xfail{background:var(--xfail)}.bar .skip{background:var(--skip)}.bar .test-local{background:var(--skip)}.bar .pending{background:var(--pending)}.bar .fail{background:var(--fail)}.bar .not-supported{background:var(--not-supported)}
 table{width:100%;border-collapse:collapse;font-size:.9rem}
 th,td{text-align:left;padding:.42rem .5rem;border-bottom:1px solid var(--border);vertical-align:top}
 th{color:var(--muted);font-weight:600;font-size:.78rem;text-transform:uppercase;letter-spacing:.03em}
@@ -238,15 +263,22 @@ def bar_segments(counts: dict, total: int) -> str:
 
         if n:
             pct = 100 * n / total if total else 0
-            segs.append(
-                f'<i class="{k}" style="width:{pct:.4f}%"></i>'
-            )
+            segs.append(f'<i class="{k}" style="width:{pct:.4f}%"></i>')
 
     return "".join(segs)
 
 
 def render_html(data: list, stamp: str) -> str:
-    totals = {"pass": 0, "fail": 0, "xfail": 0, "skip": 0, "pending": 0, "notebook": 0, "test-local": 0, "not-supported": 0,}
+    totals = {
+        "pass": 0,
+        "fail": 0,
+        "xfail": 0,
+        "skip": 0,
+        "pending": 0,
+        "notebook": 0,
+        "test-local": 0,
+        "not-supported": 0,
+    }
     for _std, s in data:
         for k in totals:
             totals[k] += s["counts"].get(k, 0)
@@ -258,9 +290,11 @@ def render_html(data: list, stamp: str) -> str:
         f"<style>{CSS}</style></head><body><div class=wrap>",
         logo_img(),
         "<h1>V&amp;V Standards Coverage</h1>",
-        f'<p class=sub>Verification &amp; validation across IMO, RiMEA, NIST TN 1822 and ISO 20414. '
-        f'Generated {html.escape(stamp)} from <code>standards/coverage.json</code> + the latest '
-        f'<a href="{REPO}/actions/workflows/vv.yml">V&amp;V run</a>.</p>',
+        (
+            f"<p class=sub>Verification &amp; validation across IMO, RiMEA, NIST TN 1822 and ISO 20414. "
+            f"Generated {html.escape(stamp)} from <code>standards/coverage.json</code> + the latest "
+            f'<a href="{REPO}/actions/workflows/vv.yml">V&amp;V run</a>.</p>'
+        ),
     ]
     # overall stat tiles
     parts.append("<div class=overall>")
@@ -271,22 +305,28 @@ def render_html(data: list, stamp: str) -> str:
         ("not-supported", "Not Supported"),
         ("fail", "Fail"),
     ]:
-        parts.append(f'<div class=stat><b>{totals[key]}</b><span>{lbl}</span></div>')
+        parts.append(f"<div class=stat><b>{totals[key]}</b><span>{lbl}</span></div>")
     parts.append("</div>")
 
     for std, s in data:
         parts.append("<section class=card>")
         parts.append(
-            f'<h2>{html.escape(std["name"])} '
+            f"<h2>{html.escape(std['name'])} "
             f'<span style="color:var(--muted);font-weight:400;font-size:.9rem">— '
-            f'{s["covered"]}/{s["total"]} covered</span></h2>'
+            f"{s['covered']}/{s['total']} covered</span></h2>"
         )
-        vlabel = "pytest-asserted" if std["verification"] == "pytest" else "notebook-demonstrated"
-        parts.append(f'<p class=full>{html.escape(std["full_name"])} · {vlabel}</p>')
-        parts.append(f'<div class=bar>{bar_segments(s["counts"], s["total"])}</div>')
-        parts.append('<div class=tablewrap><table><thead><tr>'
-                     "<th>Test</th><th>Name</th><th>Criterion</th><th>Status</th>"
-                     "</tr></thead><tbody>")
+        vlabel = (
+            "pytest-asserted"
+            if std["verification"] == "pytest"
+            else "notebook-demonstrated"
+        )
+        parts.append(f"<p class=full>{html.escape(std['full_name'])} · {vlabel}</p>")
+        parts.append(f"<div class=bar>{bar_segments(s['counts'], s['total'])}</div>")
+        parts.append(
+            "<div class=tablewrap><table><thead><tr>"
+            "<th>Test</th><th>Name</th><th>Criterion</th><th>Status</th>"
+            "</tr></thead><tbody>"
+        )
         for t, st in s["rows"]:
             label, cls = STATUS_META[st]
             name = html.escape(t["name"])
@@ -297,13 +337,13 @@ def render_html(data: list, stamp: str) -> str:
             if note:
                 crit += f'<br><span style="color:var(--muted);font-size:.82rem">{html.escape(note)}</span>'
             parts.append(
-                f'<tr><td class=id>{html.escape(t["id"])}</td><td>{name}</td>'
-                f"<td>{crit}</td><td><span class=\"badge {cls}\">{label}</span></td></tr>"
+                f"<tr><td class=id>{html.escape(t['id'])}</td><td>{name}</td>"
+                f'<td>{crit}</td><td><span class="badge {cls}">{label}</span></td></tr>'
             )
         parts.append("</tbody></table></div></section>")
 
     parts.append(
-        '<p class=legend>'
+        "<p class=legend>"
         '<span class="badge pass">PASS</span> criterion asserted &amp; met · '
         '<span class="badge xfail">XFAIL</span> criterion asserted but not met (known limitation) · '
         '<span class="badge notebook">NOTEBOOK</span> demonstrated in a notebook (no automated assert) · '
@@ -312,7 +352,8 @@ def render_html(data: list, stamp: str) -> str:
         '<span class="badge pending">PENDING</span> defined by the standard, not implemented · '
         '<span class="badge not-supported">NOT SUPPORTED</span> required functionality unavailable in JuPedSim · '
         '<span class="badge fail">FAIL</span> asserted &amp; failing'
-        "</p>")
+        "</p>"
+    )
     parts.append("</div></body></html>")
     return "".join(parts)
 
@@ -327,13 +368,13 @@ def main() -> None:
     manifest = json.loads(pathlib.Path(args.manifest).read_text())
     junit = parse_junit(pathlib.Path(args.junit))
     data = [(std, summarise(std, junit)) for std in manifest["standards"]]
-    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     outdir = pathlib.Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     (outdir / "index.html").write_text(render_html(data, stamp), encoding="utf-8")
     (outdir / "summary.md").write_text(render_markdown(data, stamp), encoding="utf-8")
-    print(f"wrote {outdir/'index.html'} and {outdir/'summary.md'}")
+    print(f"wrote {outdir / 'index.html'} and {outdir / 'summary.md'}")
 
 
 if __name__ == "__main__":

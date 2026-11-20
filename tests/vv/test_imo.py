@@ -10,17 +10,16 @@ module because they are useful across all IMO-inspired scenarios but do not
 correspond to an individual IMO test number.
 """
 
-import io
+import itertools
 import json
 import pathlib
 import sys
 import tempfile
 import zipfile
-from contextlib import redirect_stdout
 from typing import ClassVar
 
-import numpy as np
 import jupedsim as jps
+import numpy as np
 import pytest
 from jupedsim_scenarios import load_scenario, run_scenario
 from shapely.geometry import Point, Polygon, box
@@ -42,15 +41,6 @@ if str(STANDARDS_DIR / "rimea") not in sys.path:
 if str(STANDARDS_DIR) not in sys.path:
     sys.path.insert(0, str(STANDARDS_DIR))
 
-from scenario_builders.rimea16_loop import (
-    DEFAULT_AGENT_COUNT,
-    build_loop_scenario,
-    compute_density_speed_curve,
-    compute_density_speed_samples,
-    compute_lap_counts,
-    load_reference_band,
-    summarize_reference_fit,
-)
 
 pytestmark = [
     pytest.mark.vv,
@@ -105,10 +95,13 @@ class TestIMO01WalkingSpeedCorridor:
         tolerance = 0.20
         evacuation_time = metrics["evacuation_time"]
         vv_row.set(
-            quantity="evacuation_time", unit="s",
+            quantity="evacuation_time",
+            unit="s",
             lower=expected_time * (1 - tolerance),
             upper=expected_time * (1 + tolerance),
-            measured=evacuation_time, n=metrics["total_agents"], seed=42,
+            measured=evacuation_time,
+            n=metrics["total_agents"],
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: agents_remaining = 0; 38/1.2 * (1 - 0.20) <= measured "
@@ -137,8 +130,13 @@ class TestIMO01WalkingSpeedCorridor:
             radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
         )
         vv_row.set(
-            quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
-            measured=len(violations), n=metrics["total_agents"], seed=42,
+            quantity="out_of_bounds_samples",
+            unit="count",
+            lower=0,
+            upper=0,
+            measured=len(violations),
+            n=metrics["total_agents"],
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule="bound: 0 <= measured <= 0 (samples outside the walkable area)",
         )
@@ -180,7 +178,13 @@ class TestIMO02WalkingSpeedUpstairs:
     DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
-            "coordinates": [[0.0, 0.75], [0.5, 0.75], [0.5, 1.25], [0.0, 1.25], [0.0, 0.75]],
+            "coordinates": [
+                [0.0, 0.75],
+                [0.5, 0.75],
+                [0.5, 1.25],
+                [0.0, 1.25],
+                [0.0, 0.75],
+            ],
             "parameters": {
                 "number": 1,
                 "radius": 0.15,
@@ -238,8 +242,13 @@ class TestIMO02WalkingSpeedUpstairs:
             result.cleanup()
 
         vv_row.set(
-            quantity="stair_travel_time", unit="s", lower=9.5, upper=10.5,
-            measured=evac, n=total_agents, seed=42,
+            quantity="stair_travel_time",
+            unit="s",
+            lower=9.5,
+            upper=10.5,
+            measured=evac,
+            n=total_agents,
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule="bound: 9.5 <= measured <= 10.5",
         )
@@ -284,7 +293,13 @@ class TestIMO03WalkingSpeedDownstairs:
     DIST: ClassVar[dict] = {
         "jps-distributions_0": {
             "type": "polygon",
-            "coordinates": [[0.0, 0.75], [0.5, 0.75], [0.5, 1.25], [0.0, 1.25], [0.0, 0.75]],
+            "coordinates": [
+                [0.0, 0.75],
+                [0.5, 0.75],
+                [0.5, 1.25],
+                [0.0, 1.25],
+                [0.0, 0.75],
+            ],
             "parameters": {
                 "number": 1,
                 "radius": 0.15,
@@ -342,8 +357,13 @@ class TestIMO03WalkingSpeedDownstairs:
             result.cleanup()
 
         vv_row.set(
-            quantity="stair_travel_time", unit="s", lower=9.5, upper=10.5,
-            measured=evac, n=total_agents, seed=42,
+            quantity="stair_travel_time",
+            unit="s",
+            lower=9.5,
+            upper=10.5,
+            measured=evac,
+            n=total_agents,
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule="bound: 9.5 <= measured <= 10.5",
         )
@@ -399,9 +419,14 @@ class TestIMO04ExitFlowRate:
             max_simulation_time=300.0,
         )
         vv_row.set(
-            quantity="agents_remaining", unit="count", lower=0, upper=0,
-            measured=metrics["agents_remaining"], n=metrics["total_agents"],
-            seed=42, model="CollisionFreeSpeedModel",
+            quantity="agents_remaining",
+            unit="count",
+            lower=0,
+            upper=0,
+            measured=metrics["agents_remaining"],
+            n=metrics["total_agents"],
+            seed=42,
+            model="CollisionFreeSpeedModel",
             rule="bound: total_agents = 100; 0 <= measured <= 0",
         )
         assert metrics["total_agents"] == 100
@@ -422,8 +447,13 @@ class TestIMO04ExitFlowRate:
         flow = self._flow(limiter_on=True)
         cap = MAX_SPECIFIC_FLOW * (1 + FLOW_CAP_TOLERANCE)
         vv_row.set(
-            quantity="specific_exit_flow_limiter_on", unit="p/m/s", upper=cap,
-            measured=flow, n=100, seed=42, model="CollisionFreeSpeedModel",
+            quantity="specific_exit_flow_limiter_on",
+            unit="p/m/s",
+            upper=cap,
+            measured=flow,
+            n=100,
+            seed=42,
+            model="CollisionFreeSpeedModel",
             rule=(
                 f"bound: measured <= {MAX_SPECIFIC_FLOW} * (1 + "
                 f"{FLOW_CAP_TOLERANCE}); exit limiter on, 1 m exit"
@@ -438,8 +468,12 @@ class TestIMO04ExitFlowRate:
         """Information only: the emergent flow is printed, not asserted."""
         flow = self._flow(limiter_on=False)
         vv_row.set(
-            quantity="specific_exit_flow_limiter_off", unit="p/m/s",
-            measured=flow, n=100, seed=42, model="CollisionFreeSpeedModel",
+            quantity="specific_exit_flow_limiter_off",
+            unit="p/m/s",
+            measured=flow,
+            n=100,
+            seed=42,
+            model="CollisionFreeSpeedModel",
             rule="information only: emergent flow, not asserted",
         )
         print(f"IMO 4 emergent flow, limiter off: {flow:.2f} p/s")
@@ -537,9 +571,15 @@ class TestIMO05ResponseTime:
 
         observed = np.array([movement_start[agent_id] for agent_id in agent_ids])
         vv_row.set(
-            quantity="movement_start_time", unit="s", lower=9.9, upper=101.0,
-            measured=observed.tolist(), n=len(agent_ids), seed=42,
-            premovement_seed=12345, model="CollisionFreeSpeedModel",
+            quantity="movement_start_time",
+            unit="s",
+            lower=9.9,
+            upper=101.0,
+            measured=observed.tolist(),
+            n=len(agent_ids),
+            seed=42,
+            premovement_seed=12345,
+            model="CollisionFreeSpeedModel",
             rule=(
                 "bound: 9.9 <= measured <= 101.0; comparison: per-agent measured "
                 "vs that agent's premovement sample (premovement_seed), "
@@ -604,9 +644,14 @@ class TestIMO06RoundingCorners:
             max_simulation_time=120.0,
         )
         vv_row.set(
-            quantity="agents_remaining", unit="count", lower=0, upper=0,
-            measured=metrics["agents_remaining"], n=metrics["total_agents"],
-            seed=42, model="CollisionFreeSpeedModel",
+            quantity="agents_remaining",
+            unit="count",
+            lower=0,
+            upper=0,
+            measured=metrics["agents_remaining"],
+            n=metrics["total_agents"],
+            seed=42,
+            model="CollisionFreeSpeedModel",
             rule="bound: 0 <= measured <= 0",
         )
         assert metrics["agents_remaining"] == 0, (
@@ -626,8 +671,13 @@ class TestIMO06RoundingCorners:
             radius=self.DIST["jps-distributions_0"]["parameters"]["radius"],
         )
         vv_row.set(
-            quantity="out_of_bounds_samples", unit="count", lower=0, upper=0,
-            measured=len(violations), n=metrics["total_agents"], seed=42,
+            quantity="out_of_bounds_samples",
+            unit="count",
+            lower=0,
+            upper=0,
+            measured=len(violations),
+            n=metrics["total_agents"],
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule="bound: 0 <= measured <= 0 (samples outside the walkable area)",
         )
@@ -637,6 +687,7 @@ class TestIMO06RoundingCorners:
 # ---------------------------------------------------------------------------
 # IMO 7 - Assignment of population demographics
 # ---------------------------------------------------------------------------
+
 
 class TestIMO07PopulationDemographics:
     """IMO 7: Assignment of population demographics."""
@@ -669,13 +720,9 @@ class TestIMO07PopulationDemographics:
         # Preserve the original exit.
         exit_polygon = box(38, 0.2, 39.8, 9.8)
 
-        exit_id = simulation.add_exit_stage(
-            list(exit_polygon.exterior.coords[:-1])
-        )
+        exit_id = simulation.add_exit_stage(list(exit_polygon.exterior.coords[:-1]))
 
-        journey_id = simulation.add_journey(
-            jps.JourneyDescription([exit_id])
-        )
+        journey_id = simulation.add_journey(jps.JourneyDescription([exit_id]))
 
         # Place 50 agents in the original starting region.
         positions = jps.distributions.distribute_by_number(
@@ -699,20 +746,15 @@ class TestIMO07PopulationDemographics:
             )
 
         # Inspect the speeds assigned to the agents.
-        assigned_speeds = np.array([
-            agent.model.desired_speed
-            for agent in simulation.agents()
-        ])
+        assigned_speeds = np.array(
+            [agent.model.desired_speed for agent in simulation.agents()]
+        )
 
         assert simulation.agent_count() == self.NUMBER_OF_AGENTS
 
-        assert np.all(
-            assigned_speeds >= self.WALKING_SPEED_MIN
-        )
+        assert np.all(assigned_speeds >= self.WALKING_SPEED_MIN)
 
-        assert np.all(
-            assigned_speeds <= self.WALKING_SPEED_MAX
-        )
+        assert np.all(assigned_speeds <= self.WALKING_SPEED_MAX)
 
         # Verify the actual assigned-speed distribution.
         statistic, p_value = kstest(
@@ -736,6 +778,7 @@ class TestIMO07PopulationDemographics:
             "IMO 7 failed: assigned walking speeds are inconsistent "
             "with the specified uniform distribution."
         )
+
 
 # ---------------------------------------------------------------------------
 # IMO 8 - Counterflow
@@ -841,12 +884,14 @@ class TestIMO08Counterflow:
             max_simulation_time=300.0,
         )
         vv_row.set(
-            quantity="evacuation_time_counterflow_vs_one_way", unit="s",
+            quantity="evacuation_time_counterflow_vs_one_way",
+            unit="s",
             measured=[
                 metrics_counterflow["evacuation_time"],
                 metrics_without["evacuation_time"],
             ],
-            n=metrics_counterflow["total_agents"], seed=42,
+            n=metrics_counterflow["total_agents"],
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: agents_remaining = 0 in both runs; comparison: "
@@ -968,9 +1013,11 @@ class TestIMO09ExitCountSensitivity:
             max_simulation_time=600.0,
         )
         vv_row.set(
-            quantity="evacuation_time_4_exits_vs_2_exits", unit="s",
+            quantity="evacuation_time_4_exits_vs_2_exits",
+            unit="s",
             measured=[metrics_4["evacuation_time"], metrics_2["evacuation_time"]],
-            n=metrics_4["total_agents"], seed=42,
+            n=metrics_4["total_agents"],
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: agents_remaining = 0 in both runs; comparison: "
@@ -1081,8 +1128,13 @@ class TestIMO10ExitRouteAllocation:
             if expected_agent_exit[agent_id] != actual_agent_exit[agent_id]
         }
         vv_row.set(
-            quantity="wrong_exit_agents", unit="count", lower=0, upper=0,
-            measured=len(mismatches), n=result.total_agents, seed=42,
+            quantity="wrong_exit_agents",
+            unit="count",
+            lower=0,
+            upper=0,
+            measured=len(mismatches),
+            n=result.total_agents,
+            seed=42,
             model="CollisionFreeSpeedModel",
             scenario_file="standards/rimea/scenario_files/Rimea-10.zip",
             rule="bound: 0 <= measured <= 0 (agents at a non-assigned exit)",
@@ -1125,13 +1177,9 @@ def build_imo11_staircase(seed=42):
     # Exit at the upper end of the staircase.
     exit_polygon = box(3.2, 21.7, 4.8, 21.95)
 
-    exit_id = simulation.add_exit_stage(
-        list(exit_polygon.exterior.coords[:-1])
-    )
+    exit_id = simulation.add_exit_stage(list(exit_polygon.exterior.coords[:-1]))
 
-    journey_id = simulation.add_journey(
-        jps.JourneyDescription([exit_id])
-    )
+    journey_id = simulation.add_journey(jps.JourneyDescription([exit_id]))
 
     # Generate 150 initial positions in the room.
     positions = jps.distributions.distribute_by_number(
@@ -1159,6 +1207,8 @@ def build_imo11_staircase(seed=42):
         )
 
     return simulation
+
+
 def run_imo11_staircase(simulation, dt=0.05, max_time=300.0):
     """Run IMO 11 with reduced walking speed on the staircase.
 
@@ -1173,8 +1223,7 @@ def run_imo11_staircase(simulation, dt=0.05, max_time=300.0):
 
     # Preserve each agent's original desired speed.
     original_speeds = {
-        agent.id: agent.model.desired_speed
-        for agent in simulation.agents()
+        agent.id: agent.model.desired_speed for agent in simulation.agents()
     }
 
     records = []
@@ -1189,16 +1238,16 @@ def run_imo11_staircase(simulation, dt=0.05, max_time=300.0):
             # Staircase occupies y = 18..22 m.
             factor = 0.5 if 18.0 <= y <= 22.0 else 1.0
 
-            agent.model.desired_speed = (
-                original_speeds[agent.id] * factor
-            )
+            agent.model.desired_speed = original_speeds[agent.id] * factor
 
-            records.append({
-                "time": time,
-                "id": agent.id,
-                "x": x,
-                "y": y,
-            })
+            records.append(
+                {
+                    "time": time,
+                    "id": agent.id,
+                    "x": x,
+                    "y": y,
+                }
+            )
 
         if simulation.agent_count() == 0:
             break
@@ -1206,6 +1255,8 @@ def run_imo11_staircase(simulation, dt=0.05, max_time=300.0):
         simulation.iterate()
 
     return pd.DataFrame(records), simulation.elapsed_time()
+
+
 class TestIMO11Staircase:
     """IMO Test 11 — Escape route via stairs.
 
@@ -1217,6 +1268,7 @@ class TestIMO11Staircase:
 
     Stair movement is approximated using a reduced-speed zone.
     """
+
     def test_scenario_initialization(self):
 
         simulation = build_imo11_staircase(seed=42)
@@ -1233,12 +1285,12 @@ class TestIMO11Staircase:
 
         assert not trajectories.empty
         assert simulation.agent_count() == 0, (
-            f"{simulation.agent_count()} agents did not evacuate "
-            f"within 300 seconds"
+            f"{simulation.agent_count()} agents did not evacuate within 300 seconds"
         )
 
         print(f"\nEvacuation time: {evacuation_time:.2f} s")
         print(f"Recorded positions: {len(trajectories)}")
+
     def test_congestion_and_flow(self):
         simulation = build_imo11_staircase(seed=42)
 
@@ -1267,9 +1319,7 @@ class TestIMO11Staircase:
 
             # Each region has an area of 4 m².
             counts = inside.groupby("time").size()
-            peak_densities[name] = counts.max() / (
-                (x1 - x0) * (y1 - y0)
-            )
+            peak_densities[name] = counts.max() / ((x1 - x0) * (y1 - y0))
         # Examine how density evolves in each measurement region.
         print("\nDensity over time (10-second intervals):")
 
@@ -1295,7 +1345,7 @@ class TestIMO11Staircase:
                 if mask.any():
                     mean_density = density.iloc[mask].mean()
                     print(
-                        f"  {name:12s} | {start:2d}–{start+10:2d} s"
+                        f"  {name:12s} | {start:2d}–{start + 10:2d} s"
                         f" | {mean_density:.2f} persons/m²"
                     )
         # Calculate actual walking speeds from trajectories.
@@ -1305,14 +1355,14 @@ class TestIMO11Staircase:
         trajectories["dy"] = trajectories.groupby("id")["y"].diff()
         trajectories["dt"] = trajectories.groupby("id")["time"].diff()
 
-        trajectories["speed"] = np.sqrt(
-            trajectories["dx"] ** 2 + trajectories["dy"] ** 2
-        ) / trajectories["dt"]
+        trajectories["speed"] = (
+            np.sqrt(trajectories["dx"] ** 2 + trajectories["dy"] ** 2)
+            / trajectories["dt"]
+        )
 
         # Compare speeds during the main evacuation period.
         active = trajectories[
-            (trajectories["time"] >= 20)
-            & (trajectories["time"] < 50)
+            (trajectories["time"] >= 20) & (trajectories["time"] < 50)
         ]
 
         print("\nMean walking speeds (20–50 s):")
@@ -1388,10 +1438,7 @@ class TestIMO11Staircase:
             agent_data = agent_data.sort_values("time")
 
             previous_y = agent_data["y"].shift(1)
-            crossed = (
-                (previous_y < 12.0)
-                & (agent_data["y"] >= 12.0)
-            )
+            crossed = (previous_y < 12.0) & (agent_data["y"] >= 12.0)
 
             crossings.extend(agent_data.loc[crossed, "time"].tolist())
 
@@ -1412,7 +1459,6 @@ class TestIMO11Staircase:
 
         print(f"  Total corridor crossings: {len(crossings)}")
         print(f"  Maximum 10-second flow: {flow_rates.max():.2f} persons/s")
-
 
         # All 150 agents should cross the corridor midpoint.
         assert len(crossings) == 150
@@ -1435,12 +1481,13 @@ class TestIMO11Staircase:
         assert coefficient_of_variation < 0.15, (
             "Corridor flow is not sufficiently steady: "
             f"CV = {coefficient_of_variation:.3f}"
-
         )
+
 
 # ---------------------------------------------------------------------------
 # IMO 12 - Flow-Density Relation
 # ---------------------------------------------------------------------------
+
 
 def build_imo12_corridor(density, seed=42):
     """Build an unobstructed corridor for IMO Test 12."""
@@ -1464,13 +1511,9 @@ def build_imo12_corridor(density, seed=42):
         width - 0.2,
     )
 
-    exit_id = simulation.add_exit_stage(
-        list(exit_polygon.exterior.coords[:-1])
-    )
+    exit_id = simulation.add_exit_stage(list(exit_polygon.exterior.coords[:-1]))
 
-    journey_id = simulation.add_journey(
-        jps.JourneyDescription([exit_id])
-    )
+    journey_id = simulation.add_journey(jps.JourneyDescription([exit_id]))
 
     number_of_agents = int(density * length * width)
 
@@ -1494,6 +1537,8 @@ def build_imo12_corridor(density, seed=42):
         )
 
     return simulation
+
+
 def run_imo12_corridor(simulation, dt=0.05, max_time=120.0):
     """Run IMO 12 and record pedestrian trajectories."""
     import pandas as pd
@@ -1510,16 +1555,20 @@ def run_imo12_corridor(simulation, dt=0.05, max_time=120.0):
         for agent in simulation.agents():
             x, y = agent.position
 
-            records.append({
-                "time": time,
-                "id": agent.id,
-                "x": x,
-                "y": y,
-            })
+            records.append(
+                {
+                    "time": time,
+                    "id": agent.id,
+                    "x": x,
+                    "y": y,
+                }
+            )
 
         simulation.iterate()
 
     return pd.DataFrame(records)
+
+
 def measure_imo12_flow_density(trajectories, interval=5.0):
     """Measure local density and pedestrian flow over time."""
 
@@ -1527,29 +1576,20 @@ def measure_imo12_flow_density(trajectories, interval=5.0):
     measurement_area = 4.0 * 2.0
 
     # Calculate density at every recorded timestep.
-    inside = trajectories[
-        (trajectories["x"] >= 13.0)
-        & (trajectories["x"] < 17.0)
-    ]
+    inside = trajectories[(trajectories["x"] >= 13.0) & (trajectories["x"] < 17.0)]
 
     counts = inside.groupby("time").size()
 
     all_times = np.sort(trajectories["time"].unique())
 
-    density = (
-        counts.reindex(all_times, fill_value=0)
-        / measurement_area
-    )
+    density = counts.reindex(all_times, fill_value=0) / measurement_area
 
     # Detect crossings of x = 15 m.
     trajectories = trajectories.sort_values(["id", "time"]).copy()
 
     previous_x = trajectories.groupby("id")["x"].shift(1)
 
-    crossed = (
-        (previous_x < 15.0)
-        & (trajectories["x"] >= 15.0)
-    )
+    crossed = (previous_x < 15.0) & (trajectories["x"] >= 15.0)
 
     crossing_times = trajectories.loc[crossed, "time"].to_numpy()
 
@@ -1562,7 +1602,7 @@ def measure_imo12_flow_density(trajectories, interval=5.0):
 
     results = []
 
-    for start, end in zip(bins[:-1], bins[1:]):
+    for start, end in itertools.pairwise(bins):
         mask = (all_times >= start) & (all_times < end)
 
         if not mask.any():
@@ -1570,23 +1610,23 @@ def measure_imo12_flow_density(trajectories, interval=5.0):
 
         mean_density = density.iloc[mask].mean()
 
-        crossings = np.count_nonzero(
-            (crossing_times >= start)
-            & (crossing_times < end)
-        )
+        crossings = np.count_nonzero((crossing_times >= start) & (crossing_times < end))
 
         flow = crossings / interval
 
-        results.append({
-            "time_start": start,
-            "time_end": end,
-            "density": mean_density,
-            "flow": flow,
-        })
+        results.append(
+            {
+                "time_start": start,
+                "time_end": end,
+                "density": mean_density,
+                "flow": flow,
+            }
+        )
 
     return results
-class TestIMO12FlowDensityRelation:
 
+
+class TestIMO12FlowDensityRelation:
     @pytest.mark.parametrize(
         "density",
         [0.5, 1.0, 2.0, 3.0],
@@ -1600,6 +1640,7 @@ class TestIMO12FlowDensityRelation:
         expected_agents = int(density * 30.0 * 2.0)
 
         assert simulation.agent_count() == expected_agents
+
     def test_flow_density_measurements(self):
         densities = [0.5, 1.0, 2.0, 3.0]
 
@@ -1626,10 +1667,7 @@ class TestIMO12FlowDensityRelation:
                 flow = measurement["flow"]
 
                 if density > 0.1:
-                    print(
-                        f"  {density:.3f} persons/m²"
-                        f" | {flow:.3f} persons/s"
-                    )
+                    print(f"  {density:.3f} persons/m² | {flow:.3f} persons/s")
 
             all_measurements.extend(measurements)
 
@@ -1637,16 +1675,10 @@ class TestIMO12FlowDensityRelation:
         # not by the initial density of the simulation.
 
         moderate_flow = [
-            m["flow"]
-            for m in all_measurements
-            if 1.5 <= m["density"] <= 2.5
+            m["flow"] for m in all_measurements if 1.5 <= m["density"] <= 2.5
         ]
 
-        high_flow = [
-            m["flow"]
-            for m in all_measurements
-            if 3.0 <= m["density"] <= 3.5
-        ]
+        high_flow = [m["flow"] for m in all_measurements if 3.0 <= m["density"] <= 3.5]
 
         assert moderate_flow, "No moderate-density measurements found"
         assert high_flow, "No high-density measurements found"
@@ -1662,6 +1694,7 @@ class TestIMO12FlowDensityRelation:
             "IMO 12 failed: flow at high density is not lower "
             "than flow at moderate density"
         )
+
 
 # ---------------------------------------------------------------------------
 # Additional behavior/property checks (not individual IMO test numbers)
