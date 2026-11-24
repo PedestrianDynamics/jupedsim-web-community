@@ -696,7 +696,7 @@ class TestIMO07PopulationDemographics:
     WALKING_SPEED_MAX = 1.62
     NUMBER_OF_AGENTS = 50
 
-    def test_population_demographics(self):
+    def test_population_demographics(self, vv_row):
         from scipy.stats import kstest
 
         rng = np.random.default_rng(42)
@@ -773,6 +773,20 @@ class TestIMO07PopulationDemographics:
         print(f"Mean speed: {assigned_speeds.mean():.3f} m/s")
         print(f"KS statistic: {statistic:.4f}")
         print(f"KS p-value: {p_value:.4f}")
+
+        vv_row.set(
+            quantity="desired_speed_ks_pvalue",
+            unit="1",
+            lower=0.05,
+            measured=p_value,
+            n=self.NUMBER_OF_AGENTS,
+            seed=42,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "bound: all speeds in [0.97, 1.62] m/s; "
+                "KS p-value vs Uniform(0.97, 1.62) >= 0.05"
+            ),
+        )
 
         assert p_value >= 0.05, (
             "IMO 7 failed: assigned walking speeds are inconsistent "
@@ -1275,12 +1289,28 @@ class TestIMO11Staircase:
 
         assert simulation.agent_count() == 150
 
-    def test_staircase_evacuation(self):
+    @pytest.fixture(scope="class")
+    def staircase_run(self):
         simulation = build_imo11_staircase(seed=42)
         trajectories, evacuation_time = run_imo11_staircase(
             simulation,
             dt=0.05,
             max_time=300.0,
+        )
+        return simulation, trajectories, evacuation_time
+
+    def test_staircase_evacuation(self, staircase_run, vv_row):
+        simulation, trajectories, evacuation_time = staircase_run
+        vv_row.set(
+            quantity="agents_remaining",
+            unit="count",
+            lower=0,
+            upper=0,
+            measured=simulation.agent_count(),
+            n=150,
+            seed=42,
+            model="CollisionFreeSpeedModel",
+            rule="bound: 0 <= measured <= 0 (agents left after 300 s)",
         )
 
         assert not trajectories.empty
@@ -1291,14 +1321,8 @@ class TestIMO11Staircase:
         print(f"\nEvacuation time: {evacuation_time:.2f} s")
         print(f"Recorded positions: {len(trajectories)}")
 
-    def test_congestion_and_flow(self):
-        simulation = build_imo11_staircase(seed=42)
-
-        trajectories, _ = run_imo11_staircase(
-            simulation,
-            dt=0.05,
-            max_time=300.0,
-        )
+    def test_congestion_and_flow(self, staircase_run, vv_row):
+        _, trajectories, _ = staircase_run
 
         # Measurement regions (all 2 m wide).
         regions = {
@@ -1307,7 +1331,12 @@ class TestIMO11Staircase:
             "stair_base": (3.0, 5.0, 17.0, 19.0),
         }
 
-        peak_densities = {}
+        # Mean density over the congested phase (10-50 s), frames with no
+        # agent in the region included. A single-frame peak in a 4 m² region
+        # moves in steps of 0.25 persons/m² and is too noisy to compare.
+        all_frames = np.sort(trajectories["time"].unique())
+        congested = all_frames[(all_frames >= 10.0) & (all_frames < 50.0)]
+        mean_densities = {}
 
         for name, (x0, x1, y0, y1) in regions.items():
             inside = trajectories[
@@ -1317,9 +1346,8 @@ class TestIMO11Staircase:
                 & (trajectories["y"] < y1)
             ]
 
-            # Each region has an area of 4 m².
-            counts = inside.groupby("time").size()
-            peak_densities[name] = counts.max() / ((x1 - x0) * (y1 - y0))
+            counts = inside.groupby("time").size().reindex(congested, fill_value=0)
+            mean_densities[name] = counts.mean() / ((x1 - x0) * (y1 - y0))
         # Examine how density evolves in each measurement region.
         print("\nDensity over time (10-second intervals):")
 
@@ -1454,7 +1482,7 @@ class TestIMO11Staircase:
                 print(f"  {start:3.0f}–{start + 10:3.0f} s: {rate:.2f} persons/s")
 
         print("\nIMO 11 measurements:")
-        for name, density in peak_densities.items():
+        for name, density in mean_densities.items():
             print(f"  {name}: {density:.3f} persons/m²")
 
         print(f"  Total corridor crossings: {len(crossings)}")
@@ -1463,8 +1491,8 @@ class TestIMO11Staircase:
         # All 150 agents should cross the corridor midpoint.
         assert len(crossings) == 150
         # Congestion should develop at the room exit and staircase base.
-        assert peak_densities["room_exit"] > peak_densities["corridor"]
-        assert peak_densities["stair_base"] > peak_densities["corridor"]
+        assert mean_densities["room_exit"] > mean_densities["corridor"]
+        assert mean_densities["stair_base"] > mean_densities["corridor"]
         # Check approximately steady corridor flow during the
         # established flow phase (10–60 seconds).
         steady_flow = flow_rates[1:6]
@@ -1476,6 +1504,25 @@ class TestIMO11Staircase:
 
         print(f"  Mean steady flow: {mean_flow:.2f} persons/s")
         print(f"  Flow coefficient of variation: {coefficient_of_variation:.3f}")
+
+        vv_row.set(
+            quantity="mean_density_room_exit_corridor_stair_base",
+            unit="persons/m²",
+            measured=[
+                mean_densities["room_exit"],
+                mean_densities["corridor"],
+                mean_densities["stair_base"],
+            ],
+            n=150,
+            seed=42,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "comparison: room-exit and stair-base mean density (10-50 s) > "
+                "corridor mean density; speed at room exit and before the "
+                "stair < 0.85 x corridor speed; bound: corridor flow CV "
+                "(10-60 s) < 0.15"
+            ),
+        )
 
         assert mean_flow > 0
         assert coefficient_of_variation < 0.15, (
@@ -1517,10 +1564,11 @@ def build_imo12_corridor(density, seed=42):
 
     number_of_agents = int(density * length * width)
 
+    # 0.31 m (just above two radii) lets the densest start be placed.
     positions = jps.distributions.distribute_by_number(
         polygon=box(0.3, 0.3, length - 0.5, width - 0.3),
         number_of_agents=number_of_agents,
-        distance_to_agents=0.35,
+        distance_to_agents=0.31,
         distance_to_polygon=0.15,
         seed=seed,
     )
@@ -1629,7 +1677,7 @@ def measure_imo12_flow_density(trajectories, interval=5.0):
 class TestIMO12FlowDensityRelation:
     @pytest.mark.parametrize(
         "density",
-        [0.5, 1.0, 2.0, 3.0],
+        [0.5, 1.0, 2.0, 3.0, 3.5],
     )
     def test_scenario_initialization(self, density):
         simulation = build_imo12_corridor(
@@ -1641,8 +1689,10 @@ class TestIMO12FlowDensityRelation:
 
         assert simulation.agent_count() == expected_agents
 
-    def test_flow_density_measurements(self):
-        densities = [0.5, 1.0, 2.0, 3.0]
+    def test_flow_density_measurements(self, vv_row):
+        # The 3.5 start makes every seed reach measured densities >= 3.0;
+        # with 3.0 as the densest start some seeds stay just below it.
+        densities = [0.5, 1.0, 2.0, 3.0, 3.5]
 
         all_measurements = []
 
@@ -1678,7 +1728,7 @@ class TestIMO12FlowDensityRelation:
             m["flow"] for m in all_measurements if 1.5 <= m["density"] <= 2.5
         ]
 
-        high_flow = [m["flow"] for m in all_measurements if 3.0 <= m["density"] <= 3.5]
+        high_flow = [m["flow"] for m in all_measurements if m["density"] >= 3.0]
 
         assert moderate_flow, "No moderate-density measurements found"
         assert high_flow, "No high-density measurements found"
@@ -1689,6 +1739,19 @@ class TestIMO12FlowDensityRelation:
         print("\nIMO 12 verification:")
         print(f"  Moderate-density flow: {mean_moderate_flow:.3f} persons/s")
         print(f"  High-density flow:     {mean_high_flow:.3f} persons/s")
+
+        vv_row.set(
+            quantity="mean_flow_moderate_vs_high_density",
+            unit="persons/s",
+            measured=[mean_moderate_flow, mean_high_flow],
+            n=len(moderate_flow) + len(high_flow),
+            seed=42,
+            model="CollisionFreeSpeedModel",
+            rule=(
+                "comparison: mean 5 s flow at x = 15 m for measured density "
+                ">= 3.0 persons/m² < mean flow for 1.5-2.5 persons/m²"
+            ),
+        )
 
         assert mean_high_flow < mean_moderate_flow, (
             "IMO 12 failed: flow at high density is not lower "

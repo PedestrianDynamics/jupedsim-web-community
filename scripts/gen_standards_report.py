@@ -51,7 +51,7 @@ STATUS_META = {
     "skip": ("SKIP", "skip"),
     "pending": ("PENDING", "pending"),
     "notebook": ("NOTEBOOK", "notebook"),
-    "test-local": ("TEST-LOCAL", "test-local"),
+    "test-local": ("SCRIPTED", "test-local"),
     "not-supported": ("NOT SUPPORTED", "not-supported"),
 }
 
@@ -192,7 +192,7 @@ def render_markdown(data: list, stamp: str) -> str:
         ":warning: xfail (criterion not met) · "
         ":ledger: notebook-demonstrated · "
         ":fast_forward: skip (placeholder) · "
-        ":label: test-local (tests adapter or configuration logic) · "
+        ":label: scripted (reproduced by scripting the JuPedSim API) · "
         ":hourglass_flowing_sand: pending (feasible but not implemented) · "
         ":no_entry_sign: not-supported (required functionality unavailable) · "
         ":x: fail\n"
@@ -257,6 +257,10 @@ def bar_segments(counts: dict, total: int) -> str:
         "not-supported",
         "pending",
     ]
+    # pending fills the remainder up to total
+    accounted = sum(counts.get(k, 0) for k in order if k != "pending")
+    counts = dict(counts)
+    counts["pending"] = max(counts.get("pending", 0), total - accounted)
 
     for k in order:
         n = counts.get(k, 0)
@@ -300,9 +304,10 @@ def render_html(data: list, stamp: str) -> str:
     parts.append("<div class=overall>")
     for key, lbl in [
         ("pass", "Pass"),
-        ("test-local", "Test-Local"),
+        ("test-local", "Scripted"),
         ("xfail", "XFail"),
         ("not-supported", "Not Supported"),
+        ("pending", "Pending"),
         ("fail", "Fail"),
     ]:
         parts.append(f"<div class=stat><b>{totals[key]}</b><span>{lbl}</span></div>")

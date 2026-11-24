@@ -365,7 +365,7 @@ class TestNist23Corner:
 class TestNist24Demographics:
     """NIST Verif.2.4 - Verify Gaussian-distributed desired speeds."""
 
-    def test_assigned_agent_demographics(self):
+    def test_assigned_agent_demographics(self, vv_row):
         from jupedsim_scenarios import ScenarioRunner
         from scipy.stats import kstest
 
@@ -382,9 +382,9 @@ class TestNist24Demographics:
         assert expected_mean == 1.2
         assert expected_std == 0.2
 
-       # NIST 2.4 has no exit, but ScenarioRunner requires one for initialization.
-       # Add a temporary exit with zero throughput to prevent agents from leaving.
-       # The simulation is not advanced; only the initially assigned speeds are inspected.
+        # NIST 2.4 has no exit, but ScenarioRunner requires one for initialization.
+        # Add a temporary exit with zero throughput to prevent agents from leaving.
+        # The simulation is not advanced; only the initially assigned speeds are inspected.
         _minx, miny, maxx, maxy = scenario.walkable_polygon.bounds
 
         scenario.add_exit(
@@ -426,6 +426,21 @@ class TestNist24Demographics:
             print(f"Measured std: {sample_std:.3f} m/s")
             print(f"KS statistic: {statistic:.4f}")
             print(f"KS p-value: {p_value:.4f}")
+
+            vv_row.set(
+                quantity="desired_speed_ks_pvalue",
+                unit="1",
+                lower=0.05,
+                measured=p_value,
+                n=runner.agent_count,
+                seed=42,
+                model="CollisionFreeSpeedModel",
+                scenario_file="standards/nist/scenario_files/Nist-2-4-demographics.zip",
+                rule=(
+                    "bound: |mean - 1.2| < 0.06 m/s; |std - 0.2| < 0.05 m/s; "
+                    "KS p-value vs Normal(1.2, 0.2) >= 0.05"
+                ),
+            )
 
             assert abs(sample_mean - expected_mean) < 0.06
             assert abs(sample_std - expected_std) < 0.05
