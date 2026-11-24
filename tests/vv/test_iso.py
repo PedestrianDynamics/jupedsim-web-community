@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -46,7 +47,7 @@ for extra in (STANDARDS_DIR / "iso", STANDARDS_DIR):
     if str(extra) not in sys.path:
         sys.path.insert(0, str(extra))
 
-from jupedsim_scenarios import (  # noqa: E402
+from jupedsim_scenarios import (
     load_scenario,
     run_scenario,
     run_sweep,
@@ -155,8 +156,11 @@ class TestIso01Premovement:
         reference = builder.sample_reference(case_obj, 10000, seed=2)
         p = _stats.ks_2samp(observed, reference).pvalue
         vv_row.set(
-            quantity="premovement_ks_pvalue", unit="1", lower=self.ALPHA,
-            measured=p, n=len(observed),
+            quantity="premovement_ks_pvalue",
+            unit="1",
+            lower=self.ALPHA,
+            measured=p,
+            n=len(observed),
             seed=[42 + i for i in range(self.N_RUNS)],
             model="CollisionFreeSpeedModel",
             scenario_file="standards/iso/scenario_files/Iso-01-premovement.zip",
@@ -189,8 +193,13 @@ class TestIso02CorridorSpeed:
             assert len(speeds) > 0, "no agent crossed the measurement segment"
             observed = speeds.mean()
             vv_row.set(
-                quantity="corridor_speed", unit="m/s", lower=0.95, upper=1.05,
-                measured=observed, n=len(speeds), seed=42,
+                quantity="corridor_speed",
+                unit="m/s",
+                lower=0.95,
+                upper=1.05,
+                measured=observed,
+                n=len(speeds),
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file="standards/iso/scenario_files/Iso-02-corridor.zip",
                 rule="bound: 1.0 - 0.05 <= measured <= 1.0 + 0.05",
@@ -225,8 +234,13 @@ class TestIso03Stairs:
             assert len(speeds) > 0, "no agent crossed the stair segment"
             observed = speeds.mean()
             vv_row.set(
-                quantity="stair_speed", unit="m/s", lower=0.95, upper=1.05,
-                measured=observed, n=len(speeds), seed=42,
+                quantity="stair_speed",
+                unit="m/s",
+                lower=0.95,
+                upper=1.05,
+                measured=observed,
+                n=len(speeds),
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file="standards/iso/scenario_files/Iso-03-stairs.zip",
                 rule="bound: 1.0 - 0.05 <= measured <= 1.0 + 0.05",
@@ -266,9 +280,14 @@ class TestIso04Corner:
                 if not walkable_with_tol.contains(Point(row.x, row.y))
             )
             vv_row.set(
-                quantity="boundary_penetration_samples", unit="count",
-                lower=0, upper=0, measured=outside, n=result.total_agents,
-                seed=42, model="CollisionFreeSpeedModel",
+                quantity="boundary_penetration_samples",
+                unit="count",
+                lower=0,
+                upper=0,
+                measured=outside,
+                n=result.total_agents,
+                seed=42,
+                model="CollisionFreeSpeedModel",
                 scenario_file="standards/iso/scenario_files/Iso-04-corner.zip",
                 rule=(
                     "bound: agents_remaining = 0; 0 <= measured <= 0 "
@@ -301,7 +320,7 @@ class TestIso05Demographics:
 
     MU = 1.2
     SIGMA = 0.2
-    SEEDS = [42, 43, 44]
+    SEEDS: ClassVar = [42, 43, 44]
 
     def _measure(self, seed):
         s = _load("Iso-05-demographics")
@@ -338,14 +357,17 @@ class TestIso05Demographics:
             ks_p.append(_stats.ks_2samp(sp, assigned).pvalue)
         all_speeds = np.concatenate(all_speeds)
         vv_row.set(
-            quantity="represented_walking_speed_statistics", unit="m/s",
-            lower=self.MU - 0.05, upper=self.MU + 0.05,
+            quantity="represented_walking_speed_statistics",
+            unit="m/s",
+            lower=self.MU - 0.05,
+            upper=self.MU + 0.05,
             measured={
                 "mean_speed_mps": float(all_speeds.mean()),
                 "std_speed_mps": float(all_speeds.std()),
                 "median_ks_p": float(np.median(ks_p)),
             },
-            n=len(all_speeds), seed=self.SEEDS,
+            n=len(all_speeds),
+            seed=self.SEEDS,
             model="CollisionFreeSpeedModel",
             scenario_file="standards/iso/scenario_files/Iso-05-demographics.zip",
             rule=(
@@ -381,7 +403,7 @@ class TestIso06Counterflow:
     10 -> 70.0 s, 50 and 100 blocked.
     """
 
-    CF_ZIPS = {
+    CF_ZIPS: ClassVar = {
         0: "Iso-06-counterflow-0",
         10: "Iso-06-counterflow-10",
         50: "Iso-06-counterflow-50",
@@ -403,9 +425,12 @@ class TestIso06Counterflow:
 
         print(f"last room-2 entry [s] by counter-flow (None = blocked): {levels}")
         vv_row.set(
-            quantity="last_room2_entry_time_by_counterflow", unit="s",
+            quantity="last_room2_entry_time_by_counterflow",
+            unit="s",
             measured={f"counterflow_{c}": levels[c] for c in sorted(levels)},
-            n=100, seed=42, model="CollisionFreeSpeedModel",
+            n=100,
+            seed=42,
+            model="CollisionFreeSpeedModel",
             scenario_file=f"standards/iso/scenario_files/{self.CF_ZIPS[0]}.zip",
             rule=(
                 "bound: level 0 completes (not null); comparison: finite "
@@ -448,14 +473,16 @@ class TestIso07MovementDisabilities:
         disability_zone1 = disability.zone1_exit_times()
         control_zone1 = control.zone1_exit_times()
         vv_row.set(
-            quantity="zone1_exit_time_disability_vs_control", unit="s",
+            quantity="zone1_exit_time_disability_vs_control",
+            unit="s",
             measured=[
                 max(disability_zone1),
                 max(control_zone1),
                 float(np.mean(disability_zone1)),
                 float(np.mean(control_zone1)),
             ],
-            n=movement_disability.N_ZONE1 + 1, seed=42,
+            n=movement_disability.N_ZONE1 + 1,
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: all 25 occupants evacuate in both runs; comparison: "
@@ -493,13 +520,9 @@ class TestIso08RouteAllocation:
         scenario = _load("Iso-08-route-allocation")
         raw = scenario.raw
         if "journeys" in raw:
-            journey_map = {
-                j["stages"][0]: j["stages"][-1] for j in raw["journeys"]
-            }
+            journey_map = {j["stages"][0]: j["stages"][-1] for j in raw["journeys"]}
         else:
-            j_to_exit = {
-                j["id"]: j["sequence"][-1] for j in raw.get("journeys_v2", [])
-            }
+            j_to_exit = {j["id"]: j["sequence"][-1] for j in raw.get("journeys_v2", [])}
             journey_map = {
                 did: j_to_exit.get(
                     (d.get("journey_weights") or [{}])[0].get("journey_id"), ""
@@ -507,8 +530,7 @@ class TestIso08RouteAllocation:
                 for did, d in scenario.distributions.items()
             }
         dist_polys = {
-            did: Polygon(d["coordinates"])
-            for did, d in scenario.distributions.items()
+            did: Polygon(d["coordinates"]) for did, d in scenario.distributions.items()
         }
         exit_polys = {
             eid: Polygon(e["coordinates"]) for eid, e in scenario.exits.items()
@@ -529,17 +551,20 @@ class TestIso08RouteAllocation:
                 )
                 assert home is not None, f"agent {row_first.id} spawned nowhere"
                 expected = journey_map[home]
-                actual = min(
-                    exit_polys, key=lambda eid: exit_polys[eid].distance(p1)
-                )
+                actual = min(exit_polys, key=lambda eid: exit_polys[eid].distance(p1))
                 if actual != expected:
                     mismatches.append(
                         f"agent {row_first.id} from {home}: "
                         f"expected {expected}, got {actual}"
                     )
             vv_row.set(
-                quantity="wrong_exit_agents", unit="count", lower=0, upper=0,
-                measured=len(mismatches), n=result.total_agents, seed=42,
+                quantity="wrong_exit_agents",
+                unit="count",
+                lower=0,
+                upper=0,
+                measured=len(mismatches),
+                n=result.total_agents,
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file="standards/iso/scenario_files/Iso-08-route-allocation.zip",
                 rule="bound: agents_remaining = 0; 0 <= measured <= 0 "
@@ -654,12 +679,7 @@ class TestIso10Congestion:
 
             def rho(sub, x0, x1, y0, y1):
                 n = len(
-                    sub[
-                        (sub.x >= x0)
-                        & (sub.x <= x1)
-                        & (sub.y >= y0)
-                        & (sub.y <= y1)
-                    ]
+                    sub[(sub.x >= x0) & (sub.x <= x1) & (sub.y >= y0) & (sub.y <= y1)]
                 )
                 return n / ((x1 - x0) * (y1 - y0))
 
@@ -669,9 +689,11 @@ class TestIso10Congestion:
                 peak_corr = max(peak_corr, rho(sub, 3.0, 5.0, 8.0, 10.0))
                 peak_stair = max(peak_stair, rho(sub, 3.0, 5.0, 13.0, 14.0))
             vv_row.set(
-                quantity="peak_density_neck_stair_vs_corridor", unit="1/m^2",
+                quantity="peak_density_neck_stair_vs_corridor",
+                unit="1/m^2",
                 measured=[peak_neck, peak_stair, peak_corr],
-                n=result.total_agents, seed=42,
+                n=result.total_agents,
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file="standards/iso/scenario_files/Iso-10-congestion.zip",
                 rule=(
@@ -719,8 +741,13 @@ class TestIso11MaxFlow:
         flow = self._run(limiter_on=True)
         cap = MAX_SPECIFIC_FLOW * (1 + FLOW_CAP_TOLERANCE)
         vv_row.set(
-            quantity="specific_exit_flow_limiter_on", unit="p/m/s", upper=cap,
-            measured=flow, n=100, seed=42, model="CollisionFreeSpeedModel",
+            quantity="specific_exit_flow_limiter_on",
+            unit="p/m/s",
+            upper=cap,
+            measured=flow,
+            n=100,
+            seed=42,
+            model="CollisionFreeSpeedModel",
             scenario_file="standards/iso/scenario_files/Iso-11-max-flow.zip",
             rule=(
                 f"bound: measured <= {MAX_SPECIFIC_FLOW} * (1 + "
@@ -736,8 +763,12 @@ class TestIso11MaxFlow:
         """Information only: the emergent flow is printed, not asserted."""
         flow = self._run(limiter_on=False)
         vv_row.set(
-            quantity="specific_exit_flow_limiter_off", unit="p/m/s",
-            measured=flow, n=100, seed=42, model="CollisionFreeSpeedModel",
+            quantity="specific_exit_flow_limiter_off",
+            unit="p/m/s",
+            measured=flow,
+            n=100,
+            seed=42,
+            model="CollisionFreeSpeedModel",
             scenario_file="standards/iso/scenario_files/Iso-11-max-flow.zip",
             rule="information only: emergent flow, not asserted",
         )
@@ -766,9 +797,7 @@ class TestIso12StairFlow:
             raw = builder.build_raw_scenario(width)
             with tempfile.TemporaryDirectory() as d:
                 p = pathlib.Path(d)
-                (p / "config.json").write_text(
-                    json.dumps(raw), encoding="utf-8"
-                )
+                (p / "config.json").write_text(json.dumps(raw), encoding="utf-8")
                 (p / "geometry.wkt").write_text(
                     builder.build_geometry_wkt(width), encoding="utf-8"
                 )
@@ -787,12 +816,15 @@ class TestIso12StairFlow:
         widths = np.array([r["width"] for r in rows])
         flows = np.array([r["flow_p_s"] for r in rows])
         vv_row.set(
-            quantity="stair_flow_by_width", unit="p/s",
+            quantity="stair_flow_by_width",
+            unit="p/s",
             measured={
                 "stair_width_m": widths.tolist(),
                 "flow_p_s": flows.tolist(),
             },
-            n=builder.N_AGENTS, seed=42, model="CollisionFreeSpeedModel",
+            n=builder.N_AGENTS,
+            seed=42,
+            model="CollisionFreeSpeedModel",
             rule=(
                 "bound: flow_p_s has no NaN; comparison: slope of the linear "
                 "fit of flow_p_s over stair_width_m > 0 and flow_p_s[-1] "
@@ -824,7 +856,7 @@ class TestIso13CorridorFd:
     """
 
     FREE_SPEED = 1.0
-    DENSITIES = [60, 120, 240]
+    DENSITIES: ClassVar = [60, 120, 240]
 
     def test_zone2_speed_within_free_speed(self, vv_row):
         import json
@@ -836,12 +868,8 @@ class TestIso13CorridorFd:
             raw = builder.build_raw_scenario(n)
             with tempfile.TemporaryDirectory() as d:
                 p = pathlib.Path(d)
-                (p / "config.json").write_text(
-                    json.dumps(raw), encoding="utf-8"
-                )
-                (p / "geometry.wkt").write_text(
-                    builder.CORRIDOR_WKT, encoding="utf-8"
-                )
+                (p / "config.json").write_text(json.dumps(raw), encoding="utf-8")
+                (p / "geometry.wkt").write_text(builder.CORRIDOR_WKT, encoding="utf-8")
                 scenario = load_scenario(str(p))
                 result = run_scenario(scenario, seed=42)
                 try:
@@ -853,17 +881,20 @@ class TestIso13CorridorFd:
                     result.cleanup()
         speeds = np.array(speeds)
         vv_row.set(
-            quantity="zone2_mean_speed_by_density", unit="m/s",
-            upper=self.FREE_SPEED + 0.05, measured=speeds.tolist(),
-            n=max(self.DENSITIES), seed=42, model="CollisionFreeSpeedModel",
+            quantity="zone2_mean_speed_by_density",
+            unit="m/s",
+            upper=self.FREE_SPEED + 0.05,
+            measured=speeds.tolist(),
+            n=max(self.DENSITIES),
+            seed=42,
+            model="CollisionFreeSpeedModel",
             rule=(
                 f"bound: each measured <= {self.FREE_SPEED} + 0.05; one value "
                 f"per run of {self.DENSITIES} agents"
             ),
         )
         assert (speeds <= self.FREE_SPEED + 0.05).all(), (
-            f"zone-2 speeds {speeds.round(2)} exceed free speed "
-            f"{self.FREE_SPEED} m/s"
+            f"zone-2 speeds {speeds.round(2)} exceed free speed {self.FREE_SPEED} m/s"
         )
 
 
@@ -898,19 +929,20 @@ class TestIso14Groups:
             group1 = first_y.sort_values(ascending=False).head(self.GROUP1_SIZE).index
             spread = exit_time[group1].max() - exit_time[group1].min()
             vv_row.set(
-                quantity="group1_arrival_spread", unit="s",
-                upper=self.MAX_SPREAD_S, measured=spread,
-                n=result.total_agents, seed=42,
+                quantity="group1_arrival_spread",
+                unit="s",
+                upper=self.MAX_SPREAD_S,
+                measured=spread,
+                n=result.total_agents,
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file="standards/iso/scenario_files/Iso-14-group-behaviour.zip",
                 rule=(
-                    "bound: measured <= 10.0 (exit-time spread of the 5 "
-                    "Group 1 agents)"
+                    "bound: measured <= 10.0 (exit-time spread of the 5 Group 1 agents)"
                 ),
             )
             assert spread <= self.MAX_SPREAD_S, (
-                f"Group 1 arrival spread {spread:.1f} s exceeds "
-                f"{self.MAX_SPREAD_S} s"
+                f"Group 1 arrival spread {spread:.1f} s exceeds {self.MAX_SPREAD_S} s"
             )
         finally:
             result.cleanup()
@@ -949,9 +981,7 @@ class TestIso15SocialInfluence:
                         if track == "behind"
                         else init[init.y >= 1.5].id.tolist()
                     )
-                    finals = [
-                        df[df.id == a].sort_values("frame").iloc[-1] for a in ids
-                    ]
+                    finals = [df[df.id == a].sort_values("frame").iloc[-1] for a in ids]
                 else:
                     last = df.sort_values("frame").groupby("id").last()
                     finals = [row for _, row in last.iterrows()]
@@ -981,8 +1011,11 @@ class TestIso15SocialInfluence:
         baseline = self._exit2_fraction(scenario_1, self.SEEDS)
         behind = self._exit2_fraction(scenario_2, self.SEEDS, track="behind")
         vv_row.set(
-            quantity="free_occupant_exit2_fraction", unit="fraction",
-            measured=[behind, baseline], n=2, seed=list(self.SEEDS),
+            quantity="free_occupant_exit2_fraction",
+            unit="fraction",
+            measured=[behind, baseline],
+            n=2,
+            seed=list(self.SEEDS),
             model="CollisionFreeSpeedModel",
             scenario_file="standards/iso/scenario_files/Iso-15-social-influence-2.zip",
             rule=(
@@ -1018,9 +1051,9 @@ class TestIso16FamiliarExits:
 
     @staticmethod
     def _set_weight(scenario, journey_id, weight):
-        for entry in scenario.raw["distributions"][
-            TestIso16FamiliarExits.DIST_ID
-        ]["journey_weights"]:
+        for entry in scenario.raw["distributions"][TestIso16FamiliarExits.DIST_ID][
+            "journey_weights"
+        ]:
             if entry["journey_id"] == journey_id:
                 entry["weight"] = weight
 
@@ -1047,14 +1080,16 @@ class TestIso16FamiliarExits:
         assert total_bal > 0, "no agent reached an exit in the balanced case"
         frac_diff = abs(e1_bal - e2_bal) / total_bal
         vv_row.set(
-            quantity="balanced_exit_fraction_difference", unit="fraction",
+            quantity="balanced_exit_fraction_difference",
+            unit="fraction",
             upper=0.10,
             measured={
                 "balanced_fraction_difference": frac_diff,
                 "balanced_exit_counts": [e1_bal, e2_bal],
                 "affiliated_exit_counts": None,
             },
-            n=total_bal, seed=list(self.SEEDS),
+            n=total_bal,
+            seed=list(self.SEEDS),
             model="CollisionFreeSpeedModel",
             scenario_file="standards/iso/scenario_files/Iso-16-familiar-exits.zip",
             rule=(
@@ -1063,9 +1098,7 @@ class TestIso16FamiliarExits:
                 "affiliated_exit_counts[0] with 20/80 weights"
             ),
         )
-        assert frac_diff <= 0.10, (
-            f"50/50 weights not balanced: {e1_bal} vs {e2_bal}"
-        )
+        assert frac_diff <= 0.10, f"50/50 weights not balanced: {e1_bal} vs {e2_bal}"
 
         affiliated = _load("Iso-16-familiar-exits")
         self._set_weight(affiliated, self.JOURNEY_EXIT1, 20)
@@ -1118,8 +1151,12 @@ class TestIso17RouteChoice:
                 result.cleanup()
         ref = builder.route_length_reference()
         vv_row.set(
-            quantity="shortcut_fraction", unit="fraction", lower=0.5,
-            measured=choice["frac_shortcut"], n=builder.N_AGENTS, seed=42,
+            quantity="shortcut_fraction",
+            unit="fraction",
+            lower=0.5,
+            measured=choice["frac_shortcut"],
+            n=builder.N_AGENTS,
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: measured > 0.5 (share of agents entering the stair "

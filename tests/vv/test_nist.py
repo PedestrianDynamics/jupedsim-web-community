@@ -21,7 +21,6 @@ import math
 import pathlib
 import sys
 import tempfile
-from copy import deepcopy
 
 import jupedsim as jps
 import numpy as np
@@ -139,19 +138,29 @@ class TestNist11Premovement:
             assert len(observed) > 0, f"{case_id}: no agents moved"
             # Build the analytic CDF for the active distribution.
             if case.name == "uniform":
-                cdf = lambda v: _stats.uniform.cdf(v, case.param_a, case.param_b - case.param_a)
+                cdf = lambda v: _stats.uniform.cdf(
+                    v, case.param_a, case.param_b - case.param_a
+                )
             elif case.name == "gamma":
                 cdf = lambda v: _stats.gamma.cdf(v, case.param_a, scale=case.param_b)
             elif case.name == "lognormal":
-                cdf = lambda v: _stats.lognorm.cdf(v, case.param_b, scale=np.exp(case.param_a))
+                cdf = lambda v: _stats.lognorm.cdf(
+                    v, case.param_b, scale=np.exp(case.param_a)
+                )
             elif case.name == "weibull":
-                cdf = lambda v: _stats.weibull_min.cdf(v, case.param_b, scale=case.param_a)
+                cdf = lambda v: _stats.weibull_min.cdf(
+                    v, case.param_b, scale=case.param_a
+                )
             else:
                 pytest.fail(f"unknown distribution: {case.name}")
             p = _stats.kstest(observed, cdf).pvalue
             vv_row.set(
-                quantity="premovement_ks_pvalue", unit="1", lower=0.05,
-                measured=p, n=len(observed), seed=42,
+                quantity="premovement_ks_pvalue",
+                unit="1",
+                lower=0.05,
+                measured=p,
+                n=len(observed),
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file="standards/nist/scenario_files/Nist-1-1-premovement.zip",
                 rule=(
@@ -194,10 +203,13 @@ class TestNist21CorridorSpeed:
             t_out = sub.loc[t_out_idx, "frame"] / result.frame_rate
             speed = (self.MEAS_END_X - self.MEAS_START_X) / (t_out - t_in)
             vv_row.set(
-                quantity="corridor_speed", unit="m/s",
+                quantity="corridor_speed",
+                unit="m/s",
                 lower=self.TARGET_SPEED - self.TOL,
                 upper=self.TARGET_SPEED + self.TOL,
-                measured=speed, n=result.total_agents, seed=42,
+                measured=speed,
+                n=result.total_agents,
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file="standards/nist/scenario_files/Nist-2-1-corridor-speed.zip",
                 rule=(
@@ -243,10 +255,13 @@ class _StairSpeedBase:
             distance = abs(self.MEAS_END_X - self.MEAS_START_X)
             speed = distance / (t_out - t_in)
             vv_row.set(
-                quantity="stair_speed", unit="m/s",
+                quantity="stair_speed",
+                unit="m/s",
                 lower=self.TARGET_SPEED - self.TOL,
                 upper=self.TARGET_SPEED + self.TOL,
-                measured=speed, n=result.total_agents, seed=42,
+                measured=speed,
+                n=result.total_agents,
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file=f"standards/nist/scenario_files/{self.SCENARIO}.zip",
                 rule=(
@@ -293,9 +308,13 @@ class TestNist23Corner:
         result = run_scenario(scenario, seed=42)
         try:
             vv_row.set(
-                quantity="evacuation_time", unit="s", upper=60.0,
-                measured=result.evacuation_time, n=result.total_agents,
-                seed=42, model="CollisionFreeSpeedModel",
+                quantity="evacuation_time",
+                unit="s",
+                upper=60.0,
+                measured=result.evacuation_time,
+                n=result.total_agents,
+                seed=42,
+                model="CollisionFreeSpeedModel",
                 scenario_file="standards/nist/scenario_files/Nist-2-3-corner.zip",
                 rule="bound: agents_remaining = 0; measured < 60.0",
             )
@@ -317,9 +336,14 @@ class TestNist23Corner:
                 if not walkable_with_tol.contains(Point(row.x, row.y))
             )
             vv_row.set(
-                quantity="boundary_penetration_samples", unit="count",
-                lower=0, upper=0, measured=outside, n=result.total_agents,
-                seed=42, model="CollisionFreeSpeedModel",
+                quantity="boundary_penetration_samples",
+                unit="count",
+                lower=0,
+                upper=0,
+                measured=outside,
+                n=result.total_agents,
+                seed=42,
+                model="CollisionFreeSpeedModel",
                 scenario_file="standards/nist/scenario_files/Nist-2-3-corner.zip",
                 rule=(
                     "bound: 0 <= measured <= 0 (trajectory points more than "
@@ -339,22 +363,94 @@ class TestNist23Corner:
 
 
 class TestNist24Demographics:
-    """NIST Verif.2.4 - 100 agents with Gaussian-distributed desired speed.
+    """NIST Verif.2.4 - Verify Gaussian-distributed desired speeds."""
 
-    The NIST test has no exit, so the loader refuses to start a simulation.
-    We verify the config is wired up to sample from Gaussian(1.2, 0.2).
-    """
+    def test_assigned_agent_demographics(self, vv_row):
+        from jupedsim_scenarios import ScenarioRunner
+        from scipy.stats import kstest
 
-    def test_gaussian_distribution_configured(self, vv_row):
-        vv_row.set(
-            scenario_file="standards/nist/scenario_files/Nist-2-4-demographics.zip"
-        )
         scenario = _load("Nist-2-4-demographics")
+
         params = scenario.distributions["jps-distributions_0"]["parameters"]
+
+        expected_mean = float(params["v0"])
+        expected_std = float(params["v0_std"])
+        expected_count = int(params["number"])
+
         assert params["v0_distribution"] == "gaussian"
-        assert abs(params["v0"] - 1.2) < 1e-6
-        assert abs(params["v0_std"] - 0.2) < 1e-6
-        assert int(params["number"]) == 100
+        assert expected_count == 100
+        assert expected_mean == 1.2
+        assert expected_std == 0.2
+
+        # NIST 2.4 has no exit, but ScenarioRunner requires one for initialization.
+        # Add a temporary exit with zero throughput to prevent agents from leaving.
+        # The simulation is not advanced; only the initially assigned speeds are inspected.
+        _minx, miny, maxx, maxy = scenario.walkable_polygon.bounds
+
+        scenario.add_exit(
+            coordinates=[
+                [maxx - 2, miny],
+                [maxx, miny],
+                [maxx, maxy],
+                [maxx - 2, maxy],
+                [maxx - 2, miny],
+            ],
+            key="jps-exits_0",
+            max_throughput=0.0,
+        )
+
+        runner = ScenarioRunner(scenario, seed=42)
+
+        try:
+            assigned_speeds = np.array(
+                [agent.model.desired_speed for agent in runner.agents()]
+            )
+
+            assert runner.agent_count == expected_count
+
+            # Check the sampled distribution.
+            sample_mean = assigned_speeds.mean()
+            sample_std = assigned_speeds.std(ddof=1)
+
+            statistic, p_value = kstest(
+                assigned_speeds,
+                "norm",
+                args=(expected_mean, expected_std),
+            )
+
+            print("\nNIST 2.4: Assigned agent demographics")
+            print(f"Number of agents: {runner.agent_count}")
+            print(f"Expected mean: {expected_mean:.3f} m/s")
+            print(f"Measured mean: {sample_mean:.3f} m/s")
+            print(f"Expected std: {expected_std:.3f} m/s")
+            print(f"Measured std: {sample_std:.3f} m/s")
+            print(f"KS statistic: {statistic:.4f}")
+            print(f"KS p-value: {p_value:.4f}")
+
+            vv_row.set(
+                quantity="desired_speed_ks_pvalue",
+                unit="1",
+                lower=0.05,
+                measured=p_value,
+                n=runner.agent_count,
+                seed=42,
+                model="CollisionFreeSpeedModel",
+                scenario_file="standards/nist/scenario_files/Nist-2-4-demographics.zip",
+                rule=(
+                    "bound: |mean - 1.2| < 0.06 m/s; |std - 0.2| < 0.05 m/s; "
+                    "KS p-value vs Normal(1.2, 0.2) >= 0.05"
+                ),
+            )
+
+            assert abs(sample_mean - expected_mean) < 0.06
+            assert abs(sample_std - expected_std) < 0.05
+            assert p_value >= 0.05, (
+                "Assigned speeds are inconsistent with the "
+                "configured Gaussian distribution."
+            )
+
+        finally:
+            runner.close()
 
 
 # ---------------------------------------------------------------------------
@@ -498,10 +594,13 @@ class TestNist25ReducedVisibility:
                 result.cleanup()
 
         vv_row.set(
-            quantity="smoke_travel_time_100m", unit="s",
+            quantity="smoke_travel_time_100m",
+            unit="s",
             lower=expected_time - self.TIME_TOLERANCE_S,
             upper=expected_time + self.TIME_TOLERANCE_S,
-            measured=observed_time, n=1, seed=42,
+            measured=observed_time,
+            n=1,
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: expected - 0.5 <= measured <= expected + 0.5, "
@@ -612,9 +711,13 @@ class TestNist26OccupantIncapacitation:
         expected_time = 1.0 / expected_rate
 
         vv_row.set(
-            quantity="time_to_fed_one", unit="s", lower=expected_time,
+            quantity="time_to_fed_one",
+            unit="s",
+            lower=expected_time,
             upper=expected_time + simulation.delta_time(),
-            measured=incapacitation_time, n=1, seed=None,
+            measured=incapacitation_time,
+            n=1,
+            seed=None,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: expected <= measured <= expected + dt, expected = "
@@ -678,9 +781,12 @@ class TestNist28Counterflow:
 
         print(f"last room-2 entry [s] by counterflow (None = blocked): {levels}")
         vv_row.set(
-            quantity="last_room2_entry_time_by_counterflow", unit="s",
+            quantity="last_room2_entry_time_by_counterflow",
+            unit="s",
             measured={f"counterflow_{c}": levels[c] for c in sorted(levels)},
-            n=100, seed=42, model="CollisionFreeSpeedModel",
+            n=100,
+            seed=42,
+            model="CollisionFreeSpeedModel",
             scenario_file="standards/nist/scenario_files/Nist-2-8-counterflow-0.zip",
             rule=(
                 "bound: level 0 completes (not null); comparison: finite "
@@ -739,9 +845,12 @@ class TestNist29Groups:
             group1 = first_y.sort_values(ascending=False).head(self.GROUP1_SIZE).index
             spread = exit_time[group1].max() - exit_time[group1].min()
             vv_row.set(
-                quantity="group1_arrival_spread", unit="s",
-                upper=self.MAX_SPREAD_S, measured=spread,
-                n=result.total_agents, seed=42,
+                quantity="group1_arrival_spread",
+                unit="s",
+                upper=self.MAX_SPREAD_S,
+                measured=spread,
+                n=result.total_agents,
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file="standards/nist/scenario_files/Nist-2-9-groups.zip",
                 rule=(
@@ -788,14 +897,16 @@ class TestNist210Disabilities:
         disability_zone1 = disability.zone1_exit_times()
         control_zone1 = control.zone1_exit_times()
         vv_row.set(
-            quantity="zone1_exit_time_disability_vs_control", unit="s",
+            quantity="zone1_exit_time_disability_vs_control",
+            unit="s",
             measured=[
                 max(disability_zone1),
                 max(control_zone1),
                 float(np.mean(disability_zone1)),
                 float(np.mean(control_zone1)),
             ],
-            n=movement_disability.N_ZONE1 + 1, seed=42,
+            n=movement_disability.N_ZONE1 + 1,
+            seed=42,
             model="CollisionFreeSpeedModel",
             rule=(
                 "bound: all 25 occupants evacuate in both runs; comparison: "
@@ -845,21 +956,16 @@ class TestNist31RouteAllocation:
         scenario = _load("Nist-3-1-route-allocation")
         raw = scenario.raw
         if "journeys" in raw:
-            journey_map = {
-                j["stages"][0]: j["stages"][-1] for j in raw["journeys"]
-            }
+            journey_map = {j["stages"][0]: j["stages"][-1] for j in raw["journeys"]}
         else:
-            j_to_exit = {
-                j["id"]: j["sequence"][-1] for j in raw.get("journeys_v2", [])
-            }
+            j_to_exit = {j["id"]: j["sequence"][-1] for j in raw.get("journeys_v2", [])}
             journey_map = {}
             for did, d in scenario.distributions.items():
                 jw = d.get("journey_weights", [])
                 if jw:
                     journey_map[did] = j_to_exit.get(jw[0]["journey_id"], "")
         dist_polys = {
-            did: Polygon(d["coordinates"])
-            for did, d in scenario.distributions.items()
+            did: Polygon(d["coordinates"]) for did, d in scenario.distributions.items()
         }
         exit_polys = {
             eid: Polygon(e["coordinates"]) for eid, e in scenario.exits.items()
@@ -873,9 +979,7 @@ class TestNist31RouteAllocation:
             matches = 0
             total = 0
             mismatches = []
-            for row_first, row_last in zip(
-                first.itertuples(), last.itertuples()
-            ):
+            for row_first, row_last in zip(first.itertuples(), last.itertuples()):
                 p0 = Point(row_first.x, row_first.y)
                 p1 = Point(row_last.x, row_last.y)
                 home = next(
@@ -886,9 +990,7 @@ class TestNist31RouteAllocation:
                     f"agent {row_first.id} did not spawn in any distribution"
                 )
                 expected = journey_map[home]
-                actual = min(
-                    exit_polys, key=lambda eid: exit_polys[eid].distance(p1)
-                )
+                actual = min(exit_polys, key=lambda eid: exit_polys[eid].distance(p1))
                 total += 1
                 if actual == expected:
                     matches += 1
@@ -899,8 +1001,12 @@ class TestNist31RouteAllocation:
                     )
             match_rate = matches / total if total else 0.0
             vv_row.set(
-                quantity="route_allocation_match_rate", unit="fraction",
-                lower=1.0, measured=match_rate, n=total, seed=42,
+                quantity="route_allocation_match_rate",
+                unit="fraction",
+                lower=1.0,
+                measured=match_rate,
+                n=total,
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file="standards/nist/scenario_files/Nist-3-1-route-allocation.zip",
                 rule=(
@@ -981,8 +1087,11 @@ class TestNist32SocialInfluence:
         baseline = self._exit2_fraction(scenario_1, self.SEEDS)
         behind = self._exit2_fraction(scenario_2, self.SEEDS, track="behind")
         vv_row.set(
-            quantity="free_occupant_exit2_fraction", unit="fraction",
-            measured=[behind, baseline], n=2, seed=list(self.SEEDS),
+            quantity="free_occupant_exit2_fraction",
+            unit="fraction",
+            measured=[behind, baseline],
+            n=2,
+            seed=list(self.SEEDS),
             model="CollisionFreeSpeedModel",
             scenario_file="standards/nist/scenario_files/Nist-3-2-social-influence-2.zip",
             rule=(
@@ -1045,14 +1154,16 @@ class TestNist33Affiliation:
         assert total_balanced > 0, "no agent reached an exit in the balanced case"
         fraction_difference = abs(e1_balanced - e2_balanced) / total_balanced
         vv_row.set(
-            quantity="balanced_exit_fraction_difference", unit="fraction",
+            quantity="balanced_exit_fraction_difference",
+            unit="fraction",
             upper=0.10,
             measured={
                 "balanced_fraction_difference": fraction_difference,
                 "balanced_exit_counts": [e1_balanced, e2_balanced],
                 "affiliated_exit_counts": None,
             },
-            n=total_balanced, seed=list(self.SEEDS),
+            n=total_balanced,
+            seed=list(self.SEEDS),
             model="CollisionFreeSpeedModel",
             scenario_file="standards/nist/scenario_files/Nist-3-3-familiar-exits.zip",
             rule=(
@@ -1195,9 +1306,11 @@ class TestNist51Congestion:
                 peak_room_exit = max(peak_room_exit, room_count / area_room_exit)
                 peak_corridor = max(peak_corridor, corr_count / area_corridor)
             vv_row.set(
-                quantity="peak_density_room_exit_vs_corridor", unit="1/m^2",
+                quantity="peak_density_room_exit_vs_corridor",
+                unit="1/m^2",
                 measured=[peak_room_exit, peak_corridor],
-                n=result.total_agents, seed=42,
+                n=result.total_agents,
+                seed=42,
                 model="CollisionFreeSpeedModel",
                 scenario_file="standards/nist/scenario_files/Nist-5-1-congestion.zip",
                 rule="comparison: measured[0] (room exit) > measured[1] (corridor)",
@@ -1245,8 +1358,13 @@ class TestNist52MaxFlow:
         flow = self._run(limiter_on=True)
         cap = MAX_SPECIFIC_FLOW * (1 + FLOW_CAP_TOLERANCE)
         vv_row.set(
-            quantity="specific_exit_flow_limiter_on", unit="p/m/s", upper=cap,
-            measured=flow, n=100, seed=42, model="CollisionFreeSpeedModel",
+            quantity="specific_exit_flow_limiter_on",
+            unit="p/m/s",
+            upper=cap,
+            measured=flow,
+            n=100,
+            seed=42,
+            model="CollisionFreeSpeedModel",
             scenario_file="standards/nist/scenario_files/Nist-5-2-max-flow.zip",
             rule=(
                 f"bound: measured <= {MAX_SPECIFIC_FLOW} * (1 + "
@@ -1262,8 +1380,12 @@ class TestNist52MaxFlow:
         """Information only: the emergent flow is printed, not asserted."""
         flow = self._run(limiter_on=False)
         vv_row.set(
-            quantity="specific_exit_flow_limiter_off", unit="p/m/s",
-            measured=flow, n=100, seed=42, model="CollisionFreeSpeedModel",
+            quantity="specific_exit_flow_limiter_off",
+            unit="p/m/s",
+            measured=flow,
+            n=100,
+            seed=42,
+            model="CollisionFreeSpeedModel",
             scenario_file="standards/nist/scenario_files/Nist-5-2-max-flow.zip",
             rule="information only: emergent flow, not asserted",
         )

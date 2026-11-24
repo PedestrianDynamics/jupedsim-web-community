@@ -240,11 +240,11 @@
       "source": "IMO MSC.1/Circ.1533, Annex 3, Appendix 2, Test 7, para. 9, p. 10; Table 3.4, p. 5",
       "kind": "analytical",
       "definition": "A panel of males aged 30 to 50 is taken from Table 3.4, whose walking speed on flat terrain is a uniform distribution between 0.97 m/s and 1.62 m/s. The speeds are distributed over a population of 50 persons. The standard intends the assigned speeds to be consistent with the table.",
-      "expected": "The assigned speeds follow the uniform distribution of Table 3.4 (0.97 m/s to 1.62 m/s). IMO gives no statistical test or tolerance. This suite does not check the speeds: it checks only that all 50 agents leave the room within 25 s to 120 s.",
+      "expected": "The assigned speeds follow the uniform distribution of Table 3.4 (0.97 m/s to 1.62 m/s). IMO gives no statistical test or tolerance.",
       "deviations": [
-        "No speed distribution is assigned: all 50 agents have a constant desired speed of 1.2 m/s. The test does not read or check assigned speeds against Table 3.4.",
-        "The test checks only that all 50 agents leave a 40 m by 10 m room and that the evacuation time lies between 25 s and 120 s. This window is the suite's own and is not in the standard.",
-        "Default body radius 0.15 m; one seed (42). The scenario is built in code (tests/vv/test_imo.py)."
+        "The scenario harness offers only constant and Gaussian speed distributions, so the test builds the simulation with jps.Simulation directly. It draws 50 speeds from Uniform(0.97, 1.62) m/s with NumPy (seed 42), assigns them as the agents' desired speeds and reads them back from the simulation.",
+        "The pass rule is the suite's own: every assigned speed lies in [0.97, 1.62] m/s and a Kolmogorov-Smirnov test against Uniform(0.97, 1.62) gives p >= 0.05 (seed 42: p = 0.52). Because the test draws the speeds itself, it verifies that JuPedSim keeps the assigned speeds, not a demographic sampler of JuPedSim.",
+        "The simulation is not advanced. The room is 40 m by 10 m with 50 agents near one wall; default body radius 0.15 m. The scenario is built in code (tests/vv/test_imo.py)."
       ],
       "scenario_files": []
     },
@@ -328,11 +328,9 @@
       "definition": "A room of 8 m by 6 m is connected by a corridor 2 m wide and 12 m long to a stair going up (Fig. 5, p. 13). The population is 150 persons with instant response and Table 3.4 speeds, filling the room. Congestion is identified by local densities above 4 p/m2 for a significant duration (Section 3.1, p. 1), and it is significant if it lasts longer than 10 % of the total assembly time (Section 3.2).",
       "expected": "Congestion forms at the exit from the room. This produces a steady flow in the corridor and congestion at the base of the stairs. IMO gives no numeric limits.",
       "deviations": [
-        "Status is PENDING: the Test 11 scenario is not implemented, so this row is not counted as an IMO pass. There is no room, no corridor, no stair and no density or flow measurement for these locations.",
-        "The test that exists is a substitute: it runs the RiMEA Test 16 ring instead, with the same builder (standards/rimea/scenario_builders/rimea16_loop.py) and the same reference band file as RiMEA 16: 10 agents on a closed oval ring of 26.85 m (about 0.37 agents per metre) at desired speeds 0.9, 1.2 and 1.5 m/s.",
-        "The checks are the suite's own and come from RiMEA 16, not from IMO: every agent completes at least 3 laps; at least 75 % of the baseline (1.2 m/s) speed-density samples lie inside the RiMEA 10 %/90 % percentile band; the 0.9 m/s run is slower than the baseline; at least 75 % of the 1.5 m/s samples lie above the 90 % percentile.",
-        "The RiMEA 16 test also sweeps the agent count to high densities. This test does not.",
-        "Default body radius 0.15 m; one seed (42). The ring is built in code."
+        "The room (8 m by 6 m), corridor (2 m by 12 m) and 150 agents with Uniform(0.97, 1.62) m/s speeds follow the standard. The stair is a 2 m by 4 m area after the corridor (its length is the suite's choice) with the exit at its top. JuPedSim has no stair element: the test halves every agent's desired speed while its centre is on the stair.",
+        "The pass rule is the suite's own. Congestion: the mean density over 10 s to 50 s at the room exit and at the stair base is higher than in the middle of the corridor (seed 42: 2.72, 2.02 and 1.66 p/m2), and the mean speed at the room exit and just before the stair is below 0.85 times the corridor speed. Steady flow: the coefficient of variation of the 10 s flows across the corridor midpoint between 10 s and 60 s is below 0.15 (seed 42: 0.06). The 4 p/m2 congestion threshold of Section 3.1 is not used.",
+        "All 150 agents must leave within 300 s. Default body radius 0.15 m; one seed (42). The scenario is built in code (tests/vv/test_imo.py). ISO 20414 Test 10 checks a similar room-corridor-stair layout with its own scenario file."
       ],
       "scenario_files": []
     },
@@ -349,8 +347,9 @@
       "definition": "The software is tested on a corridor without obstructions. The test must demonstrate that the flow of persons in the corridor is generally smaller at very high population densities than at moderate densities.",
       "expected": "Flow at very high density is smaller than flow at moderate density. IMO gives no density values and no numeric limits. The standard does not say how \"very high\" and \"moderate\" are defined.",
       "deviations": [
-        "Not implemented: the suite has no test for this row.",
-        "The ring runs of IMO 11 and RiMEA 16 measure speed against 1D density, not flow in a straight corridor. The IMO 11 run uses one agent count (about 0.37 agents per metre) and cannot show the decrease at high density. The RiMEA 16 sweep covers 1D densities of about 0.2 to 1.7 per metre and is not evaluated as flow."
+        "The corridor is 30 m by 2 m with an exit at its end. Five runs start with 0.5, 1, 2, 3 and 3.5 p/m2 (counted over the full corridor), desired speed 1.2 m/s, default body radius 0.15 m, one seed (42). The corridor empties during each run, so the flow is not measured in a steady state.",
+        "Density is measured in the area x = 13 m to 17 m and flow as crossings of x = 15 m, both averaged over 5 s windows of all runs. The pass rule is the suite's own: the mean flow of windows with a measured density of at least 3 p/m2 is lower than that of windows with 1.5 to 2.5 p/m2 (seed 42: 1.95 against 2.53 persons/s). The standard does not define very high or moderate density.",
+        "The scenario is built in code (tests/vv/test_imo.py)."
       ],
       "scenario_files": []
     },
@@ -881,7 +880,8 @@
       "definition": "A square room of 100 m by 100 m holds 100 occupants spread evenly. Their walking speeds are assigned from a population chosen to match the building's expected occupants. The test checks that the model assigns these demographic parameters correctly; it is a modified version of IMO Test 7.",
       "expected": "The walking speeds used in the simulation are consistent with the distribution specified in the scenario. The tester chooses a suitable quantitative method to compare the simulated and assigned distributions.",
       "deviations": [
-        "The test reads the scenario file and checks the configured Gaussian(1.2, 0.2) m/s desired-speed distribution. It runs no simulation and samples no agent, so it verifies the input, not the model's assignment."
+        "The scenario has no exit, and ScenarioRunner needs one to place the agents. The test adds an exit with zero throughput, places the 100 agents and reads their desired speeds; it does not advance the simulation.",
+        "The pass rule is the suite's own: the sample mean is within 0.06 m/s of 1.2 m/s, the sample standard deviation within 0.05 m/s of 0.2 m/s, and a Kolmogorov-Smirnov test against Normal(1.2, 0.2) gives p >= 0.05 (seed 42: mean 1.179 m/s, standard deviation 0.182 m/s, p = 0.22). One seed (42)."
       ],
       "scenario_files": [
         "standards/nist/scenario_files/Nist-2-4-demographics.zip"
